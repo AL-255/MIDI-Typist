@@ -19,7 +19,7 @@ a confirmation screen instead of clearing immediately.
 | Chord | Preview | Action on release |
 | --- | --- | --- |
 | Fn+C | CALIBRATION | Start parallel calibration (keyboard mode) |
-| Fn+Tab | TRIGGER | Enter trigger-point editor (keyboard mode) |
+| Fn+Tab | TRIGGER | Enter trigger-point editor (keyboard mode) or the raw trigger page (MIDI mode) |
 | Fn+Caps | RAPID | Enter compatibility rapid editor (keyboard mode) |
 | Fn+Enter | MIDI / KEYBOARD | Switch to the displayed target mode |
 | Fn+K | LIGHT- | Lower brightness one step |
@@ -71,6 +71,19 @@ Settings previews, confirmation and calibration take priority over keyboard
 shortcuts and clear held output. Native tests exercise all three layouts;
 compiled ARM tests check all twenty shortcuts, both release orders, repeated
 taps, arrow reports and green LED channel output using modeled ASIC input.
+
+## MIDI trigger point
+
+In MIDI mode Fn+Tab opens a raw trigger page instead of the calibrated editor:
+the number row is the same ten-step bar, but each step selects the **raw press
+threshold for every key**. Level 1 keeps the 3500 default and level 10 reaches
+the bottom-out floor of the velocity window, so the trigger point can be moved
+deeper for MIDI playing without starving the velocity fit. Per-key release
+thresholds are never touched, and the pair stays valid (`press < release`).
+The selected step lights green with the steps below it lit; Escape leaves the
+page. Because the page's own threshold decides what counts as "pressed", a deep
+selection needs firm digit, chord and Escape presses. `menu status` and HKG6
+telemetry report the resulting thresholds.
 
 ## Transmitted-velocity start
 

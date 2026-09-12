@@ -373,6 +373,18 @@ it, and aftertouch follows the greater travel. The second key does not
 retrigger that pitch or replace its attack velocity. Different pitches remain
 independent; this is channel-1 polyphonic MIDI, not MPE.
 
+### Move the trigger point in MIDI mode
+
+In MIDI mode the press threshold is normally left at its 3500 default. Hold
+**Fn+Tab** to preview `TRIGGER`, release either key, and the number row becomes
+a ten-step bar: press `1` for the default 3500 point or `0` for the deepest
+point, which sits at the bottom-out floor of the velocity window; the steps
+between are spread across that range. Every key gets the same point, release
+thresholds are untouched, and pressing **Esc** leaves the page. The selected
+step is green with the steps below it lit. Because the point itself decides
+what counts as a press, deep selections need firm presses on the digits, the
+chord and Escape. Velocity keeps working at every step.
+
 ### Set the transmitted-velocity start
 
 In MIDI mode, hold **Fn+V** to preview `VELOCITY`, then release either key to

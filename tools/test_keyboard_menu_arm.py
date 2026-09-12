@@ -104,7 +104,8 @@ def main():
     keys(Fn=500,K=500); keys(K=4000)
     assert not any(p[1]&0xf0==0x90 for p in dev.midi_packets),dev.midi_packets
     frame=draw()
-    assert color(frame,'C')==(0,0,0) and color(frame,'Tab')==(0,0,0)
+    # Calibration stays keyboard-only; Tab is now a MIDI-mode hint (raw trigger).
+    assert color(frame,'C')==(0,0,0) and color(frame,'Tab')!=(0,0,0), (color(frame,'C'),color(frame,'Tab'))
     dev.command('stream off'); dev.service(20)
     assert b'MENU fn=1 mode=0' in dev.command('menu status')
     snapshot(dev,'stream gui')

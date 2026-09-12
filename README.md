@@ -87,6 +87,9 @@ remain separate indicators. MIDI velocity and aftertouch are unchanged.
   immediately ends the animation and executes the action (visible on the next LED update).
   Enter then remains green for keyboard or blue for MIDI, at the same full
   channel intensity as unpressed note keys, scaled by global brightness.
+- **Fn+Tab** in MIDI mode opens a raw trigger page: ten steps move the press
+  threshold for all keys between the 3500 default and the velocity window's
+  bottom-out floor; release thresholds are preserved.
 - **Fn+V** opens the transmitted-velocity start editor in MIDI mode: a
   ten-step bar on the number row where `1` is 0% (measured velocity) and `0`
   is 100% (every note at full velocity); Escape leaves the page.

@@ -514,6 +514,73 @@ def velocity_start_tests(args):
     print('PASS ARM velocity start: Fn+V modal page, ten-step digits, 0%/100% endpoints, floor mapping, Escape exit')
 
 
+def midi_trigger_tests(args):
+    dev = LightingArm(args.elf,args.reference); dev.service(400)
+    labels = sensor_labels()[61]
+
+    def keys(**values):
+        for label,value in values.items(): dev.raw[labels.index(label)]=value
+        dev.service(20)
+
+    def release_all():
+        for index in range(len(labels)): dev.raw[index]=3900
+        dev.service(60)
+
+    def press_threshold():
+        snapshot(dev)  # fresh telemetry
+        return snapshot(dev).press
+
+    def strike(label):
+        index = labels.index(label)
+        dev.midi_packets.clear()
+        values = dev.raw.copy(); values[index] = 3400; one_raw_frame(dev,values)
+        for value in (3300,3200,3100,3000):
+            values = dev.raw.copy(); values[index] = value; one_raw_frame(dev,values)
+        values = dev.raw.copy(); values[index] = 1400; one_raw_frame(dev,values)
+        dev.service(40)
+        fired = any(p[0] == 9 and p[1] == 0x90 for p in dev.midi_packets)
+        values = dev.raw.copy(); values[index] = 3900; one_raw_frame(dev,values)
+        dev.service(20); dev.midi_packets.clear()
+        return fired
+
+    snapshot(dev,'stream gui')
+    keys(Fn=2400,Ent=2400); keys(Fn=3900,Ent=3900); dev.service(200)
+    assert press_threshold() == (3500,)*61        # default point in MIDI mode
+    assert strike('Q')
+    # Fn+Tab opens the raw trigger page; digits select the press threshold.
+    keys(Fn=2400,Tab=2400); keys(Fn=3900,Tab=3900); dev.service(200)
+    for level in (2,5,10,1):
+        expected = 3500 - (level-1)*2000//9  # default point down to the floor
+        label = '0' if level == 10 else str(level)
+        keys(**{label:500}); keys(**{label:3900}); dev.service(200)
+        press = press_threshold()
+        assert set(press) == {expected}, (level, expected, sorted(set(press))[:3])
+        snapshot(dev)  # release thresholds are untouched below
+        assert snapshot(dev).release == (3600,)*61
+    # Still inside the page: select the deepest point, then leave with Escape.
+    keys(**{'0':500}); keys(**{'0':3900}); dev.service(200)
+    assert set(press_threshold()) == {1500}
+    keys(Esc=500); keys(Esc=3900); dev.service(200)
+    release_all()
+    # A deep point still measures velocity: the trigger sits at the floor and
+    # the single follow-up readback closes the fit with one interval.
+    index = labels.index('Q')
+    dev.midi_packets.clear()
+    values = dev.raw.copy(); values[index] = 1400; one_raw_frame(dev,values)
+    values = dev.raw.copy(); values[index] = 1200; one_raw_frame(dev,values)
+    dev.service(40)
+    assert any(p[0] == 9 and p[1] == 0x90 and p[3] > 1 for p in dev.midi_packets), dev.midi_packets
+    values = dev.raw.copy(); values[index] = 3900; one_raw_frame(dev,values)
+    dev.service(20)
+    # A deep point needs firm presses for the chord too: 2400 is no longer
+    # below the 1500 threshold.
+    keys(Fn=500,Tab=500); keys(Fn=3900,Tab=3900); dev.service(200)
+    keys(**{'1':500}); keys(**{'1':3900}); dev.service(200)  # back to the default point
+    keys(Esc=500); keys(Esc=3900); dev.service(200)
+    assert set(press_threshold()) == {3500}
+    print('PASS ARM MIDI trigger: Fn+Tab page levels 3500..1500, release preserved, deep point still fires with velocity')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf'); parser.add_argument('--reference',required=True)
@@ -525,6 +592,7 @@ def main():
     velocity_tests(args)
     janko_tests(args)
     velocity_start_tests(args)
+    midi_trigger_tests(args)
     dev = LightingArm(args.elf,args.reference)
     # No CDC open: enumeration must be enough for scanning and keyboard output.
     dev.control_out(bytes.fromhex('21 22 00 00 04 00 00 00'))

@@ -94,8 +94,11 @@ static void velocity_history_oracle(void)
                 window[i][0] = values[i];
             }
             else if (pending[i]) {
-                if (values[i] < 1500) { /* bottom-out closes without this sample */
-                    if (count[i] >= 2u) { last[i] = window_oracle(window[i], count[i]); ++completed[i]; }
+                if (values[i] < 1500) { /* bottom-out closes the window */
+                    /* The closing sample is excluded unless it is the only
+                     * follow-up readback; then one interval is still a fit. */
+                    if (count[i] < 2u) window[i][count[i]++] = values[i];
+                    last[i] = window_oracle(window[i], count[i]); ++completed[i];
                     pending[i] = false; count[i] = 0u;
                 }
                 else {

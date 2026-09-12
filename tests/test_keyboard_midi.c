@@ -289,6 +289,68 @@ static void velocity_start_mode(void)
     puts("PASS velocity start: Fn+V page, ten-step selection, bar lights, floor mapping, page exit");
 }
 
+static void midi_trigger_page(void)
+{
+    init(); toggle();
+    const unsigned fn=fn_sensor(), tab=sensor(0x2b,0), esc=sensor(0x29,0);
+    assert(raw.press[0]==3500 && raw.release[0]==3600);
+    /* Fn+Tab opens the raw trigger page in MIDI mode. */
+    values[fn]=values[tab]=2400; step();
+    assert(menu.pending==MENU_TRIGGER && !menu.press_page);
+    values[fn]=values[tab]=3900; step();
+    assert(menu.press_page && menu.selection==1 && !raw.armed);
+    for (unsigned i=0;i<65;++i) values[i]=3900;
+    step();
+    /* Levels walk the press threshold from the default down to the
+     * bottom-out floor; release thresholds are untouched. */
+    assert(keyboard_raw_press_level(1)==3500);
+    assert(keyboard_raw_press_level(10)==RAW_BOTTOM_OUT);
+    unsigned previous=3500;
+    for (unsigned level=1; level<=10; ++level) {
+        const unsigned key=digit_sensor(level);
+        values[key]=500; step(); /* a digit must read as pressed at any level */
+        assert(menu.press_page && menu.selection==level);
+        for (unsigned i=0;i<raw.count;++i) {
+            assert(raw.press[i]==keyboard_raw_press_level(level));
+            assert(raw.release[i]==3600); /* the second threshold never moves */
+        }
+        for (unsigned i=raw.count;i<65;++i) assert(raw.press[i]==3500); /* unused slots */
+        assert(raw.press[0]<=previous);
+        previous=raw.press[0];
+        values[key]=3900; step();
+    }
+    assert(raw.press[0]==RAW_BOTTOM_OUT);
+    /* The bar lights the selection and Escape leaves the page. */
+    uint8_t frame[LIGHTING_FRAME_SIZE];
+    memset(frame,0,sizeof(frame));
+    menu.selection=4;
+    keyboard_menu_lights(&menu,&raw,lower,upper,frame,0,true,false,false);
+    for (unsigned level=1; level<=10; ++level) {
+        const unsigned key=digit_sensor(level);
+        const lighting_channels_t *c=&g_lighting_channels[raw.profile][key];
+        if (level==4) assert(frame[c->red]==0 && frame[c->green]==255 && frame[c->blue]==0);
+        else if (level<4) assert(frame[c->red]==255 && frame[c->green]==255 && frame[c->blue]==255);
+        else assert(frame[c->red]==25 && frame[c->green]==25 && frame[c->blue]==25);
+    }
+    values[esc]=500; step(); /* a deep threshold needs a firm press to exit too */
+    assert(!menu.press_page);
+    values[esc]=3900; step(); drain(); logged=0;
+    /* A deeper trigger point delays the note, and velocity still completes:
+     * level 10 triggers below the floor and keeps the single follow-up. */
+    (void)keyboard_raw_set_press_all(&raw,keyboard_raw_press_level(10));
+    for (unsigned i=0;i<65;++i) values[i]=3900;
+    step(); drain(); logged=0;
+    const unsigned q=sensor(0x14,0);
+    values[q]=1400; step();      /* below the deep threshold: note fires */
+    values[q]=1200; step();      /* the only follow-up is below the floor */
+    drain();
+    assert(events(0x90,74)==1);  /* Q = D5, with a one-interval fit */
+    assert(midi.errors==0);
+    values[q]=3900; step(); drain(); logged=0;
+    (void)keyboard_raw_set_press_all(&raw,3500);
+    puts("PASS MIDI trigger page: Fn+Tab level range, release preserved, bar, Escape, deep-trigger velocity");
+}
+
 static void janko_mode(void)
 {
     init(); toggle(); /* the layout only exists in MIDI mode */
@@ -970,7 +1032,7 @@ static void sustain_pedal(void)
 int main(void)
 {
     default_mapping(); velocity_pressure_and_modes(); short_taps_and_overlap(); janko_mode();
-    velocity_start_mode();
+    velocity_start_mode(); midi_trigger_page();
     octave_and_duplicates(); faults_and_backpressure(); polyphony(); shift_and_filtered_strike(); octave_lights();
     text_display(); inverse_lighting(); menu_input_isolation(); wheels(); lower_rows(); music_data(); music_menus(); music_output(); sustain_pedal();
     printf("MIDI tests passed; controller state %zu bytes\n",sizeof(keyboard_midi_t));

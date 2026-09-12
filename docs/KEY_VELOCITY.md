@@ -56,7 +56,9 @@ For every valid full scan, each sensor is processed independently:
    press always owns the window.
 2. Otherwise, while a window is open, append the sample. Close the window
    when ten samples are collected or when a sample crosses below the shared
-   **bottom-out threshold** of 1500 (that sample is excluded).
+   **bottom-out threshold** of 1500 (that sample is excluded — except when the
+   window holds nothing else, where it is kept so a trigger at the floor still
+   yields a one-interval fit).
 3. On close, calculate the fit and update that key's result/counter.
 4. Independently deliver the ordinary HID down/up transition when keyboard
    output is armed. HID key-down is not delayed for velocity acquisition.
@@ -68,9 +70,11 @@ fit samples      x0     x1     x2   ...    x9
 ```
 
 A release before the window closes does not truncate it; it only re-arms the
-key. A window whose triggering sample is already below the bottom-out
-threshold closes without a fit and keeps the previous result. Different keys
-never share sample history, arming state, pending flags or output registers.
+key. A trigger at or below the bottom-out floor still produces a fit from the
+trigger sample and the closing readback, so a deep MIDI trigger point (see
+[MIDI design](MIDI_DESIGN.md#midi-trigger-point)) never leaves a press
+unmeasured. Different keys never share sample history, arming state, pending
+flags or output registers.
 
 The calculation uses the same raw estimator as `press_velocity()` in
 `tools/last_key_stream.py`, followed by MCU-side normalization:

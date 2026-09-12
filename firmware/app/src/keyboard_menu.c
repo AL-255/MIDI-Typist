@@ -13,7 +13,7 @@ typedef struct { uint8_t usage, modifier, modes; const char *word; } menu_option
  * (mode and lower rows) are resolved from the current MIDI state. */
 static const menu_option_t options[MENU_OPTION_COUNT] = {
     [MENU_CALIBRATION-1]={0x06,0,OPTION_KEYBOARD,"CALIBRATION"},
-    [MENU_TRIGGER-1]={0x2b,0,OPTION_KEYBOARD,"TRIGGER"},
+    [MENU_TRIGGER-1]={0x2b,0,OPTION_BOTH,"TRIGGER"},
     [MENU_MODE-1]={0x28,0,OPTION_BOTH,NULL},
     [MENU_LIGHT_DOWN-1]={0x0e,0,OPTION_BOTH,"LIGHT-"},
     [MENU_LIGHT_UP-1]={0x0f,0,OPTION_BOTH,"LIGHT+"},
@@ -43,6 +43,7 @@ void keyboard_menu_cancel(keyboard_menu_t *s)
     s->reset_confirmation=s->confirmation_ready=false;
     s->music_page=MENU_NONE; s->choice_ready=false; s->choice_sensor=255;
     s->velocity_page=false;
+    s->press_page=false;
     keyboard_text_stop(&s->text);
 }
 
@@ -132,6 +133,49 @@ static int music_choice(const keyboard_menu_t *s, unsigned sensor)
     return s->music_page==MENU_KEY ? midi_music_root_selector(a->arg1) : midi_music_scale_selector(a->arg1);
 }
 
+/* MIDI-mode trigger page, modelled on the keyboard trigger editor: the number
+ * row is a ten-step bar selecting the raw press threshold for every key.
+ * Level 1 keeps the default 3500 point and level 10 reaches the bottom-out
+ * floor, so the velocity window always keeps room to measure; the per-key
+ * release thresholds are untouched. */
+static uint8_t press_level_for(const keyboard_raw_t *raw)
+{
+    unsigned current = raw->count ? raw->press[0] : RAW_DEFAULT_PRESS;
+    unsigned best = 1u, distance = ~0u;
+    for (unsigned level = 1u; level <= 10u; ++level) {
+        const unsigned value = keyboard_raw_press_level(level);
+        const unsigned delta = value > current ? value - current : current - value;
+        if (delta < distance) { distance = delta; best = level; }
+    }
+    return (uint8_t)best;
+}
+
+static uint8_t press_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
+{
+    if(!raw->midi_mode || raw->revision!=s->pending_revision) {
+        keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
+    }
+    const bool ready=s->choice_ready;
+    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
+    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(!ready) return MENU_NONE;
+    unsigned held=0, sensor=0;
+    for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
+        if(s->keys[i]==keyboard_layout(s->profile)->escape) { keyboard_menu_cancel(s); return MENU_NONE; }
+        ++held; sensor=i;
+    }
+    if(held!=1u) return MENU_NONE; /* one digit at a time */
+    const uint8_t digit=keyboard_editor_digit(s->profile,s->keys[sensor]);
+    if(!digit || digit==s->selection) return MENU_NONE;
+    s->selection=digit;
+    /* The page owns this edit, exactly like the keyboard trigger editor's
+     * commit: apply it and keep its revision baseline so the page stays open
+     * while levels are auditioned. */
+    if (keyboard_raw_set_press_all(raw,keyboard_raw_press_level(digit)))
+        s->pending_revision=raw->revision;
+    return MENU_NONE;
+}
+
 /* Transmitted-velocity start page, modelled on the trigger-point editor:
  * the number row is a ten-step bar, key 1 is 0% and key 0 is 100%. The
  * selection applies immediately; Escape leaves the page. Menu input never
@@ -215,6 +259,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
         keyboard_menu_cancel(s); return MENU_NONE;
     }
     if(s->music_page) return music_page_frame(s,raw,now);
+    if(s->press_page) return press_page_frame(s,raw);
     if(s->velocity_page) return velocity_page_frame(s,raw);
     if (s->reset_confirmation) {
         if (raw->revision!=s->pending_revision) {
@@ -255,6 +300,12 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
             keyboard_text_start(&s->text,raw->profile,"RESET?",now);
             return MENU_NONE;
         }
+        if(action==MENU_TRIGGER && raw->midi_mode) {
+            s->press_page=true;
+            s->choice_ready=false;
+            s->selection=press_level_for(raw);
+            return MENU_NONE;
+        }
         if(action==MENU_VELOCITY) {
             s->velocity_page=true;
             s->choice_ready=false;
@@ -284,7 +335,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     while (!(edges & (1u<<index))) ++index;
     uint8_t action=index+1u;
     if (!raw->armed && action!=MENU_LIGHT_DOWN && action!=MENU_LIGHT_UP) return MENU_NONE;
-    if ((raw->midi_mode && (action==MENU_CALIBRATION || action==MENU_TRIGGER || action==MENU_RAPID)) ||
+    if ((raw->midi_mode && (action==MENU_CALIBRATION || action==MENU_RAPID)) ||
         (raw->engine.config.locked && (action==MENU_TRIGGER || action==MENU_RAPID))) return MENU_NONE;
     const char *name=action==MENU_MODE ? (raw->midi_mode ? "KEYBOARD" : "MIDI") :
         action==MENU_LOWER ? (lower_muted ? "LOWER-ON" : "LOWER-OFF") : options[index].word;
@@ -318,7 +369,7 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
             if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,255,0,0);
         return;
     }
-    if(s->velocity_page) {
+    if(s->press_page || s->velocity_page) {
         memset(frame,0,LIGHTING_FRAME_SIZE);
         for(unsigned i=0;i<raw->count;++i) {
             const uint8_t digit=keyboard_editor_digit(s->profile,s->keys[i]);

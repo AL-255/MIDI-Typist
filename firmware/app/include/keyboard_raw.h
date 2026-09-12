@@ -32,6 +32,11 @@ void keyboard_raw_invalidate(keyboard_raw_t *s);
 void keyboard_raw_enable(keyboard_raw_t *s, bool enabled);
 bool keyboard_raw_set(keyboard_raw_t *s, unsigned index, unsigned press, unsigned release);
 bool keyboard_raw_set_all(keyboard_raw_t *s, unsigned press, unsigned release);
+/* MIDI-mode trigger point: level 1..10 selects a raw press threshold between
+ * RAW_DEFAULT_PRESS and RAW_BOTTOM_OUT; per-key release values are kept and
+ * the pair stays valid (press < release). */
+unsigned keyboard_raw_press_level(unsigned level);
+bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press);
 void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
                         uint8_t profile, bool valid);
 #endif

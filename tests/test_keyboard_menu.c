@@ -124,7 +124,8 @@ static void brightness_and_hints(void)
         key(KEY_ID_FN,true);
         memset(leds,99,sizeof(leds));
         keyboard_menu_lights(&menu,&raw,lower,upper,leds,now,true,false,false);
-        rgb(menu.l,leds,25,25,25); rgb(menu.c,leds,0,0,0); rgb(menu.tab,leds,0,0,0);
+        /* Tab is a MIDI-mode hint too now: it opens the raw trigger page. */
+        rgb(menu.l,leds,25,25,25); rgb(menu.tab,leds,25,25,25); rgb(menu.c,leds,0,0,0);
         samples[menu.l]=500; now=UINT32_MAX-100; frame();
         assert(menu.brightness==0 && menu.pending==MENU_LIGHT_UP);
         now=149; frame(); assert(menu.brightness==0);

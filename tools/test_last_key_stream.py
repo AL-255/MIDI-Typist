@@ -60,7 +60,9 @@ class LastKeyTests(unittest.TestCase):
         self.assertEqual(velocity_window([3500,3400,3300,3200,1400]),[3500,3400,3300,3200])
         self.assertEqual(velocity_window([3500]+[3400]*9),[3500]+[3400]*9)
         self.assertEqual(velocity_window([3500]+[3400]*20),[3500]+[3400]*9)
-        self.assertEqual(velocity_window([3500,1400]),[3500])  # bottom-out on the first follow-up
+        # A bottom-out on the first follow-up keeps that sample: the trigger
+        # sits at the floor, and one interval still measures the press.
+        self.assertEqual(velocity_window([3500,1400]),[3500,1400])
         self.assertIsNone(velocity_window([3500]))
 
     def test_velocity_pop_filter(self):

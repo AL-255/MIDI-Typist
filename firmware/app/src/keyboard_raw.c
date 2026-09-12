@@ -57,6 +57,30 @@ bool keyboard_raw_set(keyboard_raw_t *s, unsigned index, unsigned press, unsigne
     return true;
 }
 
+unsigned keyboard_raw_press_level(unsigned level)
+{
+    /* MIDI-mode trigger range: level 1 is the default (shallowest) actuation
+     * point and level 10 reaches the bottom-out floor, so a deep trigger can
+     * never sit below the velocity window's closing threshold. */
+    if (level < 1u) level = 1u;
+    if (level > 10u) level = 10u;
+    return RAW_DEFAULT_PRESS -
+        ((level - 1u) * (RAW_DEFAULT_PRESS - RAW_BOTTOM_OUT)) / 9u;
+}
+
+bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press)
+{
+    if (!s->count || !press || press >= 4096u) return false;
+    for (unsigned i = 0; i < s->count; ++i) {
+        const unsigned release = s->release[i];
+        if (release < 2u) return false;
+        s->press[i] = (uint16_t)(press < release ? press : release - 1u);
+    }
+    ++s->revision;
+    keyboard_raw_invalidate(s); /* one atomic main-loop configuration change */
+    return true;
+}
+
 bool keyboard_raw_set_all(keyboard_raw_t *s, unsigned press, unsigned release)
 {
     if (!s->count || !press || press >= release || release >= 4096u) return false;
@@ -124,7 +148,16 @@ static void velocity_frame(keyboard_velocity_t *v, uint16_t raw, bool trigger, b
         v->pending = 1u;
     }
     else if (v->pending) {
-        if (raw < RAW_BOTTOM_OUT) velocity_finish(v, sample_hz);
+        if (raw < RAW_BOTTOM_OUT) {
+            /* The closing sample is normally excluded. Keep it when the
+             * window holds nothing else: an actuation point at or near the
+             * bottom-out floor triggers so late that the first follow-up
+             * readback is already below the threshold, and dropping it would
+             * leave the press without any velocity at all. One interval is
+             * still a valid, fast measurement. */
+            if (v->count < 2u) v->window[v->count++] = raw;
+            velocity_finish(v, sample_hz);
+        }
         else {
             v->window[v->count++] = raw;
             if (v->count >= RAW_VELOCITY_WINDOW) velocity_finish(v, sample_hz);

@@ -114,6 +114,19 @@ Fn+E selects the root; Fn+S selects the scale. Both are table-driven modal
 menus, with preview while a choice is held and commit on its release.
 Only enabled, in-scale, in-range notes receive normal note backlighting.
 
+### MIDI trigger point
+
+MIDI mode uses the same per-key Schmitt pair as keyboard mode, but the press
+threshold is normally left at its 3500 default because the calibrated
+trigger-point editor is keyboard-only. Fn+Tab in MIDI mode therefore opens a
+raw page: ten steps select one press threshold for every key, from the 3500
+default down to the bottom-out floor of the velocity window
+(`keyboard_raw_press_level`). Release thresholds are preserved per key and the
+stored pair is clamped to keep `press < release`. Deeper points stay safe for
+velocity: when the trigger sits at or near the floor, the window keeps the
+single follow-up readback that closes it, so a one-interval fit is still
+recorded instead of no velocity at all.
+
 ### Transmitted-velocity start
 
 A completed velocity estimate is normalized to 0..1 and transmitted as MIDI

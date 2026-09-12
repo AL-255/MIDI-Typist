@@ -32,20 +32,22 @@ def press_velocity(samples):
 
 
 def velocity_window(points):
-    """First ten points of a capture, cut before the bottom-out sample.
+    """First ten points of a capture, cut at the bottom-out sample.
 
     Returns the closed window once it is complete (ten points, or a
     bottom-out sample already present in ``points``); None while the window
-    is still collecting. The triggering point is window sample zero.
+    is still collecting. The triggering point is window sample zero. The
+    closing sample is excluded unless it is the only follow-up readback,
+    matching the MCU: a trigger at the bottom-out floor still yields a fit.
     """
     window = list(points[:VELOCITY_WINDOW])
+    closed = len(window) >= VELOCITY_WINDOW
     for i, value in enumerate(window):
         if i and value < BOTTOM_OUT:
-            del window[i:]
+            window = window[:i if i > 1 else 2]  # one interval is still a measurement
+            closed = True
             break
-    if len(window) < VELOCITY_WINDOW and len(points) <= len(window):
-        return None  # fewer than ten points and no bottom-out yet: still open
-    return window
+    return window if closed else None  # fewer than ten points and no bottom-out: open
 
 
 class StreamError(Exception):

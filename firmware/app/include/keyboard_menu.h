@@ -19,6 +19,7 @@ typedef struct {
     uint8_t music_page, choice_sensor, selection;
     bool choice_ready;
     bool velocity_page;
+    bool press_page;
     bool brightness_session;
     bool reset_confirmation, confirmation_ready;
     keyboard_text_t text;
@@ -34,7 +35,8 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
                           uint8_t *frame, uint32_t now, bool midi, bool calibration,
                           bool janko);
 uint8_t keyboard_menu_brightness(const keyboard_menu_t *s);
-/* True while the Jankó layout is active, for hint colouring. */
+/* MIDI-mode trigger point: the raw press threshold currently in effect is
+ * echoed back so the page opens on the nearest selection. */
 uint8_t keyboard_menu_control(uint8_t profile, uint8_t key);
 void keyboard_menu_cancel(keyboard_menu_t *s);
 bool keyboard_menu_thresholds(keyboard_raw_t *raw, const uint16_t *lower,
