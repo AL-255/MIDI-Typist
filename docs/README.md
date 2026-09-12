@@ -3,7 +3,7 @@
 Start with the illustrated [user manual](../USER_MANUAL.md) for everyday operation,
 the [project README](../README.md) for a project overview, and the
 [build guide](BUILDING.md) for a clean checkout. The current complete preset is
-`huntsman` (alias `keyboard-fn-menu`), emitting HKG6 telemetry.
+`huntsman` (alias `keyboard-fn-menu`), emitting GUI telemetry.
 
 ## Choose a reading path
 
@@ -29,7 +29,7 @@ Shared application contracts are documented separately from those wire formats.
 - [MIDI design](MIDI_DESIGN.md) and [USB/GUI protocol](MIDI_PROTOCOL.md).
 - [Root/scale selection](MIDI_SCALES.md): portable interval tables, selectors,
   shared note/LED filtering, modal safety and RAM-only state.
-- [Parallel calibration](CALIBRATION.md): operation, state machine, HKG6 fields
+- [Parallel calibration](CALIBRATION.md): operation, state machine, telemetry fields
   and validation limits.
 - [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, record layout,
   validation, recovery limits and serial-number protection.

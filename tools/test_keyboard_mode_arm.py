@@ -311,7 +311,7 @@ def velocity_tests(args):
     dev.service(400)
     snapshot(dev,'stream gui')
     s = snapshot(dev,'cfg enable 301 0')
-    assert s.version == 6 and len(s.velocity) == 65 and not s.flags & 1
+    assert len(s.velocity) == 65 and not s.flags & 1
     assert s.press==(3500,)*65 and s.release==(3600,)*65
     assert snapshot(dev,'cfg all 300 3600 3700').result==1
     one_raw_frame(dev,[3500]*65)  # trigger: every window starts at [3500]
@@ -490,10 +490,42 @@ def velocity_start_tests(args):
         dev.service(20); dev.midi_packets.clear()
         return velocity
 
+    # The build identity is a console reply, not a telemetry field: text and
+    # telemetry cannot share the CDC endpoint, so the stream stops first.
+    dev.command('stream off'); dev.service(20)
+    assert b'build=v0.1.0-RZ03-0499' in dev.command('version')
+    reply = dev.command('menu status')
     snapshot(dev,'stream gui')
+    assert b'build=v0.1.0-RZ03-0499' in reply
+    # Still in keyboard mode: the host sets the start anyway, because the GUI
+    # cannot toggle MIDI mode (Fn+Enter does) and a discarded write must not
+    # acknowledge success.
+    assert snapshot(dev).velocity_start == 1
+    dev.command('stream off'); dev.service(20)
+    dev.command('cfg velocity 940 4')
+    snapshot(dev,'stream gui')
+    assert snapshot(dev).velocity_start == 4
+    dev.command('stream off'); dev.service(20)
+    dev.command('cfg velocity 941 1')
+    snapshot(dev,'stream gui')
+    assert snapshot(dev).velocity_start == 1
     keys(Fn=2400,Ent=2400); keys(Fn=3900,Ent=3900); dev.service(200)
     assert b'velocity_start=1' in status()   # default: the measured velocity
     assert strike('Q') == 23
+    # Telemetry reports the setting and the host command writes it with readback.
+    assert snapshot(dev).velocity_start == 1
+    dev.command('stream off'); dev.service(20)
+    reply = dev.command('cfg velocity 950 5')
+    snapshot(dev,'stream gui')
+    assert snapshot(dev).velocity_start == 5, reply
+    dev.command('stream off'); dev.service(20)
+    assert b'ERR' not in dev.command('cfg velocity 951 0')      # rejected: out of range
+    snapshot(dev,'stream gui')
+    assert snapshot(dev).velocity_start == 5
+    dev.command('stream off'); dev.service(20)
+    dev.command('cfg velocity 952 1')
+    snapshot(dev,'stream gui')
+    assert snapshot(dev).velocity_start == 1
     # Fn+V opens the modal ten-step page: 1 is 0%, 0 is 100%.
     page('V')
     assert strike('Q') == 0                 # the page consumes playing keys
@@ -550,15 +582,15 @@ def midi_trigger_tests(args):
     # Fn+Tab opens the raw trigger page; digits select the press threshold.
     keys(Fn=2400,Tab=2400); keys(Fn=3900,Tab=3900); dev.service(200)
     for level in (2,5,10,1):
-        expected = 3500 - (level-1)*2000//9  # default point down to the floor
+        expected = 1500 + (level-1)*2099//9  # floor (level 1) up to release-1 (level 0)
         label = '0' if level == 10 else str(level)
         keys(**{label:500}); keys(**{label:3900}); dev.service(200)
         press = press_threshold()
         assert set(press) == {expected}, (level, expected, sorted(set(press))[:3])
         snapshot(dev)  # release thresholds are untouched below
         assert snapshot(dev).release == (3600,)*61
-    # Still inside the page: select the deepest point, then leave with Escape.
-    keys(**{'0':500}); keys(**{'0':3900}); dev.service(200)
+    # Still inside the page: select the deepest point (level 1), then leave.
+    keys(**{'1':500}); keys(**{'1':3900}); dev.service(200)
     assert set(press_threshold()) == {1500}
     keys(Esc=500); keys(Esc=3900); dev.service(200)
     release_all()
@@ -575,10 +607,10 @@ def midi_trigger_tests(args):
     # A deep point needs firm presses for the chord too: 2400 is no longer
     # below the 1500 threshold.
     keys(Fn=500,Tab=500); keys(Fn=3900,Tab=3900); dev.service(200)
-    keys(**{'1':500}); keys(**{'1':3900}); dev.service(200)  # back to the default point
+    keys(**{'0':500}); keys(**{'0':3900}); dev.service(200)  # shallowest: release - 1
     keys(Esc=500); keys(Esc=3900); dev.service(200)
-    assert set(press_threshold()) == {3500}
-    print('PASS ARM MIDI trigger: Fn+Tab page levels 3500..1500, release preserved, deep point still fires with velocity')
+    assert set(press_threshold()) == {3599}
+    print('PASS ARM MIDI trigger: Fn+Tab page level 1 = bottom-out 1500 .. 0 = 3599, release preserved, deep point still fires with velocity')
 
 
 def main():

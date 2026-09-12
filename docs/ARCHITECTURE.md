@@ -125,7 +125,7 @@ See [scheduling and FreeRTOS](SCHEDULING.md).
 ## Compatibility boundary
 
 The Huntsman port retains the 16-byte NKRO report, MIDI channel/packet encoding,
-HKG6 telemetry, HKS1/HKL1/HBD1 streams, CDC commands, updater entry, calibration
+GUI telemetry, HKS1/HKL1/HBD1 streams, CDC commands, updater entry, calibration
 record format and flash limits. Its existing host tools remain board-specific:
 the GUI's physical drawing is ANSI Huntsman, not an inferred layout for an
 unknown keyboard. A port's diagnostic/telemetry framing is part of its host

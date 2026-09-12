@@ -1,6 +1,6 @@
 # Per-key velocity and apply-all thresholds
 
-The `huntsman` build provides HKG6, normalized float velocity, per-key
+The `huntsman` build provides GUI telemetry, normalized float velocity, per-key
 bottom-out velocity windows and the gated interval pop filter. See
 [MIDI design](MIDI_DESIGN.md) and [current validation](CALIBRATION.md#validation-status).
 
@@ -115,15 +115,15 @@ meaningful velocity.
 
 ## Telemetry
 
-`stream gui` sends **HKG6**, version 6, 1152 bytes, at most once per 33 ms.
+`stream gui` sends 1152-byte GUI telemetry, at most once per 33 ms.
 Bytes 7..446 contain raw samples, thresholds and keyboard state; see
-[the full layout](MIDI_PROTOCOL.md#hkg6-telemetry).
+[the full layout](MIDI_PROTOCOL.md#gui-telemetry).
 
 | Offset | Field |
 | --- | --- |
-| 0 | `HKG6` |
+| 0 | `HKG` and a NUL byte (constant magic) |
 | 4 | uint16 length = 1152 |
-| 6 | Version = 6 |
+| 6 | Fn+V transmitted-velocity start, 1…10 |
 | 447 | 65 float32 normalized velocities |
 | 707 | 65 uint32 completed-fit counters |
 | 967 | 65 state bytes: release-armed=1, result-valid=2, pending velocity=4, calibration hold=8 |
@@ -155,7 +155,7 @@ Coverage: 65 simultaneous different slopes; equality/release gating; bottom-out
 window cuts; newest-press window ownership under rapid retriggers; 16,640
 randomized per-key observations checked against a full-history oracle;
 invalid/config cancellation; velocity with HID disabled; actual ARM DMA ->
-estimates -> HKG6 readback and MIDI Note On velocity; atomic all-key command and
+estimates -> telemetry readback and MIDI Note On velocity; atomic all-key command and
 invalid-request rejection; FS/HS larger-frame transport and pending-buffer
 immutability; legacy decoder compatibility; GUI button/ACK/readback tests via
 PTY and a private virtual display; USB/updater/lighting/stream regressions.

@@ -76,13 +76,15 @@ taps, arrow reports and green LED channel output using modeled ASIC input.
 
 In MIDI mode Fn+Tab opens a raw trigger page instead of the calibrated editor:
 the number row is the same ten-step bar, but each step selects the **raw press
-threshold for every key**. Level 1 keeps the 3500 default and level 10 reaches
-the bottom-out floor of the velocity window, so the trigger point can be moved
-deeper for MIDI playing without starving the velocity fit. Per-key release
-thresholds are never touched, and the pair stays valid (`press < release`).
+threshold for every key**. `1` is the deepest point, the bottom-out floor of the
+velocity window (1500), and `0` is the shallowest, one count below the 3600
+release threshold (3599); the steps between are spread across that range, so
+the trigger point can be moved deeper for MIDI playing without starving the
+velocity fit. Per-key release thresholds are never touched, and the pair stays
+valid (`press < release`).
 The selected step lights green with the steps below it lit; Escape leaves the
 page. Because the page's own threshold decides what counts as "pressed", a deep
-selection needs firm digit, chord and Escape presses. `menu status` and HKG6
+selection needs firm digit, chord and Escape presses. `menu status` and GUI
 telemetry report the resulting thresholds.
 
 ## Transmitted-velocity start
@@ -126,7 +128,7 @@ in the Fn menu while muted. Preview/toggle uses the ordinary MIDI cleanup path,
 including pending strikes and shared-pitch owners, so held notes cannot stick.
 No mapping or threshold is changed. Both groups start enabled; the RAM-only
 mute survives mode switches and clears on application restart or confirmed RESET.
-It is not stored in host JSON. HKG6 continues reporting assigned mappings;
+It is not stored in host JSON. Telemetry continues reporting assigned mappings;
 `menu status` exposes `lower_muted=0/1` for the current setting.
 
 ## MIDI root and scale selection
@@ -290,8 +292,8 @@ Reset deletion is not undoable on-device; recalibrate or use a private backup.
 Close the GUI/other CDC tools, select `stream off`, then issue `menu status`
 to read Fn state, editor mode, current/saved actuation level and brightness
 index/PWM, `reset_confirm` and confirmation `ready` flags. Select `stream gui`
-to resume GUI telemetry. HKG6 framing is
-defined by the Huntsman port; use a matching HKG6-capable GUI.
+to resume GUI telemetry. GUI telemetry framing is
+defined by the Huntsman port; use the matching GUI from this checkout.
 
 ```sh
 cmake --preset host-tests

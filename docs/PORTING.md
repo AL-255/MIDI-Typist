@@ -155,7 +155,7 @@ The allowed HID upper usage is 0x73…0xDF: Huntsman reports 16 bytes, and the
 default wider report is 30 bytes. No Report ID byte is included in
 `keyboard_report_t`. A hardware FPU is not required by the API, but
 software-float velocity calculation needs a measured execution budget.
-Transport serialization owns byte order; HKG6 specifically requires
+Transport serialization owns byte order; GUI telemetry specifically requires
 IEEE-754 32-bit float encoding rather than arbitrary native struct copying.
 
 ## 2. Describe keys independently of scan order
@@ -406,7 +406,7 @@ Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,
 not necessarily accepted. Inspect the ACK ID/result and serialize requests.
 Unparseable IDs leave the previous ACK unchanged. The parser itself neither
-emits text replies nor serializes HKG6; provide settings readback in the port.
+emits text replies nor serializes GUI telemetry; provide settings readback in the port.
 
 ## 6. Prove the port
 

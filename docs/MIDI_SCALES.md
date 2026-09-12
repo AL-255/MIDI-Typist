@@ -95,7 +95,7 @@ they require a neutral retry. No GUI frame rate or delay loop controls the UI.
 
 Root, scale and lower-row mute survive performance-mode switches and fault
 cleanup, but init/RESET restores C/chromatic and both groups. They do not
-write flash and are not serialized in host JSON or HKG6. HKG6 continues to
+write flash and are not serialized in host JSON or telemetry. Telemetry continues to
 report assigned mappings and raw sensor state, not effective filter state.
 After selecting `stream off`, `menu status` includes `root`, `scale`,
 `key`, `scale_name` and `music_page` (0 idle, 9 root, 10 scale), alongside

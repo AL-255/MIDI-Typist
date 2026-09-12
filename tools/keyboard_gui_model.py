@@ -8,8 +8,14 @@ from scan_bars import sensor_labels
 SIZE = 1152
 MIDI_CONTROLS = {'Fn':'mode', 'RAl':'oct−', 'RCt':'oct+',
                  'LCt':'bend−', 'LAl':'bend+', 'LGu':'mod', 'Spc':'sustain'}
-MAGICS = (b'HKG1',b'HKG2',b'HKG3',b'HKG4',b'HKG5',b'HKG6')
-FLAG_JANKO = 64  # HKG4+ telemetry: the built-in Jankó note layout is active
+# Constant frame magic: the telemetry layout carries no version number. The
+# build identity (version and target) is queried over the text console.
+MAGIC = b'HKG\x00'
+# Build identity answered by the `version` command: project version plus the
+# board model the firmware targets, e.g. v0.1.0-RZ03-0499.
+BUILD_RE = re.compile(r'build=(v\d+\.\d+\.\d+-[A-Za-z0-9_.-]+)\s*[\r\n]')
+KNOWN_TARGETS = {'RZ03-0499':'Huntsman V3 Pro Mini'}
+FLAG_JANKO = 64  # the built-in Jankó note layout is active
 # Built-in Jankó layout (Fn+J in MIDI mode) by physical key label, mirroring
 # firmware/app/src/keyboard_midi.c. Display-only; the device owns the mapping.
 JANKO_NOTES = {
@@ -44,7 +50,7 @@ class Snapshot:
     velocity: tuple = ()
     captures: tuple = ()
     velocity_state: tuple = ()
-    version: int = 1
+    velocity_start: int = 1
     performance_mode: int = 0
     octave: int = 0
     midi_mapping: tuple = ()
@@ -65,17 +71,27 @@ class Snapshot:
     calibration_error: int = 0
 
 
+def parse_build(text):
+    """Split a complete `version` reply line into (identity, version, target)."""
+    if isinstance(text,bytes): text = text.decode('ascii','replace')
+    match = BUILD_RE.search(text)
+    if not match: return None
+    identity = match.group(1)
+    version,target = identity[1:].split('-',1)
+    return identity,version,target
+
+
 def decode(data):
-    if len(data) not in (480,1088,SIZE) or data[:4] not in MAGICS:
+    if len(data) != SIZE or data[:4] != MAGIC:
         raise ValueError('bad GUI frame size/magic')
-    size, version, profile, count, flags, result, mode = struct.unpack_from('<H6B',data,4)
-    if (bytes(data[:4]),version,size) not in ((b'HKG1',1,480),(b'HKG2',2,1088),(b'HKG3',3,1088),(b'HKG4',4,SIZE),(b'HKG5',5,SIZE),(b'HKG6',6,SIZE)) or len(data) != size or mode > 2 or flags & ~127 or result > 2:
+    size, velocity_start, profile, count, flags, result, mode = struct.unpack_from('<H6B',data,4)
+    if size != SIZE or mode > 2 or flags & ~127 or result > 2 or not 1 <= velocity_start <= 10:
         raise ValueError('unsupported GUI header')
     if (profile,count) not in ((0,0),(1,61),(2,62),(3,65)):
         raise ValueError('invalid GUI layout')
     if sum(struct.unpack_from(f'<{(size-4)//2}H',data)) & 0xffffffff != struct.unpack_from('<I',data,size-4)[0]:
         raise ValueError('GUI checksum mismatch')
-    padding = data[447:476] if version == 1 else data[1032:1084] if version < 4 else data[1101:1104]+(data[1112:1148] if version == 4 else data[1134:1136]+data[1144:1148])
+    padding = data[1101:1104]+data[1134:1136]+data[1144:1148]
     if any(padding) or data[430] & 0xfe:
         raise ValueError('invalid GUI padding')
     sequence,revision,ack,scan_errors,light_errors = struct.unpack_from('<5I',data,12)
@@ -88,46 +104,38 @@ def decode(data):
         raise ValueError('valid flag contradicts raw values')
     bits = int.from_bytes(data[422:431],'little')
     if bits >> count: raise ValueError('invalid pressed bitmap')
-    velocity = captures = states = ()
-    if version >= 2:
-        velocity = struct.unpack_from('<65f' if version >= 3 else '<65i',data,447)
-        captures = struct.unpack_from('<65I',data,707)
-        states = tuple(data[967:1032])
-        if any(velocity[count:]) or any(captures[count:]) or any(states[count:]):
-            raise ValueError('invalid velocity padding')
-        invalid_values = any(not math.isfinite(v) or not 0.0 <= v <= 1.0 for v in velocity) if version >= 3 else any(abs(v) > 9828000 for v in velocity)
-        if any(s & ~(15 if version >= 6 else 7) for s in states) or invalid_values:
-            raise ValueError('invalid velocity data')
-        velocity,captures,states = velocity[:count],captures[:count],states[:count]
-    performance_mode = octave = errors = changes = 0
-    mapping = (); cleanup = False
-    if version >= 4:
-        performance_mode,octave,channel,cleanup = struct.unpack_from('<BbBB',data,1032)
-        mapping = tuple(data[1036:1036+count])
-        if performance_mode > 1 or not -10 <= octave <= 10 or channel != 1 or cleanup > 1 or any(data[1036+count:1101]):
-            raise ValueError('invalid MIDI state')
-        if any(n > 127 and n != 255 for n in mapping): raise ValueError('invalid MIDI mapping')
-        errors,changes = struct.unpack_from('<II',data,1104)
-    cal = {}
-    if version >= 5:
-        state,completed,selected,cflags,hold,idle = struct.unpack_from('<4BHH',data,1112)
-        done = int.from_bytes(data[1120:1129],'little')
-        reason = data[1129]
-        upper,lower = struct.unpack_from('<HH',data,1130)
-        generation,error = struct.unpack_from('<II',data,1136)
-        if (state > 8 or completed > count or selected != 255 and selected >= count or
-            cflags & ~7 or bool(cflags & 1) != (1 <= state <= 5) or hold > 1000 or idle > 5000 or
-            done >> count or done.bit_count() != completed or reason > 4 or upper > 4096 or lower > 4096):
-            raise ValueError('invalid calibration state')
-        if version >= 6 and any(v & 8 and (state != 3 or done & (1<<i)) for i,v in enumerate(states)):
-            raise ValueError('invalid calibration hold bitmap')
-        cal = dict(calibration_state=state,calibration_completed=completed,calibration_selected=selected,
-                   calibration_flags=cflags,calibration_hold=hold,calibration_idle=idle,
-                   calibration_done=tuple(bool(done & (1<<i)) for i in range(count)),calibration_reason=reason,
-                   calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error)
+    velocity = struct.unpack_from('<65f',data,447)
+    captures = struct.unpack_from('<65I',data,707)
+    states = tuple(data[967:1032])
+    if any(velocity[count:]) or any(captures[count:]) or any(states[count:]):
+        raise ValueError('invalid velocity padding')
+    if any(s & ~15 for s in states) or any(not math.isfinite(v) or not 0.0 <= v <= 1.0 for v in velocity):
+        raise ValueError('invalid velocity data')
+    velocity,captures,states = velocity[:count],captures[:count],states[:count]
+    performance_mode,octave,channel,cleanup = struct.unpack_from('<BbBB',data,1032)
+    mapping = tuple(data[1036:1036+count])
+    if performance_mode > 1 or not -10 <= octave <= 10 or channel != 1 or cleanup > 1 or any(data[1036+count:1101]):
+        raise ValueError('invalid MIDI state')
+    if any(n > 127 and n != 255 for n in mapping): raise ValueError('invalid MIDI mapping')
+    errors,changes = struct.unpack_from('<II',data,1104)
+    state,completed,selected,cflags,hold,idle = struct.unpack_from('<4BHH',data,1112)
+    done = int.from_bytes(data[1120:1129],'little')
+    reason = data[1129]
+    upper,lower = struct.unpack_from('<HH',data,1130)
+    generation,error = struct.unpack_from('<II',data,1136)
+    if (state > 8 or completed > count or selected != 255 and selected >= count or
+        cflags & ~7 or bool(cflags & 1) != (1 <= state <= 5) or hold > 1000 or idle > 5000 or
+        done >> count or done.bit_count() != completed or reason > 4 or upper > 4096 or lower > 4096):
+        raise ValueError('invalid calibration state')
+    if any(v & 8 and (state != 3 or done & (1<<i)) for i,v in enumerate(states)):
+        raise ValueError('invalid calibration hold bitmap')
+    cal = dict(calibration_state=state,calibration_completed=completed,calibration_selected=selected,
+               calibration_flags=cflags,calibration_hold=hold,calibration_idle=idle,
+               calibration_done=tuple(bool(done & (1<<i)) for i in range(count)),calibration_reason=reason,
+               calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error)
     return Snapshot(profile,count,flags,result,sequence,revision,ack,scan_errors,light_errors,
                     raw,press,release,tuple(bool(bits & (1<<i)) for i in range(count)),bytes(data[431:447]),mode,
-                    velocity,captures,states,version,performance_mode,octave,mapping,bool(cleanup),errors,changes,**cal)
+                    velocity,captures,states,velocity_start,performance_mode,octave,mapping,bool(cleanup),errors,changes,**cal)
 
 
 class Decoder:
@@ -139,16 +147,15 @@ class Decoder:
     def feed(self,data):
         self.buffer.extend(data)
         if not self.started:
-            starts = [i for magic in MAGICS if (i := self.buffer.find(magic)) >= 0]
-            start = min(starts) if starts else -1
+            start = self.buffer.find(MAGIC)
             skip = start if start >= 0 else max(0,len(self.buffer)-3)
             self.skipped += skip
             del self.buffer[:skip]
             if self.skipped > 65536: raise ValueError('GUI stream unavailable; install keyboard-gui firmware')
         while len(self.buffer) >= 6:
-            if self.buffer[:4] not in MAGICS: raise ValueError('bad GUI frame magic')
+            if self.buffer[:4] != MAGIC: raise ValueError('bad GUI frame magic')
             size = struct.unpack_from('<H',self.buffer,4)[0]
-            if size not in (480,1088,SIZE): raise ValueError('bad GUI frame size')
+            if size != SIZE: raise ValueError('bad GUI frame size')
             if len(self.buffer) < size: break
             result = decode(self.buffer[:size])
             del self.buffer[:size]
@@ -197,9 +204,9 @@ def profile_from_snapshot(snapshot):
     if snapshot.profile != 1 or snapshot.count != 61:
         raise ValueError('This GUI supports the connected ANSI 61-key board only.')
     labels = sensor_labels()[61]
-    return {'version':2 if snapshot.version >= 4 else 1,'layout':'ansi','keys':[
+    return {'version':2,'layout':'ansi','keys':[
         {'sensor':i,'label':labels[i],'press':snapshot.press[i],'release':snapshot.release[i],
-         **({'midi':snapshot.midi_mapping[i]} if snapshot.version >= 4 else {})}
+         'midi':snapshot.midi_mapping[i]}
         for i in range(61)]}
 
 

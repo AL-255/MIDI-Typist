@@ -1,6 +1,6 @@
 """Single-owner POSIX CDC worker; acknowledged writes and stream multiplexing.
 
-The device serves exactly one CDC stream at a time: latest-only HKG GUI
+The device serves exactly one CDC stream at a time: latest-only GUI
 telemetry, or the full-rate (8 ksps) per-key HKL1 stream. The worker keeps the
 acknowledged GUI configuration channel and switches decoders when the GUI
 requests the keystroke-capture stream, delivering every raw sample through a
@@ -17,7 +17,7 @@ import termios
 import threading
 import time
 import tty
-from keyboard_gui_model import Decoder
+from keyboard_gui_model import Decoder, parse_build
 from last_key_stream import KeyDecoder
 
 USB_VENDOR_ID = 0x1532
@@ -70,6 +70,8 @@ class Connection(threading.Thread):
         self.events = queue.Queue(maxsize=128)
         self.lock = threading.Lock()
         self.latest = None
+        self.build = None        # build identity from `version`, e.g. v0.1.0-RZ03-0499
+        self.build_target = None # its board target, e.g. RZ03-0499
         self.connected = False
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = queue.Queue()
@@ -122,6 +124,29 @@ class Connection(threading.Thread):
             fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             original = termios.tcgetattr(fd)
             tty.setraw(fd,termios.TCSANOW)
+            # The build identity is a text reply, so it is read before the
+            # binary stream takes over the port: afterwards telemetry frames
+            # own the CDC endpoint and text replies are unavailable. Any stream
+            # left running by a previous owner is stopped first, otherwise the
+            # reply is arbitrated away.
+            tx = bytearray(b'\nstream off\nversion\n')
+            text = b''
+            deadline = time.monotonic()+1.5
+            while self.build is None and time.monotonic() < deadline and not self.stop_event.is_set():
+                readable,writable,_ = select.select([fd],[fd] if tx else [],[],.05)
+                if writable:
+                    try: sent = os.write(fd,tx)
+                    except BlockingIOError: sent = 0
+                    del tx[:sent]
+                if readable:
+                    try: data = os.read(fd,4096)
+                    except BlockingIOError: continue
+                    if not data: break
+                    text = (text+data)[-256:]
+                    found = parse_build(text)
+                    if found:
+                        self.build,self.build_target = found[0],found[2]
+                        self.notify(f'Device build {found[0]} (version {found[1]}, target {found[2]})')
             tx = bytearray(b'\nstream gui\n')
             pending = ('get',(),self.next_id)
             tx.extend(f'cfg get {self.next_id}\n'.encode())
@@ -192,8 +217,12 @@ class Connection(threading.Thread):
                                     raise ValueError('Enable readback differs from requested state')
                                 if action == 'midi':
                                     index,note = args
-                                    if snapshot.version < 4 or index >= snapshot.count or snapshot.midi_mapping[index] != note:
+                                    if index >= snapshot.count or snapshot.midi_mapping[index] != note:
                                         raise ValueError('MIDI mapping readback differs from requested values')
+                                if action == 'velocity':
+                                    level, = args
+                                    if not 1 <= level <= 10 or snapshot.velocity_start != level:
+                                        raise ValueError('Velocity start readback differs from requested value')
                                 self.connected = True
                                 self.notify(f'Confirmed {action} {args}' if action != 'get' else 'Connected: device telemetry acknowledged')
                                 pending = None

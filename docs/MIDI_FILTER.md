@@ -87,7 +87,7 @@ The host helper is fixed at 8000 Hz; do not use its velocity result as an oracle
 for a differently timed board without adapting it. The configuration GUI
 reproduces the same window math for its held keystroke captures; ordinary
 telemetry still displays the float received from firmware without host-side
-filtering. Telemetry uses HKG6.
+filtering. Telemetry is the 1152-byte GUI stream.
 
 ## Octave LEDs
 

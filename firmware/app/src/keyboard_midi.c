@@ -130,10 +130,13 @@ static uint8_t note_mapping(const keyboard_midi_t *s, unsigned sensor)
  * unchanged, level 10 transmits every note at full velocity, and the levels
  * between raise the floor while keeping the top of the curve at 127. The
  * modal editor keeps all keys out of HID/MIDI while it is open, so no voice
- * cleanup or raw rearm is needed here; the value only affects future notes. */
+ * cleanup or raw rearm is needed here; the value only affects future notes.
+ * It is accepted in either mode: it shapes MIDI output only, the host cannot
+ * toggle MIDI mode (Fn+Enter does), and silently discarding the write would
+ * make cfg velocity acknowledge a change that never happened. */
 void keyboard_midi_set_velocity_start(keyboard_midi_t *s, unsigned level)
 {
-    if(!s->mode || level<1u || level>10u) return;
+    if(level<1u || level>10u) return;
     s->velocity_start=(uint8_t)level;
 }
 

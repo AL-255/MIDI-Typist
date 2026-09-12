@@ -7,6 +7,7 @@
 #include "optical_transport.h"
 #include "usb_composite.h"
 #include "scan_stream.h"
+#include "keyboard_build.h"
 #include <string.h>
 #ifdef HUNTSMAN_TRAVEL_LIGHTING
 #include "travel_lighting.h"
@@ -71,7 +72,9 @@ static void gui_snapshot(uint32_t now)
     if (!scan_stream_gui_enabled() || (uint32_t)(now - s_last_gui) < 33u) return;
     s_last_gui = now;
     uint8_t out[SCAN_STREAM_GUI_SIZE] = {0};
-    memcpy(out, "HKG6", 4u); gui16(out + 4, sizeof(out)); out[6] = 6u;
+    memcpy(out, "HKG", 3u); out[3] = 0u; /* constant magic: frames carry no layout number */
+    gui16(out + 4, sizeof(out));
+    out[6] = s_midi.velocity_start; /* Fn+V transmitted-velocity start, 1..10 */
     out[7] = s_raw.profile; out[8] = s_raw.count;
     out[9] = s_raw.enabled | (s_raw.armed << 1u) | (s_raw.valid << 2u) |
              ((s_transport.phase == OPT_FAULT) << 3u) | ((s_lighting.phase == LIGHT_FAULT) << 4u) |
@@ -316,6 +319,8 @@ static bool decimal(const char **text, uint32_t *value)
 
 bool keyboard_live_command(const char *line)
 {
+    /* Build identity: version plus build target, e.g. v0.1.0-RZ03-0499. */
+    if (!strcmp(line, "version")) { debug_write("build=" MT_BUILD_ID "\r\n"); return true; }
 #ifdef HUNTSMAN_KEYBOARD_MODE
     if (!strncmp(line, "dump read ", 10u)) {
         const char *p = line + 10u;
@@ -348,6 +353,7 @@ bool keyboard_live_command(const char *line)
         value(" root=",s_midi.music.root); value(" scale=",s_midi.music.scale);
         value(" music_page=",s_menu.music_page); value(" janko=",s_midi.janko);
         value(" velocity_start=",s_midi.velocity_start);
+        debug_write(" build=" MT_BUILD_ID);
         debug_write(" key="); debug_write(midi_root_names[s_midi.music.root]);
         debug_write(" scale_name="); debug_write(midi_scales[s_midi.music.scale].name);
         debug_write("\r\n");
@@ -362,11 +368,13 @@ bool keyboard_live_command(const char *line)
                     "keys on | keys off | keys status | trace on | trace off\r\n"
                     "keys on requires neutral valid samples; one scan attempt per boot.\r\n");
 #ifdef HUNTSMAN_KEYBOARD_MODE
-        debug_write("stream gui | cfg get ID | cfg set ID SENSOR PRESS RELEASE | cfg all ID PRESS RELEASE | cfg enable ID 0/1\r\n"
-                    "menu status; Fn+Tab trigger editor, 1-0 select, Esc saves; Fn+K/L brightness down/up\r\n"
+        debug_write("version | stream gui | cfg get ID | cfg set ID SENSOR PRESS RELEASE | cfg all ID PRESS RELEASE | cfg enable ID 0/1\r\n"
+                    "menu status; Fn+Tab MIDI trigger point, 1 = bottom-out, 0 = release-1, Esc saves;\r\n"
+                    "Fn+V velocity start, Fn+K/L brightness down/up\r\n"
                     "cfg calibrate ID | cfg calcancel ID; Fn+C calibrates in keyboard mode\r\n"
                     "dump read ID ADDRESS (decimal, aligned 64-byte main-flash read; HBD1 binary response)\r\n"
                     "cfg midi ID SENSOR NOTE (0..127, 255=unmapped); Fn+Enter toggles MIDI; LCtrl/LAlt octave-/+\r\n"
+                    "cfg velocity ID LEVEL (1..10, Fn+V: 0% .. 100% transmitted-velocity start)\r\n"
                     "Standalone raw keyboard auto-arms after neutral scan; settings RAM-only.\r\n");
 #endif
 #ifdef HUNTSMAN_TRAVEL_LIGHTING

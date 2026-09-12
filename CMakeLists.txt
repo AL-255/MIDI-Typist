@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MIDI_Typist LANGUAGES C ASM)
+project(MIDI_Typist VERSION 0.1.0 LANGUAGES C ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

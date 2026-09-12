@@ -240,8 +240,18 @@ static unsigned digit_sensor(unsigned level)
 
 static void velocity_start_mode(void)
 {
-    init(); toggle();
+    init();
+    /* The setting shapes MIDI output only, so the host may apply it while the
+     * keyboard is still in keyboard mode: the GUI cannot toggle MIDI mode. */
+    assert(midi.velocity_start==1 && !midi.mode);
+    keyboard_midi_set_velocity_start(&midi,4);
+    assert(midi.velocity_start==4);
+    keyboard_midi_set_velocity_start(&midi,11);
+    assert(midi.velocity_start==4);
+    keyboard_midi_set_velocity_start(&midi,1);
     assert(midi.velocity_start==1);
+    toggle();
+    assert(midi.mode && midi.velocity_start==1); /* survives the mode switch */
     assert(strike_velocity(0x14)==23); /* level 1 transmits the measured value */
     /* Fn+V opens the ten-step page; 1 is 0%, 0 is 100%. */
     const unsigned fn=fn_sensor(), v=sensor(0x19,0);
@@ -298,14 +308,15 @@ static void midi_trigger_page(void)
     values[fn]=values[tab]=2400; step();
     assert(menu.pending==MENU_TRIGGER && !menu.press_page);
     values[fn]=values[tab]=3900; step();
-    assert(menu.press_page && menu.selection==1 && !raw.armed);
+    /* 3500 sits nearest the top of the new range (level 10). */
+    assert(menu.press_page && menu.selection==10 && !raw.armed);
     for (unsigned i=0;i<65;++i) values[i]=3900;
     step();
     /* Levels walk the press threshold from the default down to the
      * bottom-out floor; release thresholds are untouched. */
-    assert(keyboard_raw_press_level(1)==3500);
-    assert(keyboard_raw_press_level(10)==RAW_BOTTOM_OUT);
-    unsigned previous=3500;
+    assert(keyboard_raw_press_level(1)==RAW_BOTTOM_OUT);
+    assert(keyboard_raw_press_level(10)==RAW_DEFAULT_RELEASE-1u);
+    unsigned previous=RAW_BOTTOM_OUT;
     for (unsigned level=1; level<=10; ++level) {
         const unsigned key=digit_sensor(level);
         values[key]=500; step(); /* a digit must read as pressed at any level */
@@ -315,11 +326,11 @@ static void midi_trigger_page(void)
             assert(raw.release[i]==3600); /* the second threshold never moves */
         }
         for (unsigned i=raw.count;i<65;++i) assert(raw.press[i]==3500); /* unused slots */
-        assert(raw.press[0]<=previous);
+        assert(raw.press[0]>=previous);
         previous=raw.press[0];
         values[key]=3900; step();
     }
-    assert(raw.press[0]==RAW_BOTTOM_OUT);
+    assert(raw.press[0]==RAW_DEFAULT_RELEASE-1u);
     /* The bar lights the selection and Escape leaves the page. */
     uint8_t frame[LIGHTING_FRAME_SIZE];
     memset(frame,0,sizeof(frame));
@@ -336,8 +347,8 @@ static void midi_trigger_page(void)
     assert(!menu.press_page);
     values[esc]=3900; step(); drain(); logged=0;
     /* A deeper trigger point delays the note, and velocity still completes:
-     * level 10 triggers below the floor and keeps the single follow-up. */
-    (void)keyboard_raw_set_press_all(&raw,keyboard_raw_press_level(10));
+     * level 1 triggers at the floor and keeps the single follow-up. */
+    (void)keyboard_raw_set_press_all(&raw,keyboard_raw_press_level(1));
     for (unsigned i=0;i<65;++i) values[i]=3900;
     step(); drain(); logged=0;
     const unsigned q=sensor(0x14,0);
@@ -347,7 +358,7 @@ static void midi_trigger_page(void)
     assert(events(0x90,74)==1);  /* Q = D5, with a one-interval fit */
     assert(midi.errors==0);
     values[q]=3900; step(); drain(); logged=0;
-    (void)keyboard_raw_set_press_all(&raw,3500);
+    (void)keyboard_raw_set_press_all(&raw,RAW_DEFAULT_PRESS);
     puts("PASS MIDI trigger page: Fn+Tab level range, release preserved, bar, Escape, deep-trigger velocity");
 }
 

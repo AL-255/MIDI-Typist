@@ -287,7 +287,7 @@ Selecting a CDC display does not select keyboard/MIDI performance mode.
 - [Fn system menu, trigger editor and brightness](docs/FN_MENU.md)
 - [MIDI state machine, encoding, timing, safety and tradeoffs](docs/MIDI_DESIGN.md)
 - [MIDI mapping and interval pop-filter behavior](docs/MIDI_FILTER.md)
-- [HKG6 telemetry, command acknowledgments and profile format](docs/MIDI_PROTOCOL.md)
+- [GUI telemetry, command acknowledgments and profile format](docs/MIDI_PROTOCOL.md)
 - [Parallel calibration and its physical save/readback record](docs/CALIBRATION.md)
 - [Tail-page storage and serial-number protection](docs/DEVICE_CONFIG_STORAGE.md)
 - [Build and test instructions](docs/BUILDING.md)

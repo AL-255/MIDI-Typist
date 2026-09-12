@@ -10,15 +10,14 @@ import tempfile
 import threading
 import time
 import unittest
-from keyboard_gui_model import SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_gui_model import MAGIC, parse_build, SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
 from keyboard_gui_transport import Connection, find_cdc_device
 
 
-def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, version=4,
+def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
            velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None):
-    size = SIZE if version >= 4 else 1088 if version >= 2 else 480
-    data = bytearray(size)
-    struct.pack_into('<4sH6B5I',data,0,f'HKG{version}'.encode(),size,version,1,61,flags,result,0,sequence,0,ack,0,0)
+    data = bytearray(SIZE)
+    struct.pack_into('<4sH6B5I',data,0,MAGIC,SIZE,velocity_start,1,61,flags,result,0,sequence,0,ack,0,0)
     raw_values = raw if raw is not None else [3900]*61
     press_values = press or [3500]*61
     for offset,values in ((32,raw_values),(162,press_values),(292,release or [3600]*61)):
@@ -27,32 +26,33 @@ def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, versi
     for i,value in enumerate(raw_values):
         if value < press_values[i]: bits |= 1 << i
     data[422:431] = bits.to_bytes(9,'little')
-    if version >= 2:
-        struct.pack_into('<61f' if version >= 3 else '<61i',data,447,*(velocity or [0]*61))
-        struct.pack_into('<61I',data,707,*(captures or [0]*61))
-        data[967:1028] = bytes(states or [1]*61)
-    if version >= 4:
-        struct.pack_into('<BbBB',data,1032,performance_mode,octave,1,0)
-        data[1036:1097] = bytes(mapping or [255]*61)
-    if version >= 5:
-        data[1112]=calibration_state
-        data[1114]=255; data[1115]=4 | int(1 <= calibration_state <= 5)
-    struct.pack_into('<I',data,size-4,sum(struct.unpack_from(f'<{(size-4)//2}H',data)))
+    struct.pack_into('<61f',data,447,*(velocity or [0]*61))
+    struct.pack_into('<61I',data,707,*(captures or [0]*61))
+    data[967:1028] = bytes(states or [1]*61)
+    struct.pack_into('<BbBB',data,1032,performance_mode,octave,1,0)
+    data[1036:1097] = bytes(mapping or [255]*61)
+    data[1112]=calibration_state
+    data[1114]=255; data[1115]=4 | int(1 <= calibration_state <= 5)
+    struct.pack_into('<I',data,SIZE-4,sum(struct.unpack_from(f'<{(SIZE-4)//2}H',data)))
     return bytes(data)
 
 
 class Device(threading.Thread):
-    def __init__(self,fd,reject=False,mismatch=False,silent=False,version=4,key_rate=.000125):
+    def __init__(self,fd,reject=False,mismatch=False,silent=False,key_rate=.000125):
         super().__init__(daemon=True)
         self.fd,self.reject,self.mismatch,self.silent = fd,reject,mismatch,silent
         self.stop_event = threading.Event()
-        self.commands = []
+        self.commands = []   # configuration commands (cfg ...)
+        self.queries = []    # console queries such as `version`
         self.press,self.release = [3500]*61,[3600]*61
         self.mapping = [255]*61
         self.flags,self.ack,self.result,self.sequence = 7,0,0,0
         self.error = None
-        self.version=version; self.calibration_state=0
+        self.calibration_state = 0
+        self.build = 'v0.1.0-RZ03-0499'  # console build identity
         self.raw = None  # optional 61-value override for the next snapshots
+        self.velocity_start = 1
+        self.performance_mode = 0
         self.stream_mode = 'gui'       # 'gui' HKG packets or 'key' HKL1 records
         self.key_mode = None           # (session, threshold, sensor) while in key mode
         self.key_seq = 0; self.key_first = True
@@ -75,6 +75,11 @@ class Device(threading.Thread):
                             streaming = True; self.stream_mode = 'key'
                             self.key_mode = (int(fields[3]),int(fields[2]),int(fields[4]) if len(fields) > 4 else 255)
                             self.key_seq = 0; self.key_first = True
+                        if fields == ['version']:
+                            self.queries.append(fields)
+                            if not self.silent:
+                                os.write(self.fd,b'build='+self.build.encode()+b'\r\n')
+                            continue
                         if not fields or fields[0] != 'cfg': continue
                         self.commands.append(fields)
                         self.ack = int(fields[2]); self.result = 1
@@ -90,6 +95,8 @@ class Device(threading.Thread):
                         elif fields[1] == 'midi':
                             if self.reject: self.result = 2
                             elif not self.mismatch: self.mapping[int(fields[3])] = int(fields[4])
+                        elif fields[1] == 'velocity':
+                            if not self.mismatch: self.velocity_start = int(fields[3])
                         elif fields[1] == 'calibrate': self.calibration_state=3
                         elif fields[1] == 'calcancel': self.calibration_state=7
                 if streaming and not self.silent:
@@ -104,8 +111,9 @@ class Device(threading.Thread):
                         self.key_seq += 1; self.key_first = False; last = time.monotonic()
                     elif self.stream_mode == 'gui' and time.monotonic()-last > .03:
                         os.write(self.fd,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,
-                                               version=self.version,calibration_state=self.calibration_state,raw=self.raw,
-                                               states=[9,9]+[1]*59 if self.version>=6 and self.calibration_state==3 else None))
+                                               calibration_state=self.calibration_state,raw=self.raw,
+                                               velocity_start=self.velocity_start,performance_mode=self.performance_mode,
+                                               states=[9,9]+[1]*59 if self.calibration_state==3 else None))
                         self.sequence += 1; last = time.monotonic()
         except Exception as error: self.error = error
 
@@ -120,9 +128,9 @@ def until(predicate,seconds=3):
 
 class Tests(unittest.TestCase):
     def test_calibration_model(self):
-        s=decode(packet(version=5))
-        self.assertEqual((s.version,s.calibration_state,s.calibration_flags,s.calibration_selected),(5,0,4,255))
-        b=bytearray(packet(version=5))
+        s=decode(packet())
+        self.assertEqual((s.calibration_state,s.calibration_flags,s.calibration_selected),(0,4,255))
+        b=bytearray(packet())
         struct.pack_into('<4BHH',b,1112,3,1,32,5,500,4000)
         b[1120]=1
         struct.pack_into('<HH',b,1130,4000,1000)
@@ -133,12 +141,11 @@ class Tests(unittest.TestCase):
         for offset,value in ((1112,9),(1113,2),(1114,61),(1115,4),(1128,128),(1129,5),(1134,1),(1144,1)):
             bad=bytearray(b); bad[offset]=value
             with self.assertRaises(ValueError): decode(checksum(bad))
-        parallel=bytearray(packet(version=6,calibration_state=3,states=[8,8]+[0]*59))
+        parallel=bytearray(packet(calibration_state=3,states=[8,8]+[0]*59))
         s=decode(parallel); self.assertEqual(s.velocity_state[:3],(8,8,0))
         parallel[1112]=0; parallel[1115]=4
         with self.assertRaisesRegex(ValueError,'hold bitmap'): decode(checksum(parallel))
-        legacy=packet(version=5,calibration_state=3,states=[8]+[0]*60)
-        with self.assertRaisesRegex(ValueError,'velocity data'): decode(legacy)
+        with self.assertRaisesRegex(ValueError,'hold bitmap'): decode(packet(states=[8]+[0]*60))
 
     def test_midi_model(self):
         for n in range(128): self.assertEqual(parse_note(note_name(n)),n)
@@ -305,13 +312,13 @@ class Tests(unittest.TestCase):
             broken = bytearray(data); broken[index] ^= 1
             with self.assertRaises(ValueError): decode(broken)
         with self.assertRaises(ValueError): list(d.feed(b'x'+data))
-        self.assertEqual(decode(packet(version=1)).version,1)
-        self.assertEqual(decode(packet(version=1)).velocity,())
-        s = decode(packet(version=2,velocity=[-123456]*61,captures=[45]*61,states=[7]*61))
-        self.assertEqual(s.velocity,(-123456,)*61)
+        s = decode(packet(captures=[45]*61,states=[7]*61))
         self.assertEqual(s.captures,(45,)*61)
         self.assertEqual(s.velocity_state,(7,)*61)
-        self.assertEqual([s.version for s in Decoder().feed(packet(version=1)+packet(version=2)+packet(version=3)+data)],[1,2,3,4])
+        for level in (1,5,10):
+            self.assertEqual(decode(packet(velocity_start=level)).velocity_start,level)
+        for bad in (0,11,255):
+            with self.assertRaises(ValueError): decode(packet(velocity_start=bad))
         with self.assertRaises(ValueError): decode(packet(states=[8]*61))
         with self.assertRaises(ValueError): decode(packet(velocity=[9828001]*61))
         for value in (0.0,0.25,0.5,1.0):
@@ -398,6 +405,29 @@ class Tests(unittest.TestCase):
                     self.assertEqual(len(device.commands),2)
                     self.assertFalse(connection.connected)
                 finally: self.cleanup(*resources)
+
+    def test_transport_build_identity_and_velocity_start(self):
+        resources = self.transport(); _,_,device,connection = resources
+        try:
+            until(lambda:connection.connected)
+            self.assertEqual(device.queries,[['version']])
+            self.assertEqual((connection.build,connection.build_target),('v0.1.0-RZ03-0499','RZ03-0499'))
+            self.assertEqual(parse_build(b'\nbuild=v0.1.0-RZ03-0499\r\n'),('v0.1.0-RZ03-0499','0.1.0','RZ03-0499'))
+            self.assertIsNone(parse_build(b'build=v0.1.0-RZ03-'))  # partial read stays unresolved
+            self.assertEqual(connection.snapshot()[1].velocity_start,1)
+            connection.submit('velocity',7)
+            until(lambda:device.velocity_start == 7)
+            until(lambda:connection.snapshot()[1].velocity_start == 7,3)
+            self.assertEqual(connection.snapshot()[1].velocity_start,7)
+            connection.submit('velocity',10); until(lambda:device.velocity_start == 10)
+        finally: self.cleanup(*resources)
+        resources = self.transport(mismatch=True); _,_,device,connection = resources
+        try:
+            until(lambda:connection.connected)
+            connection.submit('velocity',4)
+            until(lambda:not connection.is_alive())
+            self.assertEqual(device.velocity_start,1)  # device never applied it
+        finally: self.cleanup(*resources)
 
     def test_transport_stale_does_not_retry(self):
         resources = self.transport(silent=True); _,_,device,connection = resources

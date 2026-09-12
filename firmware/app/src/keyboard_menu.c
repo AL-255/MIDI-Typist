@@ -135,9 +135,10 @@ static int music_choice(const keyboard_menu_t *s, unsigned sensor)
 
 /* MIDI-mode trigger page, modelled on the keyboard trigger editor: the number
  * row is a ten-step bar selecting the raw press threshold for every key.
- * Level 1 keeps the default 3500 point and level 10 reaches the bottom-out
- * floor, so the velocity window always keeps room to measure; the per-key
- * release thresholds are untouched. */
+ * Digit 1 is the deepest point, the bottom-out floor of the velocity window,
+ * and digit 0 the shallowest, one count below the release threshold, so the
+ * velocity window always keeps room to measure; the per-key release thresholds
+ * are untouched. */
 static uint8_t press_level_for(const keyboard_raw_t *raw)
 {
     unsigned current = raw->count ? raw->press[0] : RAW_DEFAULT_PRESS;

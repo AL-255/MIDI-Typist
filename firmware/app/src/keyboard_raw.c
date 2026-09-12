@@ -59,13 +59,14 @@ bool keyboard_raw_set(keyboard_raw_t *s, unsigned index, unsigned press, unsigne
 
 unsigned keyboard_raw_press_level(unsigned level)
 {
-    /* MIDI-mode trigger range: level 1 is the default (shallowest) actuation
-     * point and level 10 reaches the bottom-out floor, so a deep trigger can
-     * never sit below the velocity window's closing threshold. */
+    /* MIDI-mode trigger range: level 1 is the deepest point, the velocity
+     * window's bottom-out floor, and level 10 the shallowest, one count below
+     * the default release threshold so the Schmitt pair stays valid
+     * (press < release). The same range is the Fn+Tab page in MIDI mode. */
     if (level < 1u) level = 1u;
     if (level > 10u) level = 10u;
-    return RAW_DEFAULT_PRESS -
-        ((level - 1u) * (RAW_DEFAULT_PRESS - RAW_BOTTOM_OUT)) / 9u;
+    return RAW_BOTTOM_OUT +
+        ((level - 1u) * (RAW_DEFAULT_RELEASE - 1u - RAW_BOTTOM_OUT)) / 9u;
 }
 
 bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press)

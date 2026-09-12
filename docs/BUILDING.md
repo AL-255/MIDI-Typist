@@ -156,9 +156,9 @@ operating system's serial-access group/device permissions, and close other
 monitors before connecting. The GUI takes an exclusive advisory lock and does
 not steal a port from another owner. Its transport is Linux/POSIX-specific.
 
-If telemetry rejects HKG6, use the matching GUI from this checkout. MIDI
-mapping requires HKG4 or later, calibration controls HKG5 or later, and parallel
-hold indicators HKG6. The current decoder accepts all six versions. If waiting for neutral,
+If the GUI rejects telemetry, use the matching GUI from this checkout: the
+1152-byte layout is a fixed contract with no version field, and the device
+reports its build identity (`version`) for the record. If waiting for neutral,
 release every key; inspect threshold/raw values without repeatedly resetting
 the keyboard. A MIDI cleanup-pending indicator means the host has not yet
 accepted all cleanup events. It does not prevent switching back to HID mode.

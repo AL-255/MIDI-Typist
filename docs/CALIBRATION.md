@@ -1,7 +1,7 @@
 # Per-key optical calibration
 
 The parallel calibration state machine is shared by all ports. Physical
-controls, 65-slot RAM sizes, HKG6 fields and flash pages below describe the
+controls, 65-slot RAM sizes, telemetry fields and flash pages below describe the
 `huntsman` build. A new board supplies sample normalization, endpoint storage
 and LED placement through the [porting contracts](PORTING.md).
 
@@ -64,7 +64,7 @@ request ID and ACK result (1 accepted, 2 rejected). Start ACK means the routine
 started, **not** that flash was saved. Observe terminal state and generation.
 Cancellation is idempotent. One outstanding request is supported.
 
-HKG6 packets are 1152 bytes, with the following calibration status fields:
+Telemetry packets are 1152 bytes, with the following calibration status fields:
 
 | Offset | Little-endian field |
 | --- | --- |
@@ -78,7 +78,7 @@ HKG6 packets are 1152 bytes, with the following calibration status fields:
 | 1144 | reserved uint32 zero |
 | 1148 | unchanged uint32 checksum of preceding uint16 words |
 
-HKG6 additionally uses bit 3 (value 8) of each per-key state byte at 967+i
+Telemetry additionally uses bit 3 (value 8) of each per-key state byte at 967+i
 to indicate an active calibration hold. Velocity bits 0–2 retain their meaning.
 This bit is clear for completed keys and outside collection. The GUI colors
 every active hold amber and displays their count. The selected-sensor/elapsed
@@ -130,7 +130,7 @@ These checks do not represent physical root/scale or sustain keypresses.
 The supplied updater has installed this application through computer-initiated
 bootloader entry. Full 131072-byte readback at physical `0x8000` matches the
 build SHA256 above with no flash-controller/ECC read errors. Both calibration
-tail pages are byte-for-byte unchanged. After reboot, live HKG6 telemetry
+tail pages are byte-for-byte unchanged. After reboot, live GUI telemetry
 advances with 61 valid sensors, enabled/armed output, calibration generation 0
 (no saved calibration) and zero scan, lighting, MIDI or calibration errors.
 Live readback confirms press 3500 / release 3600 on every sensor. The device

@@ -1,14 +1,16 @@
 # Standalone keyboard and configuration GUI
 
-The `huntsman` firmware provides HKG6 telemetry:
+The `huntsman` firmware provides GUI telemetry:
 standalone Schmitt keyboard, MIDI, normalized per-key velocity and parallel
-calibration. The GUI supports older HKG1–5 devices with version-gated controls.
+calibration. This GUI is written against the current 1152-byte layout, has no
+version-gated controls and shows the connected build identity in its status
+line.
 See [current validation](CALIBRATION.md#validation-status).
 The GUI never flashes the application or enters the bootloader; completing
 calibration saves endpoints to the two authorized tail pages.
 It is a Huntsman ANSI host tool, not automatic layout discovery for arbitrary
 MIDI-Typist ports. The shared command parser is portable; physical drawings and
-HKG6 framing require matching board support. See [host integration](PORTING.md#5-add-lighting-storage-and-host-integration).
+GUI telemetry framing requires matching board support. See [host integration](PORTING.md#5-add-lighting-storage-and-host-integration).
 
 ## Build and run
 
@@ -23,7 +25,7 @@ python3 tools/keyboard_gui.py --device /dev/ttyACM1   # explicit node override
 
 Current application: `build-keyboard-fn-menu/huntsman_firmware.bin`, exactly 131072 bytes,
 linked at `0x20000000`, sha256
-`d3d6d19ad97259c547fb510688a6b39c0510f906ff782c76a49f3565e01abb48`
+`14f2f239fe94f1701f79e76ac62f704042bad6e60b813b57ee07ab80364a5e84`
 (flashed with the sibling updater's application-only path and verified live:
 GUI telemetry, pinned-sensor stream at ~1.35 k samples/s, stream switch-back,
 bottom-out velocity windows at the shared 1500 threshold, and a physical
@@ -113,7 +115,7 @@ While the built-in Jankó layout is active (Fn+J in MIDI mode) the status line
 adds `JANKÓ layout (Fn+J)` and every key caption shows the layout's note
 instead of the configured mapping; the mapping itself is unchanged and returns
 as soon as the layout is switched off. The flags byte's bit 6 carries this
-state in HKG4+ telemetry.
+state in telemetry.
 The GUI labels Right Alt/Ctrl octave −/+, Left Ctrl/Alt bend −/+ and Left
 Windows modulation, and Space sustain. Space uses its editable Schmitt pair
 to send CC64 127/0. Wheels use fixed 3800…1000 endpoints, not GUI Schmitt
@@ -131,6 +133,23 @@ The GUI shows progress, the number being held, inactivity time, saved generation
 and errors. It disables ordinary edits during calibration; Cancel remains
 available. Completion of all keys saves, while cancellation/5 s inactivity
 discards staged results. See [calibration](CALIBRATION.md) for details.
+
+## Fn+Tab and Fn+V settings
+
+The GUI mirrors the two on-device MIDI settings with ordinary commands, so the
+device needs no extra state:
+
+- **Trigger point** selects one Fn+Tab level (1 = bottom-out floor 1500 … 0 =
+  release − 1, 3599) and applies it as 61 individual `cfg set` commands. Each
+  key keeps its release threshold, and every readback is checked.
+- **Velocity start** sets the Fn+V level through `cfg velocity` and reads the
+  applied value back from telemetry offset 6. The device accepts it in either
+  performance mode: the GUI cannot toggle MIDI mode, which Fn+Enter does.
+
+Both are RAM-only. The per-key detail panel also names the Fn+Tab level nearest
+to the selected key's press threshold, so a hand-edited pair still shows where
+it sits on the bar, and the status line carries the connected build identity
+reported by `version` (for example `build v0.1.0-RZ03-0499`).
 
 ## Keystroke hold mode
 
@@ -185,7 +204,7 @@ They also do not contain Fn+Left Shift's MIDI lower-row mute. This setting is RA
 survives mode switches and leaves the displayed mappings intact. A Caps/Shift
 row key can show an assigned note in the GUI yet be muted by Fn+Left Shift; hold the
 combo to preview `LOWER-ON`, then release to restore it. `menu status` reports
-the flag over text CDC; the HKG6 GUI format is unchanged.
+the flag over text CDC; the GUI telemetry format is unchanged.
 Fn+E/Fn+S also select RAM-only MIDI root/scale filters. These are not GUI
 mapping edits or JSON fields. Assigned notes can be silent/dark because of
 the current filter; the GUI still shows their assignments and raw down state.
@@ -202,12 +221,14 @@ leaving keyboard output disabled. Reconnect, inspect and load again explicitly.
 Commands are newline-delimited ASCII; all arguments are decimal:
 
 ```text
+version
 stream gui
 stream key THRESHOLD [SESSION [SENSOR]]
 cfg get ID
 cfg set ID SENSOR PRESS RELEASE
 cfg all ID PRESS RELEASE
 cfg midi ID SENSOR NOTE
+cfg velocity ID LEVEL
 cfg calibrate ID
 cfg calcancel ID
 cfg enable ID 0
@@ -215,11 +236,14 @@ cfg enable ID 1
 ```
 
 `ID` is a nonzero uint32; `SENSOR` is the raw sensor index (0..60 for ANSI).
+`version` is the one console query the GUI sends: it answers the build identity
+(`build=v0.1.0-RZ03-0499`) before the binary stream starts, because text replies
+and telemetry cannot share the CDC endpoint.
 Well-formed IDs receive result 1 (accepted) or 2 (rejected) in telemetry.
 Malformed/unparseable IDs receive no acknowledgment. Hosts must serialize
 commands and wait for matching ACKs: only the last acknowledgment is retained.
 
-`stream gui` selects latest-only 1152-byte HKG6 snapshots, at most one per 33 ms.
+`stream gui` selects latest-only 1152-byte telemetry snapshots, at most one per 33 ms.
 `stream key THRESHOLD [SESSION [SENSOR]]` selects the lossless 20-byte HKL1
 per-key stream, one record per optical scan frame; with `SENSOR` 0..64 the
 session is pinned to that sensor (raw streamed regardless of crossings),
@@ -257,6 +281,10 @@ framing, JSON validation, PTY command acknowledgments and cancellation,
 keystroke-hold capture, full-rate stream mode switching and velocity
 reproduction, USB VID/PID device detection, pinned-sensor HKL1 sessions
 (ARM-executed), and real Tk geometry/selection/window-resize tests. Live
-hardware verification (application flashed via the sibling updater): HKG6
-telemetry, hold-mode stream engagement at the measured optical rate
-(~1.35 k samples/s), velocity window capture and GUI telemetry resume.
+hardware verification (application flashed via the sibling updater): the
+`version` identity handshake after a stale stream (`v0.1.0-RZ03-0499`), GUI
+telemetry framing, `cfg velocity` writes with telemetry readback in keyboard
+mode, per-key `cfg set` trigger writes with the release threshold preserved,
+hold-mode stream engagement at the measured optical rate (~1.35 k samples/s),
+velocity window capture and GUI telemetry resume. Physical Fn+Tab and Fn+V
+presses, which need a person at the board, remain a manual check.

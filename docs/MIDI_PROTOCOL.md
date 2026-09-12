@@ -1,7 +1,7 @@
 # MIDI and GUI protocol
 
 MIDI event encoding and `cfg` command validation belong to the shared
-application. USB interface numbers, endpoints, HKG6 serialization and ANSI
+application. USB interface numbers, endpoints, GUI telemetry serialization and ANSI
 JSON geometry below describe the Huntsman port. Other platforms must provide
 their own transport/host adapter; see [porting](PORTING.md).
 
@@ -40,15 +40,33 @@ the latest command ID. IDs must be nonzero decimal uint32 values. Commands
 are newline-delimited ASCII and do not require a meaningful UART baud rate.
 
 ```
+version
 stream gui
 cfg get ID
 cfg set ID SENSOR PRESS RELEASE
 cfg all ID PRESS RELEASE
 cfg enable ID 0_OR_1
 cfg midi ID SENSOR NOTE
+cfg velocity ID LEVEL
 cfg calibrate ID
 cfg calcancel ID
 ```
+
+`version` is a console query, not a `cfg` command: it answers
+`build=v0.1.0-RZ03-0499`, the project version plus the build target of the
+running application. It is answered before any other parsing and also works
+while calibrating; `menu status` repeats the same string. Text replies are only
+available while no binary stream is active, so hosts stop any stream left
+running by a previous owner (`stream off`), query the identity, and only then
+select `stream gui`.
+
+`cfg velocity` sets the transmitted-velocity start of
+[the Fn+V editor](MIDI_DESIGN.md#transmitted-velocity-start): `LEVEL` is 1…10,
+where 1 transmits the measured velocity unchanged and 10 transmits full
+velocity for every note. It is rejected outside that range and accepted in
+either performance mode, since it only shapes MIDI output and the host cannot
+toggle MIDI mode itself. The new value appears in telemetry offset 6, so the
+GUI checks both ACK and readback.
 
 `cfg midi` accepts 0…127 or 255 (unmapped). It rejects unsupported sensor
 indices and Fn, Left Ctrl/Windows/Alt, Right Alt/Ctrl and Space controls. The current identified profile
@@ -72,20 +90,23 @@ not atomic across all commands: already acknowledged changes remain if a later
 command fails, and output may remain disabled. Reconnect and inspect the device
 before deciding whether to apply again.
 
-## HKG6 telemetry
+## GUI telemetry
 
-Current calibration firmware emits HKG6, including MIDI fields, calibration
-status and per-key parallel-hold bits. See [calibration protocol](CALIBRATION.md). The decoder
-continues to accept older packet versions.
+Current firmware emits one 1152-byte telemetry layout, including MIDI fields,
+calibration status and per-key parallel-hold bits. See
+[calibration protocol](CALIBRATION.md).
 
-1152-byte, little-endian, latest-only snapshots, no faster than one per 33 ms.
-HKG6 uses this layout:
+Frames carry no version number: the constant magic and the fixed size identify
+the layout, while the build identity above records which application produced
+them. This is a coordinated firmware/host contract — a layout change updates
+this table, the decoder and the recorded identity together. 1152-byte,
+little-endian, latest-only snapshots, no faster than one per 33 ms:
 
 | Offset | Encoding | Meaning |
 | ---: | --- | --- |
-| 0 | 4 bytes | `HKG6` |
+| 0 | 4 bytes | `HKG` and a NUL byte: constant frame magic |
 | 4 | u16 | 1152 |
-| 6 | u8 | version 6 |
+| 6 | u8 | Fn+V transmitted-velocity start, 1…10 (1 = 0%, 10 = 100%) |
 | 7, 8 | u8 each | profile 0…3, count 0/61/62/65 |
 | 9 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó layout=64 |
 | 10 | u8 | last result: initial=0, success=1, rejected=2 |
@@ -115,16 +136,12 @@ HKG6 uses this layout:
 
 Unused sensor slots are zero, including MIDI mapping padding; **active** unmapped
 sensor slots are 255. This checksum detects framing errors, not authentication.
-The decoder validates size/version pairs, reserved bytes, value ranges and
-padding. The GUI reads legacy HKG1/480-byte and HKG2/HKG3/1088-byte snapshots as
-well; MIDI controls stay disabled on those older firmware versions. HKG4/HKG5
-are also accepted. Update older GUIs before connecting to HKG6 firmware.
-
-HKG3 through HKG6 velocity is float32. HKG2 alone used signed integer counts/s;
-the host does not reinterpret old integers as normalized floats. Pressure is
-transmitted over MIDI, not duplicated as another GUI sensor array. The armed
-flag reflects the raw engine; calibration can suppress HID despite that flag.
-Use calibration state and the last submitted report to interpret output.
+The decoder validates the magic, frame size, reserved bytes, value ranges and
+padding, and resynchronizes by dropping bytes until the next magic. Velocity is
+float32. Pressure is transmitted over MIDI, not duplicated as another GUI sensor
+array. The armed flag reflects the raw engine; calibration can suppress HID
+despite that flag. Use calibration state and the last submitted report to
+interpret output.
 
 ## Host JSON
 

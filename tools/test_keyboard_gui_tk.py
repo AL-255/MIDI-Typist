@@ -8,7 +8,7 @@ import subprocess
 import time
 import tkinter as tk
 from unittest.mock import patch
-from keyboard_gui import App, AXIS_W
+from keyboard_gui import App, AXIS_W, TRIGGER_LEVELS, VELOCITY_STARTS, TRIGGER_FLOOR
 from keyboard_gui_model import CAPTURE_POINTS
 from test_keyboard_gui import Device
 
@@ -74,7 +74,7 @@ def main():
         app.close(); root = None
         print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, resize')
         master,slave = pty.openpty()
-        device = Device(master,version=6); device.start()
+        device = Device(master); device.start()
         try:
             root = tk.Tk(); app = App(root,device=os.ttyname(slave))
             app.toggle_connection()
@@ -112,6 +112,27 @@ def main():
                 app.select(next(k.sensor for k in app.keys if k.label == label))
                 root.update(); pump_until(lambda:str(app.midi_button['state']) == 'disabled')
                 assert str(app.midi_button['state']) == 'disabled'
+            # Fn+Tab / Fn+V equivalents: the GUI edits the same two settings.
+            device.performance_mode = 1
+            pump_until(lambda:app.snapshot.performance_mode == 1)
+            app.select(32); root.update()
+            assert app.trigger_point.get() == app.trigger_choice(3000)  # echoed from the device
+            app.trigger_point.set(TRIGGER_LEVELS[0])                    # level 1 = bottom-out floor
+            with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                app.trigger_button.invoke()
+            pump_until(lambda:app.snapshot.press == (TRIGGER_FLOOR,)*61,12)
+            assert app.snapshot.release == (3250,)*61  # per-key releases preserved
+            assert app.trigger_point.get() == TRIGGER_LEVELS[0]
+            app.velocity_start.set(VELOCITY_STARTS[9])  # 100%: every note at full velocity
+            app.velocity_button.invoke()
+            pump_until(lambda:app.snapshot.velocity_start == 10 and 'Velocity start: 10 (100%' in app.details.get(),6)
+            device.performance_mode = 0
+            pump_until(lambda:app.snapshot.performance_mode == 0)
+            # Restore the pair the hold-mode fixture below expects.
+            app.press.set('3000'); app.release.set('3250')
+            with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                app.apply_all_button.invoke()
+            pump_until(lambda:app.snapshot.press == (3000,)*61 and app.snapshot.release == (3250,)*61,8)
             app.select(32); root.update()
             app.hold_button.invoke()
             pump_until(lambda:app.hold_mode.get() and app.key_capture and app.connection.stream_mode == 'key')
@@ -178,7 +199,7 @@ def main():
             app.toggle_connection()
             pump_until(lambda:not app.connection.is_alive())
             app.close(); root = None
-            print('PASS Tk+PTY: calibration arm/status/disabled edits/cancel, select A, apply pair/all/MIDI, 8 ksps keystroke hold mode, device auto-detect, disable, disconnect')
+            print('PASS Tk+PTY: calibration arm/status/disabled edits/cancel, select A, apply pair/all/MIDI, MIDI trigger point, velocity start, 8 ksps keystroke hold mode, device auto-detect, disable, disconnect')
         finally:
             device.stop_event.set(); device.join(1)
             os.close(master); os.close(slave)

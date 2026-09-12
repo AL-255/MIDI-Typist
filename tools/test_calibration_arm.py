@@ -113,7 +113,7 @@ def low_tests(args):
 
 def live_tests(args):
     dev=Live(args.elf,args.reference); dev.service(400)
-    s=snapshot(dev,'stream gui'); assert s.version==6 and s.calibration_flags==4
+    s=snapshot(dev,'stream gui'); assert s.calibration_flags==4
     assert 0x20000000 <= dev.symbols['s_cal'] < dev.symbols['__app_load_end__'] <= 0x2001fc00
     assert len(dev.flash.commands)==64 and all(cmd==3 for cmd,_ in dev.flash.commands)
     labels=sensor_labels()[61]

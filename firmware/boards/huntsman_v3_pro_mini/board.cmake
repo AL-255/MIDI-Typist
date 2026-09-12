@@ -11,6 +11,8 @@ if(HUNTSMAN_TRAVEL_LIGHTING AND NOT HUNTSMAN_KEYBOARD_DIAGNOSTICS)
 endif()
 set(HUNTSMAN_PRODUCTION_REFERENCE "${CMAKE_CURRENT_SOURCE_DIR}/../extracted_firmware/raw/Talia_T1_60%_7203_App_FW_v2.1.0_E888780F.bin"
     CACHE FILEPATH "Read-only hash-pinned production reference for offline audits")
+# Build target: the model number this port reports in its build identity.
+set(MT_BOARD_TARGET "RZ03-0499")
 
 set(KEYBOARD_LOGIC_SOURCES
     ${MT_APP_SOURCES}
@@ -26,6 +28,7 @@ set(KEYBOARD_LOGIC_SOURCES
 add_library(midi_typist_app OBJECT ${MT_APP_SOURCES})
 target_include_directories(midi_typist_app PUBLIC firmware/app/include)
 target_compile_definitions(midi_typist_app PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
+target_compile_definitions(midi_typist_app PUBLIC MT_BUILD_VERSION="${PROJECT_VERSION}" MT_BUILD_TARGET="${MT_BOARD_TARGET}")
 target_compile_options(midi_typist_app PRIVATE -Wall -Wextra -Werror)
 
 # The archive joins portable objects with the selected board implementation.
@@ -39,6 +42,7 @@ add_library(huntsman_core STATIC
 )
 target_include_directories(huntsman_core PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
 target_compile_definitions(huntsman_core PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
+target_compile_definitions(huntsman_core PUBLIC MT_BUILD_VERSION="${PROJECT_VERSION}" MT_BUILD_TARGET="${MT_BOARD_TARGET}")
 target_compile_options(huntsman_core PRIVATE -Wall -Wextra -Werror)
 
 if(NOT HUNTSMAN_BUILD_FIRMWARE)

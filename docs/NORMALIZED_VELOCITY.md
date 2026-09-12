@@ -1,7 +1,7 @@
 # Firmware-normalized floating-point velocity
 
 Normalization is shared application behavior. The `huntsman` build exposes
-it over HKG6; see [current validation](CALIBRATION.md#validation-status).
+it over GUI telemetry; see [current validation](CALIBRATION.md#validation-status).
 
 The keyboard collects a velocity window from the triggering sample onward
 (ten readbacks maximum, closed early by the shared bottom-out threshold of
@@ -25,18 +25,16 @@ normalization or calibration.
 
 The GUI only decodes and formats the received float (three decimal places on
 keys, six in the selected-key panel). It performs no scaling or clamping.
-For older HKG2 firmware, the GUI labels signed values as legacy raw counts/s;
-it does not silently normalize them on the host.
 
 ## Huntsman wire format
 
-HKG6 packets are 1152 bytes. Offset 447 contains 65 little-endian IEEE-754
+Telemetry packets are 1152 bytes. Offset 447 contains 65 little-endian IEEE-754
 float32 normalized velocities. Completion counters start at 707 and per-key
 state bytes at 967. The result-valid flag distinguishes a completed zero from
 no result. The decoder rejects NaN, infinity and out-of-range floats.
-See [the complete wire layout](MIDI_PROTOCOL.md#hkg6-telemetry).
+See [the complete wire layout](MIDI_PROTOCOL.md#gui-telemetry).
 Other ports retain the normalized float API but define their own telemetry;
-the 65-element HKG6 array is not a universal sensor-capacity limit.
+the 65-element telemetry array is not a universal sensor-capacity limit.
 
 ## Build and tests
 

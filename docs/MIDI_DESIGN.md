@@ -119,9 +119,10 @@ Only enabled, in-scale, in-range notes receive normal note backlighting.
 MIDI mode uses the same per-key Schmitt pair as keyboard mode, but the press
 threshold is normally left at its 3500 default because the calibrated
 trigger-point editor is keyboard-only. Fn+Tab in MIDI mode therefore opens a
-raw page: ten steps select one press threshold for every key, from the 3500
-default down to the bottom-out floor of the velocity window
-(`keyboard_raw_press_level`). Release thresholds are preserved per key and the
+raw page: ten steps select one press threshold for every key, from the
+bottom-out floor of the velocity window up to one count below the release
+threshold (`keyboard_raw_press_level`: `1` deepest, `0` shallowest). Release
+thresholds are preserved per key and the
 stored pair is clamped to keep `press < release`. Deeper points stay safe for
 velocity: when the trigger sits at or near the floor, the window keeps the
 single follow-up readback that closes it, so a one-interval fit is still
@@ -148,7 +149,7 @@ HID usage, so it stays portable; the two Shift keys are matched by their
 modifier mask, and keys outside the table (Enter, Backspace, the bottom-row
 controls) keep their configured mapping and role. The toggle uses the same
 preview/release menu path, is available in MIDI mode only, aborts voices and
-invalidates raw arming. While it is active the Fn hint on J turns green, HKG6
+invalidates raw arming. While it is active the Fn hint on J turns green, telemetry
 reports it in flags bit 6, and `menu status` prints `janko=1`. The configured
 mapping is not modified; leaving the layout restores it exactly. The
 root/scale filter still applies to Jankó notes, and **Fn+Left Shift is
@@ -165,7 +166,7 @@ blue indicator remains visible even when its assigned note is muted.
 Toggle aborts voices/pending strikes and invalidates raw arming, as for other
 settings changes. Mapping arrays, velocity acquisition, thresholds, calibration,
 octave and wheel roles are unchanged. The flag survives mode switches and
-fault cleanup, but init/RESET clears it. It is not part of JSON or HKG6;
+fault cleanup, but init/RESET clears it. It is not part of JSON or telemetry;
 read `menu status` for `lower_muted`. The GUI continues to show assignments.
 
 ## Velocity and short strikes
