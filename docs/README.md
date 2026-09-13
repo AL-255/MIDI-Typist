@@ -23,7 +23,7 @@ Shared application contracts are documented separately from those wire formats.
 
 - [Fn menu](FN_MENU.md): supported hints, trigger-point editor and brightness.
 - [Keyboard GUI](KEYBOARD_GUI.md): layout, Schmitt thresholds, MIDI mappings,
-  profiles, calibration controls and connection handling.
+  profiles, calibration controls, application flashing and connection handling.
 - [Per-key velocity](KEY_VELOCITY.md), [normalization](NORMALIZED_VELOCITY.md)
   and [interval pop filter](MIDI_FILTER.md): independent capture and encoding.
 - [MIDI design](MIDI_DESIGN.md) and [USB/GUI protocol](MIDI_PROTOCOL.md).

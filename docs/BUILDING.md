@@ -165,6 +165,13 @@ accepted all cleanup events. It does not prevent switching back to HID mode.
 
 ## Hardware updates are separate
 
+The updater is vendored as the git submodule `third_party/huntsman_updater`
+(`Huntsman-V3-Pro-Mini-Flasher`); a checkout needs
+`git submodule update --init third_party/huntsman_updater` before flashing, and
+`HUNTSMAN_UPDATER_SRC` overrides its location. Flashing is available from the
+[GUI's **Flash application...** control](KEYBOARD_GUI.md#flashing-from-the-gui)
+and from `tools/flash_application.py`; both build on `tools/firmware_flasher.py`.
+
 No build/test target flashes or resets hardware. Use only the supplied updater's
 reviewed application-only path after explicit authorization and record the exact
 binary hash. The updater is a separate sibling project, not bundled here.

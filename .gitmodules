@@ -1,0 +1,3 @@
+[submodule "third_party/huntsman_updater"]
+	path = third_party/huntsman_updater
+	url = git@github.com:AL-255/Huntsman-V3-Pro-Mini-Flasher.git

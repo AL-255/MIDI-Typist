@@ -4,8 +4,14 @@ import argparse
 from collections import deque
 import json
 import math
+import os
 from pathlib import Path
 import queue
+import re
+import shutil
+import subprocess
+import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -13,6 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
 from keyboard_gui_transport import Connection, find_cdc_device, USB_VENDOR_ID, USB_PRODUCT_ID
 from last_key_stream import press_velocity, velocity_window, VELOCITY_WINDOW
+import firmware_flasher
 
 AXIS_W = 34  # left gutter for the raw-value vertical axis of the bottom plot
 # Fn+Tab (MIDI) trigger point: level 1 is the velocity window's bottom-out
@@ -41,6 +48,8 @@ class App:
         self._rate_count = 0; self._rate_at = None
         self.last_sequence = None
         self.initial_fields = False
+        self.flashing = False           # a worker thread owns the device
+        self.flash_queue = queue.Queue()
         root.title('Huntsman • Keyboard configuration')
         root.geometry('1180x920'); root.minsize(930,900)
         root.configure(bg='#101820')
@@ -123,6 +132,19 @@ class App:
         self.velocity_entry.pack(side='left')
         self.velocity_button = ttk.Button(velocity_row,text='Apply velocity start',command=self.apply_velocity_start)
         self.velocity_button.pack(side='left',padx=6)
+        flash_row = ttk.Frame(panel); flash_row.pack(anchor='w',pady=3)
+        ttk.Label(flash_row,text='Firmware: ').pack(side='left')
+        self.flash_image = tk.StringVar(value=str(firmware_flasher.REPO_ROOT/'build-keyboard-fn-menu'/'huntsman_firmware.bin'))
+        self.flash_entry = ttk.Entry(flash_row,textvariable=self.flash_image,width=44)
+        self.flash_entry.pack(side='left')
+        self.flash_browse = ttk.Button(flash_row,text='Browse…',command=self.browse_firmware)
+        self.flash_browse.pack(side='left',padx=4)
+        self.flash_button = ttk.Button(flash_row,text='Flash application…',command=self.flash_firmware)
+        self.flash_button.pack(side='left')
+        self.flash_progress = ttk.Progressbar(panel,orient='horizontal',length=420,mode='determinate')
+        self.flash_progress.pack(anchor='w',pady=(0,2))
+        self.flash_status = tk.StringVar(value='Flashing writes the application only; changes are listed before it starts.')
+        ttk.Label(panel,textvariable=self.flash_status,justify='left').pack(anchor='w')
         ttk.Label(panel,text='Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw 3800 = 0%, 1000 = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nPer-key and mapping edits are RAM-only; the on-device Fn choices, and the\nvelocity start set here, persist until Fn+R or `cfg clean`. Host JSON export\nincludes MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
         plot = ttk.Frame(lower); plot.pack(side='right',fill='both',expand=True)
         holdbar = ttk.Frame(plot); holdbar.pack(fill='x',pady=(0,4))
@@ -350,7 +372,7 @@ class App:
         if not self.usable() or self.snapshot.performance_mode: return
         if not messagebox.askyesno('Calibrate all keys',
             'Keyboard output pauses. Release ALL keys; wait for blue. Fully press and hold blue keys for one second until green. You may hold multiple keys together; each key has an independent timer. Include Fn and modifiers.\n\n'
-            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration in two dedicated pages (0x78000 / 0x78200) inside the original allocator's free block, preserving the serial-number area. Continue?'): return
+            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration in two dedicated pages (0x78000 / 0x78200) inside the original free block, preserving the serial-number area. Continue?'): return
         try:
             self.connection.submit('calibrate')
             self.message.set('Calibration requested; ACK starts the routine, not a flash save. Watch progress below.')
@@ -410,6 +432,94 @@ class App:
             self.connection.submit('velocity',level)
             self.message.set('Velocity start queued; waiting for device ACK/readback…')
         except (ValueError,queue.Full) as error: messagebox.showerror('Velocity start',str(error))
+
+    def browse_firmware(self):
+        path = filedialog.askopenfilename(title='Application image',
+                                          filetypes=[('Firmware image','*.bin'),('All files','*')])
+        if path: self.flash_image.set(path)
+
+    def flash_confirm(self,size,digest):
+        return messagebox.askyesno('Flash application',(
+            f'Write this image to the keyboard?\n\n{self.flash_image.get()}\n'
+            f'{size} bytes\nsha256 {digest}\n\n'
+            'Application region only: bootloader, factory/security data, primary settings and '
+            'serial-number storage are never written.\n'
+            'The device is cleared afterwards (cold boot): saved calibration and Fn-menu '
+            'settings are erased and it returns to defaults.\n\n'
+            'Keep the keyboard connected until the progress bar finishes. Continue?'))
+
+    def flash_firmware(self):
+        """Flash the chosen image in a worker thread; never implicitly."""
+        if self.flashing: messagebox.showwarning('Flash application','A flash is already running.'); return
+        image = self.flash_image.get().strip()
+        try:
+            size,digest = firmware_flasher.image_digest(image)
+            if not firmware_flasher.updater_available():
+                raise firmware_flasher.FlasherError('the updater submodule is missing; run: '
+                                                    + firmware_flasher.INIT_HINT)
+        except firmware_flasher.FlasherError as error:
+            messagebox.showerror('Flash application',str(error)); return
+        elevated = hasattr(os,'geteuid') and os.geteuid() != 0
+        if elevated and not shutil.which('pkexec'):
+            messagebox.showerror('Flash application',
+                'Flashing needs raw USB access. Run this GUI with sudo, or install pkexec '
+                '(PolicyKit) so it can elevate just the flash.')
+            return
+        if not self.flash_confirm(size,digest): return
+        if self.connection and self.connection.is_alive():
+            self.message.set('Disconnecting to release the device for flashing…')
+            self.connection.stop(); self.connection.join(timeout=1.5)
+        self.flashing = True
+        self.flash_button.configure(state='disabled')
+        self.flash_progress.configure(value=0,maximum=100)
+        self.flash_status.set('Preparing flash…')
+        threading.Thread(target=self.flash_worker,args=(image,elevated),daemon=True).start()
+
+    def flash_worker(self,image,elevated):
+        """Thread: flash, then report progress and outcome through the queue."""
+        def post(kind,payload): self.flash_queue.put((kind,payload))
+        def progress(done,total): post('progress',(done,total))
+        def status(text): post('status',str(text))
+        try:
+            if elevated:
+                script = Path(firmware_flasher.__file__).with_name('flash_application.py')
+                command = ['pkexec',sys.executable,str(script),image]
+                status('running the elevated flasher (PolicyKit may ask for your password)')
+                process = subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                                           text=True,bufsize=1)
+                for line in process.stdout:
+                    found = re.search(r'program (\d+)/(\d+)',line)
+                    if found: progress(int(found.group(1)),int(found.group(2)))
+                    elif line.strip(): status(line.strip())
+                if process.wait() != 0:
+                    raise firmware_flasher.FlasherError('the elevated flasher failed; see the status text')
+            else:
+                result = firmware_flasher.flash_image(image,progress=progress,status=status)
+                status('flash complete, sha256 '+result.digest)
+            post('done',None)
+        except Exception as error:  # noqa: BLE001 - reported to the user verbatim
+            post('error',str(error))
+
+    def poll_flash(self):
+        """Drain worker messages on the Tk thread."""
+        while True:
+            try: kind,payload = self.flash_queue.get_nowait()
+            except queue.Empty: return
+            if kind == 'progress':
+                done,total = payload
+                self.flash_progress.configure(maximum=total or 1,value=done)
+                self.flash_status.set(f'Programming {done}/{total} ({done*100//(total or 1)}%)…')
+            elif kind == 'status': self.flash_status.set(payload)
+            elif kind == 'error':
+                self.flashing = False; self.flash_button.configure(state='normal')
+                self.flash_status.set('Flash failed: '+payload)
+                messagebox.showerror('Flash application',payload)
+            else:
+                self.flashing = False; self.flash_button.configure(state='normal')
+                self.flash_progress.configure(value=self.flash_progress['maximum'])
+                self.flash_status.set('Flash complete; the device is at its defaults. Press Connect to reconnect.')
+                messagebox.showinfo('Flash application','Application flashed and the device cold-booted.\n\n'
+                                    'Press Connect to resume telemetry.')
 
     def apply_all(self):
         try:
@@ -479,6 +589,7 @@ class App:
                     self.message.set(f'Device build {self.device_build}' +
                                      (f' ({name})' if name else f' (unrecognized build target {target})'))
             self.connect_button.configure(text='Disconnect' if self.connection.is_alive() else 'Connect')
+        self.poll_flash()
         s = self.snapshot
         self.sync_hold_stream()
         self.key_capture = not self.demo and bool(self.connection and self.connection.is_alive() and self.connection.stream_mode == 'key')
@@ -535,6 +646,10 @@ class App:
         self.after_id = self.root.after(33,self.update)
 
     def close(self):
+        if self.flashing:
+            messagebox.showwarning('Flash application',
+                'A flash is still running. Wait for it to finish before closing.')
+            return
         self.root.after_cancel(self.after_id)
         if self.connection: self.connection.stop(); self.connection.join(timeout=.3)
         self.root.destroy()

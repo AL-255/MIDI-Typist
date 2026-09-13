@@ -134,6 +134,26 @@ and errors. It disables ordinary edits during calibration; Cancel remains
 available. Completion of all keys saves, while cancellation/5 s inactivity
 discards staged results. See [calibration](CALIBRATION.md) for details.
 
+## Flashing from the GUI
+
+**Flash application...** writes a built image through the vendored updater
+submodule (`third_party/huntsman_updater`) using its application-only DFU path.
+The device is released to the flasher first, so an active connection is stopped;
+the button then shows programming progress and the cold-boot result. The
+confirmation lists the image, its size and sha256, states that only the
+application region is written (bootloader, factory/security data, primary
+settings and serial-number storage are never touched) and that the device is
+cleared afterwards. Nothing flashes without that confirmation, and neither the
+build nor any test flashes implicitly.
+
+Flashing needs raw USB access. The GUI elevates just the flash through
+`pkexec` when it is not already root; without PolicyKit it asks for the GUI to
+be started with `sudo` or for suitable udev rules. `tools/flash_application.py`
+performs the identical steps from a terminal, and both share
+`tools/firmware_flasher.py`, which is exercised offline (image validation,
+submodule lookup, options, progress and status reporting) with the updater call
+replaced.
+
 ## Fn+Tab and Fn+V settings
 
 The GUI mirrors the two on-device MIDI settings with ordinary commands, so the

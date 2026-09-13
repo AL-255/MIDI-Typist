@@ -220,6 +220,11 @@ octave and device-confirmed settings.
   with the firmware's velocity fit reproduced from the same window, until the
   next press. See [the GUI guide](docs/KEYBOARD_GUI.md#keystroke-hold-mode).
 
+The updater used for flashing is vendored as the `third_party/huntsman_updater`
+git submodule; run `git submodule update --init third_party/huntsman_updater`
+once after cloning. The GUI's **Flash application...** control and
+`tools/flash_application.py` both drive it through `tools/firmware_flasher.py`.
+
 **Calibration endpoints and the Fn-menu settings save to the device; host
 `cfg set`/`cfg all` threshold edits and MIDI mappings remain RAM-only.** In keyboard mode use **Fn+C** or the GUI's **Calibrate keys
 → device flash** button. Release all keys; wait 500 ms (purple → blue), then
