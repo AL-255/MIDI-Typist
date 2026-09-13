@@ -383,8 +383,10 @@ static void janko_mode(void)
     janko_strike(0x1d,63,0); /* Z    D#4 */
     janko_strike(0x05,71,0); /* B    B4  */
     janko_strike(0xe5,83,32);/* RSh  B5  */
-    /* Keys outside the table keep their configured mapping (Enter/Backspace). */
-    janko_strike(0x2a,94,0); /* BkS  A#6 per the default table */
+    /* Backspace, backslash and Enter complete their rows' whole-tone runs. */
+    janko_strike(0x2a,84,0); /* BkS  C6  */
+    janko_strike(0x31,85,0); /* \    C#6 */
+    janko_strike(0x28,84,0); /* Ent  C6  */
     /* Fn+Left Shift is ineffective: the lower row stays enabled. */
     keyboard_midi_toggle_lower(&midi,&raw);
     assert(midi.lower_muted);

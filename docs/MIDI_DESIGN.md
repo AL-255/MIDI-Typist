@@ -147,8 +147,10 @@ mapping that is remembered across power cycles for the letter, number and punctu
 staggered against each other, so the physical keys form the arrangement
 requested for this keyboard. The table lives in `keyboard_midi.c` keyed by
 HID usage, so it stays portable; the two Shift keys are matched by their
-modifier mask, and keys outside the table (Enter, Backspace, the bottom-row
-controls) keep their configured mapping and role. The toggle uses the same
+modifier mask, and keys outside the table (the bottom-row controls and the
+remaining modifier roles) keep their configured mapping and role. Each row is a
+whole-tone run: the number row ends at Backspace (C6), the Tab row at backslash
+(C#6) and the Caps row at Enter (C6). The toggle uses the same
 preview/release menu path, is available in MIDI mode only, aborts voices and
 invalidates raw arming. While it is active the Fn hint on J turns green, telemetry
 reports it in flags bit 6, and `menu status` prints `janko=1`. The configured

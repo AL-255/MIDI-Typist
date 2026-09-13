@@ -292,14 +292,15 @@ class Tests(unittest.TestCase):
         # a row and the specified staggered notes on the physical keys.
         keys = {k.label: k.sensor for k in ansi_geometry()}
         for label,note in (('Esc','A#3'),('1','C4'),('=','A#5'),('Tab','B3'),
-                           ('Q','C#4'),('Y','B4'),('J','D5'),(']','B5'),
-                           ('Cap','C4'),('LSh','C#4'),('B','B4'),('RSh','B5')):
+                           ('Q','C#4'),('Y','B4'),('J','D5'),(']','B5'),('\\','C#6'),
+                           ('Cap','C4'),('LSh','C#4'),('B','B4'),('RSh','B5'),
+                           ('BkS','C6'),('Ent','C6')):
             self.assertEqual(JANKO_NOTES[label],note)
             self.assertIn(label,keys)
         labels = [k.label for k in ansi_geometry()]
         self.assertEqual(sorted(JANKO_NOTES),sorted(l for l in labels if l in JANKO_NOTES))
-        self.assertEqual(len(JANKO_NOTES),50)
-        for label in ('Fn','Spc','Ent','BkS','\\','Mnu','RAl','RCt','LCt','LGu','LAl'):
+        self.assertEqual(len(JANKO_NOTES),53)
+        for label in ('Fn','Spc','Mnu','RAl','RCt','LCt','LGu','LAl'):
             self.assertNotIn(label,JANKO_NOTES)
 
     def test_decoder(self):

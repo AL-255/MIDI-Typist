@@ -440,7 +440,8 @@ def janko_tests(args):
     dev.command('stream off'); dev.service(20)
     assert b'janko=1' in dev.command('menu status')
     snapshot(dev,'stream gui')
-    for label,note in (('Esc',58),('1',60),('Tab',59),('Q',61),('Y',71),(']',83),('LSh',61),('B',71),('RSh',83)):
+    for label,note in (('Esc',58),('1',60),('BkS',84),('Tab',59),('Q',61),('Y',71),
+                       (']',83),('\\',85),('Cap',60),('Ent',84),('LSh',61),('B',71),('RSh',83)):
         strike(label,note)
     # The lower row stays enabled in Jankó mode: Fn+Left Shift is ineffective.
     keys(Fn=2400,LSh=2400); keys(Fn=3900,LSh=3900); dev.service(200)

@@ -83,16 +83,17 @@ void keyboard_midi_toggle_lower(keyboard_midi_t *s, keyboard_raw_t *raw)
 
 /* Jankó mode (Fn+J in MIDI mode): a staggered whole-tone layout replacing the
  * configured notes for the keys below. Physical HID usages keep this table
- * portable across board layouts; keys that are not listed (controls, modifier
- * roles, Enter, Backspace, space) keep their configured mapping and role.
- * Rows: number row, Tab row, Caps row, Shift row with the user's notes. */
+ * portable across board layouts; keys that are not listed (the bottom-row
+ * controls, modifier roles, space) keep their configured mapping and role.
+ * Rows: number row including Backspace, Tab row including backslash, Caps row
+ * including Enter, Shift row with the two Shift keys. */
 static const uint8_t janko_notes[][2] = {
     {0x29,58},{0x1e,60},{0x1f,62},{0x20,64},{0x21,66},{0x22,68},{0x23,70},
-    {0x24,72},{0x25,74},{0x26,76},{0x27,78},{0x2d,80},{0x2e,82},
+    {0x24,72},{0x25,74},{0x26,76},{0x27,78},{0x2d,80},{0x2e,82},{0x2a,84},
     {0x2b,59},{0x14,61},{0x1a,63},{0x08,65},{0x15,67},{0x17,69},{0x1c,71},
-    {0x18,73},{0x0c,75},{0x12,77},{0x13,79},{0x2f,81},{0x30,83},
+    {0x18,73},{0x0c,75},{0x12,77},{0x13,79},{0x2f,81},{0x30,83},{0x31,85},
     {0x39,60},{0x04,62},{0x16,64},{0x07,66},{0x09,68},{0x0a,70},{0x0b,72},
-    {0x0d,74},{0x0e,76},{0x0f,78},{0x33,80},{0x34,82},
+    {0x0d,74},{0x0e,76},{0x0f,78},{0x33,80},{0x34,82},{0x28,84},
     {0x1d,63},{0x1b,65},{0x06,67},{0x19,69},{0x05,71},{0x11,73},
     {0x10,75},{0x36,77},{0x37,79},{0x38,81},
 };
