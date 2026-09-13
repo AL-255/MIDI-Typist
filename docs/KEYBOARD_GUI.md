@@ -166,9 +166,10 @@ device needs no extra state:
   applied value back from telemetry offset 6. The device accepts it in either
   performance mode: the GUI cannot toggle MIDI mode, which Fn+Enter does.
 
-The velocity start is stored with the other Fn-menu settings, so it survives a
-power cycle just like the on-device Fn+V choice. Per-key trigger writes stay in
-RAM: only the keyboard's own Fn+Tab step is stored. The per-key detail panel also names the Fn+Tab level nearest
+The velocity start follows the same rule as the rest of the Fn menu: it lives
+in RAM and returns to its default at the next power cycle, whether it was set
+from the GUI or from Fn+V. Per-key trigger writes stay in RAM too, and
+calibration is the only record the device itself keeps. The per-key detail panel also names the Fn+Tab level nearest
 to the selected key's press threshold, so a hand-edited pair still shows where
 it sits on the bar, and the status line carries the connected build identity
 reported by `version` (for example `build v0.1.0-RZ03-0499`).
@@ -220,13 +221,14 @@ Thresholds, MIDI mappings and keyboard enable state edited over CDC are
 **RAM-only**. Closing the GUI leaves them active; unplugging/restarting
 restores the keyboard's own choices. Save/load JSON profiles on the computer.
 Nothing writes bootloader, factory calibration, ASIC firmware or unreviewed
-flash storage. Calibration endpoints and the Fn-menu settings (trigger level
-and source, MIDI trigger step, velocity start, Jankó layout, lower-row mute,
-brightness, root/scale, octave, performance mode) persist on-device in the two
+flash storage. Only the calibration endpoints persist on-device, in the two
 documented unused tail pages; see [device storage](DEVICE_CONFIG_STORAGE.md).
+Every Fn-menu choice (trigger level, MIDI trigger step, velocity start, Jankó
+layout, lower-row mute, brightness, root/scale, octave, performance mode) and
+every host edit is RAM-only and returns to its default at the next power cycle.
 Host JSON profiles do not contain calibration, performance mode or octave.
 They also do not contain Fn+Left Shift's MIDI lower-row mute. The mute survives
-mode switches and a power cycle and leaves the displayed mappings intact. A Caps/Shift
+mode switches and leaves the displayed mappings intact. A Caps/Shift
 row key can show an assigned note in the GUI yet be muted by Fn+Left Shift; hold the
 combo to preview `LOWER-ON`, then release to restore it. `menu status` reports
 the flag over text CDC; the GUI telemetry format is unchanged.
@@ -310,9 +312,8 @@ hardware verification (application flashed via the sibling updater): the
 `version` identity handshake after a stale stream (`v0.1.0-RZ03-0499`), GUI
 telemetry framing, `cfg velocity` writes with telemetry readback in keyboard
 mode, per-key `cfg set` trigger writes with the release threshold preserved,
-the settings mirror (`settings=saved`, `settings_gen` incrementing) and its
-survival across a reflash with `--keep-settings` on the board's storage pages,
-the flashing script's cold boot returning the device to defaults, hold-mode stream engagement at the
+the flashing script's cold boot clearing the stored calibration and returning
+the device to defaults, hold-mode stream engagement at the
 measured optical rate (~1.35 k samples/s), velocity window capture and GUI
 telemetry resume. Physical Fn+Tab and Fn+V presses, which need a person at the
 board, remain a manual check.

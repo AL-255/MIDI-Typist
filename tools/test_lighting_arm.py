@@ -19,7 +19,7 @@ class LightingArm(ScanArm):
         self.nack_i2c = False
         self.cpu.hook_add(UC_HOOK_MEM_READ, self.i2c_read, begin=I2C+0x800, end=I2C+0xeff)
         self.cpu.hook_add(UC_HOOK_MEM_WRITE, self.i2c_write, begin=I2C+0x800, end=I2C+0xeff)
-        # Every booted application can mirror Fn-menu settings into the two
+        # Every booted application loads its calibration from the two
         # authorized tail pages, so the controller model is always present.
         # Imported lazily: the calibration suite imports this module.
         from test_calibration_arm import FlashModel

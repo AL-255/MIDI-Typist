@@ -98,8 +98,8 @@ reports. CDC does not need to stay open for normal keyboard operation.
 
 The Fn+Tab/Fn+Caps editors implement the recovered interactions above.
 Actuation commits convert the original normalized threshold rules into raw
-Schmitt pairs using calibrated bounds; the chosen level is stored with the
-Fn-menu settings while per-key pairs stay RAM-only. Fn+Enter
+Schmitt pairs using calibrated bounds; the chosen level lives in RAM with the
+rest of the Fn-menu choices while per-key pairs do too. Fn+Enter
 selects MIDI and Fn+C starts calibration in keyboard mode, outside editors.
 The [Fn menu](FN_MENU.md) supplies action hints, brightness controls and a
 tail-profile RESET. All settings choices preview their names while held and execute

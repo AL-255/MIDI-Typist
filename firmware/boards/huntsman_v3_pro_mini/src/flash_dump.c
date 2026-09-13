@@ -47,8 +47,8 @@ static status_t read_word(uint32_t address, uint8_t *out)
     status_t result = kStatus_FLASH_CommandFailure;
     /* The controller intermittently reports FAIL/ERR/ECC for a read that
      * succeeds when repeated; the reference driver read each word once. Retry
-     * twice so one flaky read cannot fail a store load, a save's read-back or
-     * the cold boot. A controller that never signals DONE still latches. */
+     * twice so one flaky read cannot fail a store load or a save's read-back.
+     * A controller that never signals DONE still latches. */
     for (unsigned attempt = 0; attempt < 3u; ++attempt) {
         board_watchdog_refresh();
         FLASH->INT_CLR_STATUS = 15u;
@@ -150,7 +150,7 @@ uint32_t flash_calibration_erase(unsigned slot)
 }
 uint32_t flash_calibration_write(unsigned slot, const uint8_t *page)
 {
-    if (!page || !config_allowed(slot) || !device_page_valid(page)) return kStatus_FLASH_AddressError;
+    if (!page || !config_allowed(slot) || !calibration_record_valid(page)) return kStatus_FLASH_AddressError;
     uint32_t result=flash_calibration_erase(slot);
     if (result) return result;
     const uint32_t address=slot ? CAL_SLOT_B : CAL_SLOT_A;

@@ -30,11 +30,11 @@ Shared application contracts are documented separately from those wire formats.
 - [Device telemetry](TELEMETRY.md): every stream, field, rate and text reply the
   application reports, and how hosts consume them.
 - [Root/scale selection](MIDI_SCALES.md): portable interval tables, selectors,
-  shared note/LED filtering, modal safety and stored settings.
+  shared note/LED filtering, modal safety and RAM-only selection state.
 - [Parallel calibration](CALIBRATION.md): operation, state machine, telemetry fields
   and validation limits.
 - [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, calibration
-  and Fn-menu record layout, cold boot, validation, recovery limits and
+  record layout and write bounds, cold boot, validation, recovery limits and
   serial-number protection.
 - [Flash acquisition](FLASH_DUMP.md): read-only dump commands and private backups.
 - [Whole scan display](SCAN_STREAM.md), [20-sample capture](LAST_KEY_STREAM.md)

@@ -115,15 +115,8 @@ def main():
     assert snapshot(dev).performance_mode==0
     assert color(draw(),'Y')!=(0,77,0)
     keys(Fn=4000,Ent=4000)
-    # The Fn menu mirrors persisted settings into the two authorized pages. With
-    # every key released, let that settle and take the settled pages as the
-    # write-boundary baseline for the checks below.
-    for _ in range(200):
-        dev.command('stream off'); dev.service(20)
-        line=dev.command('menu status')
-        if b'dirty=0' in line: break
-        snapshot(dev,'stream gui')
-    else: raise AssertionError(b'mirror never settled: '+line)
+    # No Fn action writes flash: the menu is RAM-only. Take the pages as the
+    # write-boundary baseline for the rest of the section.
     initial_pages={a:bytes(p) for a,p in dev.flash.pages.items()}
     reads=len(dev.flash.commands)
     snapshot(dev,'stream gui')
@@ -133,7 +126,7 @@ def main():
     assert snapshot(dev).calibration_state==1
     assert snapshot(dev,'cfg calcancel 704').result==1
     assert {a:bytes(p) for a,p in dev.flash.pages.items()}==initial_pages
-    # Calibration entry and cancel only read the pages: no mirror is pending.
+    # Calibration entry and cancel only read the pages.
     assert all(cmd==3 for cmd,_ in dev.flash.commands[reads:]),dev.flash.commands[reads:]
     assert not dev.reset_requests
     assert ref.read(0x2001b49c,20)==bytes(dev.cpu.mem_read(dev.symbols['brightness_steps'],20))
@@ -159,7 +152,7 @@ def main():
     assert s.press==(3500,)*61 and s.release==(3600,)*61 and s.performance_mode==0 and s.octave==0
     assert color(draw(),'Ent')==(0,255,0)
     assert not dev.reset_requests
-    print('PASS ARM Fn menu: colored text, release-only actions, repeated brightness taps, original editor colors, MIDI suppression, calibration entry, Y/N confirmed tail-only RESET and defaults; mirror settles inside the two authorized pages only')
+    print('PASS ARM Fn menu: colored text, release-only actions, repeated brightness taps, original editor colors, MIDI suppression, calibration entry, Y/N confirmed tail-only RESET and defaults; no Fn action writes flash')
 
 
 if __name__=='__main__': main()

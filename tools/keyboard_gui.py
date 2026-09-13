@@ -145,7 +145,7 @@ class App:
         self.flash_progress.pack(anchor='w',pady=(0,2))
         self.flash_status = tk.StringVar(value='Flashing writes the application only; changes are listed before it starts.')
         ttk.Label(panel,textvariable=self.flash_status,justify='left').pack(anchor='w')
-        ttk.Label(panel,text='Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw 3800 = 0%, 1000 = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nPer-key and mapping edits are RAM-only; the on-device Fn choices, and the\nvelocity start set here, persist until Fn+R or `cfg clean`. Host JSON export\nincludes MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
+        ttk.Label(panel,text='Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw 3800 = 0%, 1000 = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nPer-key, mapping and Fn-menu edits are RAM-only; only the saved calibration\nsurvives a power cycle, until Fn+R or `cfg clean`. Host JSON export includes\nMIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
         plot = ttk.Frame(lower); plot.pack(side='right',fill='both',expand=True)
         holdbar = ttk.Frame(plot); holdbar.pack(fill='x',pady=(0,4))
         self.hold_button = ttk.Checkbutton(holdbar,text=f'Hold first {CAPTURE_POINTS} pts of keystroke',
@@ -444,8 +444,8 @@ class App:
             f'{size} bytes\nsha256 {digest}\n\n'
             'Application region only: bootloader, factory/security data, primary settings and '
             'serial-number storage are never written.\n'
-            'The device is cleared afterwards (cold boot): saved calibration and Fn-menu '
-            'settings are erased and it returns to defaults.\n\n'
+            'The device is cleared afterwards (cold boot): the saved calibration is '
+            'erased and it returns to defaults.\n\n'
             'Keep the keyboard connected until the progress bar finishes. Continue?'))
 
     def flash_firmware(self):

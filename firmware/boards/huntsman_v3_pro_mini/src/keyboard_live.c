@@ -45,90 +45,10 @@ static keyboard_app_t s_app;
 static uint32_t s_gui_sequence, s_gui_ack, s_last_gui;
 static uint8_t s_gui_result;
 
-/* ---- persistent Fn-menu settings ----------------------------------------
- * Both authorized pages carry a calibration part and an optional settings part.
- * Menu changes are mirrored into flash: a change starts a debounce and the
- * write happens only after every key is released, so an edit never stalls the
- * scan mid-keystroke. A record written by another build is the cold-boot
- * condition - it is ignored and the application keeps its defaults until the
- * next change. Fn+R and the host's `cfg clean` erase both parts. */
-#define SETTINGS_SAVE_DELAY 1500u
-static device_settings_t s_settings, s_settings_defaults;
-static uint32_t s_settings_dirty_at;
-static bool s_settings_ready;
-
-static void settings_capture(device_settings_t *out)
-{
-    *out=(device_settings_t){
-        .trigger_source=s_menu.threshold_source<=THRESHOLD_SOURCE_RAW ? s_menu.threshold_source : 0u,
-        .trigger_level=s_raw.engine.config.saved_actuation,
-        .rapid_level=s_raw.engine.config.saved_rapid,
-        .rapid_enabled=(uint8_t)(s_raw.engine.config.rapid_enabled?1u:0u),
-        .midi_press_level=s_menu.midi_press_level,
-        .velocity_start=s_midi.velocity_start,
-        .janko=(uint8_t)(s_midi.janko?1u:0u),
-        .lower_muted=(uint8_t)(s_midi.lower_muted?1u:0u),
-        .brightness=s_menu.brightness,
-        .music_root=s_midi.music.root, .music_scale=s_midi.music.scale,
-        .octave=s_midi.octave,
-        .performance_mode=(uint8_t)(s_midi.mode?1u:0u),
-    };
-}
-static void settings_apply(const device_settings_t *in,uint16_t *lo,uint16_t *hi)
-{
-    s_raw.engine.config.saved_actuation=s_raw.engine.config.actuation=in->trigger_level;
-    s_raw.engine.config.saved_rapid=s_raw.engine.config.rapid=in->rapid_level;
-    s_raw.engine.config.rapid_enabled=in->rapid_enabled?1u:0u;
-    s_menu.threshold_source=in->trigger_source;
-    s_menu.midi_press_level=in->midi_press_level;
-    s_midi.velocity_start=in->velocity_start;
-    s_midi.janko=in->janko!=0u; s_midi.lower_muted=in->lower_muted!=0u;
-    s_menu.brightness=in->brightness;
-    s_midi.music.root=in->music_root; s_midi.music.scale=in->music_scale;
-    s_midi.octave=in->octave;
-    s_midi.mode=in->performance_mode!=0u;
-    /* Thresholds follow the menu action that wrote them last: the keyboard
-     * editor derives both bounds, the MIDI page overrides the press point. */
-    if(in->trigger_source==THRESHOLD_SOURCE_CALIBRATED) (void)keyboard_menu_thresholds(&s_raw,lo,hi);
-    else if(in->trigger_source==THRESHOLD_SOURCE_RAW && in->midi_press_level)
-        (void)keyboard_raw_set_press_all(&s_raw,keyboard_raw_press_level(in->midi_press_level));
-}
-static void settings_restore(uint16_t *lo,uint16_t *hi)
-{
-    device_settings_t loaded;
-    calibration_store_load_settings(&s_cal_store,&loaded,MT_BUILD_ID,flash_calibration_read);
-    if(s_cal_store.settings_saved) settings_apply(&loaded,lo,hi);
-    /* Whatever this boot ended up with is the baseline: a cold boot must not
-     * write a record of its own defaults. */
-    settings_capture(&s_settings);
-    s_settings_dirty_at=0u;
-    s_settings_ready=true;
-}
-static void settings_poll(uint32_t now)
-{
-    device_settings_t current;
-    if(!s_settings_ready || calibration_active(&s_cal) || !s_raw.count) return;
-    settings_capture(&current);
-    if(!memcmp(&current,&s_settings,sizeof(current))) { s_settings_dirty_at=0u; return; }
-    if(!s_settings_dirty_at) s_settings_dirty_at=now?now:1u;
-    if((uint32_t)(now-s_settings_dirty_at)<SETTINGS_SAVE_DELAY || !s_raw.armed) return;
-    if(calibration_store_save_settings(&s_cal_store,&current,MT_BUILD_ID,flash_calibration_read,flash_calibration_write))
-        s_settings=current;
-    s_settings_dirty_at=0u;
-}
-
 static bool load_calibration(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi)
 {
-    /* Integrity pass first: a torn page (power loss during erase or program)
-     * fails its checksum, and the whole region is cleared so this boot is a
-     * cold boot instead of a half-applied record. Clean stores are untouched. */
-    if(!calibration_store_scrub(&s_cal_store,flash_calibration_read,flash_calibration_erase))
-        debug_write("STORE foreign page kept; storage locked out\r\n");
-    else if(s_cal_store.corrupt_slots)
-        debug_write("STORE checksum failure cleared; cold boot\r\n");
     calibration_store_load(&s_cal_store,profile,count,lo,hi,flash_calibration_read);
     if(s_cal_store.saved) s_scan.calibrated=count;
-    settings_restore(lo,hi);
     return s_cal_store.saved;
 }
 static bool save_calibration(const keyboard_calibration_t *cal)
@@ -139,9 +59,7 @@ static bool save_calibration(const keyboard_calibration_t *cal)
 }
 static bool clear_profile(void)
 {
-    const bool ok=calibration_store_clear(&s_cal_store,flash_calibration_read,flash_calibration_erase);
-    if(ok) { s_settings=s_settings_defaults; s_settings_dirty_at=0u; }
-    return ok;
+    return calibration_store_clear(&s_cal_store,flash_calibration_read,flash_calibration_erase);
 }
 static void reset_sensors(uint8_t profile) { keyboard_scan_init(&s_scan,profile); }
 static const keyboard_app_ops_t app_ops={
@@ -284,9 +202,7 @@ void keyboard_live_init(void)
     s_stream_requested = true;
 #ifdef HUNTSMAN_KEYBOARD_MODE
     keyboard_app_init(&s_app,&s_raw,&s_midi,&s_menu,&s_cal,&app_ops);
-    s_cal_store=(calibration_store_t){.slot=255,.settings_slot=255};
-    s_settings_ready=false; s_settings_dirty_at=0u;
-    settings_capture(&s_settings_defaults); s_settings=s_settings_defaults;
+    s_cal_store=(calibration_store_t){.slot=255};
     s_gui_sequence = s_gui_ack = s_last_gui = 0u;
     s_gui_result = 0u;
 #endif
@@ -352,7 +268,6 @@ void keyboard_live_service(void)
 #ifdef HUNTSMAN_KEYBOARD_MODE
     keyboard_app_service(&s_app,now,s_transport.phase==OPT_SCAN_READ && usb_composite_ready(),
                          usb_keyboard_send,usb_midi_send);
-    settings_poll(now);
     s_host_keys=s_raw.armed && !calibration_active(&s_cal);
 #else
     if (s_host_keys && (!s_scan.valid || (uint32_t)(now - s_last_frame) >= 100u ||
@@ -438,12 +353,6 @@ bool keyboard_live_command(const char *line)
         value(" root=",s_midi.music.root); value(" scale=",s_midi.music.scale);
         value(" music_page=",s_menu.music_page); value(" janko=",s_midi.janko);
         value(" velocity_start=",s_midi.velocity_start);
-        value(" press_level=",s_menu.midi_press_level);
-        value(" threshold_source=",s_menu.threshold_source);
-        value(" settings_gen=",s_cal_store.settings_saved?s_cal_store.settings_generation:0u);
-        value(" dirty=",s_settings_dirty_at?1u:0u); value(" store_err=",s_cal_store.error);
-        value(" corrupt=",s_cal_store.corrupt_slots);
-        debug_write(" settings="); debug_write(s_cal_store.settings_saved?"saved":"cold");
         debug_write(" build=" MT_BUILD_ID);
         debug_write(" key="); debug_write(midi_root_names[s_midi.music.root]);
         debug_write(" scale_name="); debug_write(midi_scales[s_midi.music.scale].name);
@@ -466,8 +375,7 @@ bool keyboard_live_command(const char *line)
                     "dump read ID ADDRESS (decimal, aligned 64-byte main-flash read; HBD1 binary response)\r\n"
                     "cfg midi ID SENSOR NOTE (0..127, 255=unmapped); Fn+Enter toggles MIDI; LCtrl/LAlt octave-/+\r\n"
                     "cfg velocity ID LEVEL (1..10, Fn+V: 0% .. 100% transmitted-velocity start)\r\n"
-                    "cfg clean ID (cold boot: erase saved calibration and Fn-menu settings, like Fn+R)\r\n"
-                    "A checksum failure at boot clears the region and starts from defaults.\r\n"
+                    "cfg clean ID (cold boot: erase the saved calibration, like Fn+R)\r\n"
                     "Standalone raw keyboard auto-arms after neutral scan; settings RAM-only.\r\n");
 #endif
 #ifdef HUNTSMAN_TRAVEL_LIGHTING

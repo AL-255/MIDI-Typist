@@ -1,13 +1,12 @@
-# Huntsman device calibration and settings storage
+# Huntsman device calibration storage
 
-Calibration and the Fn-menu settings use **only two whole 512-byte pages at
-physical addresses 0x78000 and 0x78200**. The beginning of configuration
-storage, including the serial number and primary settings at 0x49000..0x49400,
-is not an erase target. The HKC1/HKS1 serializer and controller adapter belong
-to the [Huntsman board](../firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c).
-Shared calibration requests storage through `keyboard_app_ops_t`; the board
-mirrors the Fn-menu settings itself. These addresses and this 65-sensor format
-must not be copied to another platform.
+Calibration uses **only two whole 512-byte pages at physical addresses
+0x78000 and 0x78200**. The beginning of configuration storage, including the
+serial number and primary settings at 0x49000..0x49400, is not an erase target.
+The HKC1 serializer and controller adapter belong to the
+[Huntsman board](../firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c).
+Shared calibration requests storage through `keyboard_app_ops_t`; these
+addresses and this 65-sensor format must not be copied to another platform.
 See [the storage port contract](PORTING.md#5-add-lighting-storage-and-host-integration).
 
 ## Evidence and ownership
@@ -28,106 +27,48 @@ Git-ignored device-dump metadata. No serial-number bytes are published.
 The FF tail inside the primary settings' second page is deliberately **not**
 used: erasing it would also erase existing settings in that same page.
 The independent application does not use the original allocator. Returning to
-stock firmware may reclaim or clear the free block and lose our records.
+stock firmware may reclaim or clear the free block and lose our calibration.
+The two pages keep the same 512-byte geometry, alignment and slot roles
+wherever they sit in that free payload; only their addresses are Huntsman
+board data.
 We do not alter allocator boundary tags or promise that stock preserves our data.
-
-The two storage pages keep the same 512-byte geometry, alignment and slot
-roles wherever they sit in that free payload; only their addresses are
-Huntsman board data.
 
 ## Record and recovery
 
-Each HKC1 page carries a calibration part and an optional settings part, each
-with its own generation, in this little-endian layout:
+Each HKC1 page uses this little-endian layout:
 
 | Offset | Field |
 | --- | --- |
 | 0 | Four-byte `HKC1` magic |
 | 4, 5, 6, 7 | uint8 version 1, layout, sensor count, reserved zero |
-| 8 | uint32 calibration generation |
+| 8 | uint32 generation |
 | 12 | uint32 ownership marker `0x314c4143` |
 | 16 | 65 uint16 lower bounds |
 | 146 | 65 uint16 upper bounds |
-| 276 | Optional settings block, otherwise FF padding |
+| 276..507 | Reserved FF padding |
 | 508 | IEEE CRC32 over bytes 0..507 |
 
-Layout 0 with count 0 and zeroed bounds marks a page that only carries
-settings; a present calibration must name its layout, match the sensor count,
-keep at least 512 counts of range inside the valid ADC domain and zero unused
-sensors. The settings block is:
+Unused sensors are zero. Bounds must have at least 512 counts of range and
+lie within the valid ADC domain. Layout identity must match.
 
-| Offset | Field |
-| --- | --- |
-| 276 | Four-byte `HKS1` magic |
-| 280 | uint8 version 1, reserved zero |
-| 282 | uint32 settings generation |
-| 286 | 20-byte build identity, NUL-padded (`v0.1.0-RZ03-0499`) |
-| 306 | 16-byte payload, see below |
-| 322..507 | FF padding |
+Boot reads both pages and selects the newest valid matching generation,
+including uint32 rollover. No boot-time erase/program occurs. Without a valid
+record, existing factory-derived endpoint behavior remains in use.
 
-The payload holds the Fn-menu state: trigger source (0 defaults, 1 keyboard
-trigger editor, 2 MIDI trigger page), calibrated trigger level, rapid level and
-enable, MIDI trigger step, transmitted-velocity start, Jankó layout, lower-row
-mute, brightness, music root and scale, octave and performance mode. Out-of-range
-values, non-zero reserved bytes or unknown magic invalidate the block, never the
-calibration part. Host `cfg set`/`cfg all` threshold edits and `cfg midi`
-mappings are not stored.
-
-Boot runs an **integrity pass** over both pages before anything is loaded. Each
-page must be blank, or carry our markers with a CRC32 that matches over bytes
-0..507; the checksum therefore covers the header, both bound arrays, the
-settings block and the padding, so any single changed byte and any partial
-program (a power loss mid-write leaves a written prefix and an erased tail)
-fails it. A page that fails is corruption, and the pass then **clears the whole
-region** and continues: the session is a cold boot from an empty store. A clean
-store is only read - no boot-time erase or program happens unless corruption has
-to be cleared. A page that cannot be read at all cannot be classified, so it is
-left alone and the load path reports the read error instead of erasing the
-region on every boot.
-
-After that pass, boot takes the newest valid generation of each part
-independently. Without a valid settings record, or with one whose build identity
-differs from the running application, the application keeps its defaults: that
-is the **cold-boot condition**, and it is why a freshly flashed build cannot
-inherit the previous build's state.
-
-A save writes only the inactive page, leaving the other record untouched. Before
-erase, the target must read successfully and be entirely FF or carry our
-recognizable HKC1 header. Unknown contents cause a save failure, not an erase: a
-page holding data we did not write is skipped and the save falls back to the
-other authorized slot, so one damaged or foreign page never disables
-persistence. Rewriting one part preserves the other: a calibration save keeps
-the settings block in its page and a settings save keeps that page's
-calibration part.
-
-Clearing wipes the whole region. Both callers are deliberate: Fn+R and
-`cfg clean` from an operator, and the boot integrity pass after a checksum
-failure. Every non-blank page is erased, including content we cannot identify
-and a page that cannot be read at all - an interrupted program can leave
-ECC-invalid data that nothing else can reclaim - because both addresses are
-authorized pages. If an erase succeeds and only the read-back stays broken, the
-clear is satisfied: such a page holds no record this application could load
-again. If an erase fails, the clear fails and reports it, and the region is left
-as it was.
+A complete calibration writes only the inactive page, leaving the prior
+record untouched. Before erase, the target must read successfully and be
+entirely FF or carry our recognizable HKC1 ownership header. Unknown contents
+or ECC errors cause a save failure, not an erase. A recognizable torn record
+may be replaced. An unreadable page after an interrupted erase is not
+automatically reclaimed; the previous readable record can still load.
 
 The full page is erased, programmed, read back and compared byte for byte,
-including CRC, before RAM state and the active generation are updated. Power
-failure during a first save can leave no valid record, in which case defaults
-are used. After a valid save, interrupted inactive-page writes leave the older
-valid record available. This is a software-level recovery design, not a claim
-that power-cut silicon testing has been performed.
-
-## Mirroring the Fn menu
-
-A menu change starts a 1.5 s debounce; the write happens only after every key is
-released, so an edit never stalls the optical scan mid-keystroke. A save rotates
-to the slot whose settings generation is older, keeping flash wear off one page
-and the previous record available. The RAM baseline follows what boot loaded, so
-a cold boot never writes a record of its own defaults.
-
-Fn+R and the host's `cfg clean` erase both pages: `cfg clean` reads them back
-blank before answering result 1, and `tools/flash_application.py` sends it after
-every flash. Defaults then apply on the first neutral frame.
+including CRC, before RAM endpoints and the active generation are updated.
+Power failure during the first save can leave no valid record, in which case
+factory-derived endpoints are used. After an existing valid save, interrupted
+inactive-page writes leave the older valid record available. This is a
+software-level recovery design, not a claim that power-cut silicon testing
+has been performed.
 
 ## Controller boundary
 
@@ -141,8 +82,8 @@ from RAM. SDK ROM-wrapper calls are excluded; the controller adapter is
 checked against original ARM register transactions.
 
 The adapter accepts a slot number, never an arbitrary write address, and
-validates the page it is given with the same page predicate the store uses.
-Invalid slot, geometry, clock or record rejects before erase.
+validates the page it is given with the same predicate the store uses. Invalid
+slot, geometry, clock or record rejects before erase.
 
 **Write bounds.** Every erase and program in the whole application lives in
 this adapter and derives its address from one of two constants, `CAL_SLOT_A`
@@ -154,25 +95,25 @@ plus the reserved tail. The application image occupies 0x0..0x20000, and the
 primary settings with the serial number sit at 0x49000..0x49400; neither is
 reachable from the adapter. The offline flash model enforces the same rule: it
 rejects any controller command whose page is not one of the two authorized
-pages, and it rejects the application and primary-settings ranges explicitly,
-so an ARM test fails rather than silently corrupting them. That test also
-reports the address set every mirror, reload and cold-boot flow touched, which
-is exactly `0x78000` and `0x78200`.
+pages and any command inside the application or primary-settings ranges, so an
+ARM test fails rather than silently corrupting them. That test also reports the
+address set the save and reboot flows touched, which is exactly `0x78000` and
+`0x78200`.
 
 The read path retries a failed word read twice before reporting an error. The
 reference driver read each word once; retrying keeps one flaky controller
-response from failing a boot load, a save's read-back or the cold boot, while
-a controller that stops signalling DONE still latches out further commands. CDC exposes no
-raw erase/program command: only calibration completion, mirrored Fn-menu
-changes and the cold boot can write. Fn+R previews `RESET`; release opens `RESET?`
-with full-brightness green Y/red N. After all keys are released, a fresh Y press
-invokes the bounded clear operation; N cancels without erasing. Pre-held Y cannot
-confirm and simultaneous Y/N cancels. Both pages must be blank or recognizable
-HKC1 records before any erase; the older slot is cleared first and each erase is
-read back. Unknown contents or controller errors stop clearing. Empty pages are
-skipped. Successful clearing removes saved calibration and Fn-menu settings and
-restores application defaults on neutral input; it does not erase factory/serial
-data or reboot USB. See [RESET](FN_MENU.md#reset-and-flash-boundaries).
+response from failing a boot load or a save's read-back, while a controller
+that stops signalling DONE still latches out further commands. CDC exposes no
+raw erase/program command: only completing every key in calibration, or the
+Fn+R/`cfg clean` clear, can write.
+Fn+R previews `RESET`; release opens `RESET?` with full-brightness green Y/red N.
+After all keys are released, a fresh Y press invokes the bounded clear operation;
+N cancels without erasing. Pre-held Y cannot confirm and simultaneous Y/N cancels.
+Both pages must be blank or recognizable HKC1 records before any erase; the
+older slot is cleared first and each erase is read back. Unknown contents or
+controller errors stop clearing. Empty pages are skipped. Successful clearing
+removes saved calibration and restores application defaults on neutral input;
+it does not erase factory/serial data or reboot USB. See [RESET](FN_MENU.md#reset-and-flash-boundaries).
 
 The original 1 KiB reservation at image offsets 0x1fc00/0x1fe00 remains FF.
 Although readback establishes physical application base 0x8000, we do not
@@ -195,15 +136,15 @@ python3 -B tools/test_calibration_arm.py \
 Native tests cover simultaneous 61/62/65-key holds at 8 kHz, independent
 movement/release, timing, layouts, rollover, noise, cancellation, CRC damage,
 unexpected page contents, error handling and all 512 byte-cut points in an
-interrupted inactive-page write, plus settings round-trips, A/B rotation,
-calibration/settings coexistence in one page, cold boot on a foreign build,
-range and damage guards, slot fallback for an unreadable page, clearing
-(including recovery of a page that stays unreadable) and the integrity pass:
-every one of the 512 single-byte corruptions and every 16-byte-granular partial
-program is detected and cleared to a cold boot. ARM tests compare exact register writes
-with executed original erase/program instructions, then exercise compiled Fn+C,
+interrupted inactive-page write. ARM tests compare exact register writes with
+executed original erase/program instructions, then exercise compiled Fn+C,
 CDC commands, complete sequential and parallel simulated 61-key acquisition,
-save and reboot loading, the released-key mirror gate, a pre-seeded record
-applied on boot, a torn page detected and cleared at boot, and `cfg clean`.
+save and reboot loading.
 These tests never access the real keyboard. See [calibration operation](CALIBRATION.md)
 for physical validation status and limitations.
+
+No Fn action changes this record format or write boundary: every Fn-menu choice
+(brightness, trigger points, MIDI layout, velocity start or mode) is RAM-only
+and returns to its default at the next power cycle. Calibration is the only
+device state that outlives a power cycle, and a trigger commit uses the loaded
+calibration bounds without changing the stored record.

@@ -8,7 +8,7 @@ factory/security data, primary settings and secondary-controller regions are
 never written. After the flash the helper performs the cold boot described in
 [docs/DEVICE_CONFIG_STORAGE.md](../docs/DEVICE_CONFIG_STORAGE.md): it sends
 `cfg clean` so the new build starts from defaults instead of inheriting the
-previous build's stored calibration and Fn-menu settings.
+previous build's stored calibration.
 
 Flashing needs raw USB access, so it runs as root or with suitable udev rules.
 Nothing here flashes implicitly: every entry point is an explicit caller
@@ -175,6 +175,6 @@ def flash_image(path, progress=None, status=None, cold_boot_after=True, enter_bo
         result.cold_boot_skipped = True
         return result
     if status:
-        status('flash complete; clearing stored configuration (cold boot)')
+        status('flash complete; clearing the stored calibration (cold boot)')
     result.cold_boot = cold_boot(status=status)
     return result

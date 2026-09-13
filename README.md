@@ -74,8 +74,9 @@ remain separate indicators. MIDI velocity and aftertouch are unchanged.
 - **Fn+K / Fn+L** lowers/raises brightness across the original 20 levels.
   The `LIGHT-`/`LIGHT+` preview repeats while held; release changes one step.
   Keep Fn held and tap K/L repeatedly; each release changes another step.
-  Fn-menu choices, including brightness and the trigger point, are stored in
-  the two authorized tail pages and survive a power cycle; Fn+R clears them.
+  Fn-menu choices, including brightness and the trigger point, live in RAM:
+  only the calibration endpoints are stored in the two authorized tail pages,
+  and Fn+R clears the menu choices together with that calibration.
   See [Fn menu details](docs/FN_MENU.md).
 - All Fn settings options **preview while held and execute once on release of
   either key** (RESET opens confirmation). Except for repeated K/L taps while
@@ -225,8 +226,8 @@ git submodule; run `git submodule update --init third_party/huntsman_updater`
 once after cloning. The GUI's **Flash application...** control and
 `tools/flash_application.py` both drive it through `tools/firmware_flasher.py`.
 
-**Calibration endpoints and the Fn-menu settings save to the device; host
-`cfg set`/`cfg all` threshold edits and MIDI mappings remain RAM-only.** In keyboard mode use **Fn+C** or the GUI's **Calibrate keys
+**Only the calibration endpoints save to the device; every Fn-menu choice,
+host `cfg set`/`cfg all` threshold edit and MIDI mapping remains RAM-only.** In keyboard mode use **Fn+C** or the GUI's **Calibrate keys
 → device flash** button. Release all keys; wait 500 ms (purple → blue), then
 fully press and hold blue keys for one second until green. Multiple keys can
 be held together; moving/releasing one does not reset the others. Green keys
@@ -296,7 +297,7 @@ Selecting a CDC display does not select keyboard/MIDI performance mode.
 - [Device telemetry: streams, fields and text replies](docs/TELEMETRY.md)
 - [Command acknowledgments and profile format](docs/MIDI_PROTOCOL.md)
 - [Parallel calibration and its physical save/readback record](docs/CALIBRATION.md)
-- [Tail-page storage, Fn-menu persistence and serial-number protection](docs/DEVICE_CONFIG_STORAGE.md)
+- [Two-page calibration storage and serial-number protection](docs/DEVICE_CONFIG_STORAGE.md)
 - [Build and test instructions](docs/BUILDING.md)
 - [Optical/keyboard recovery](docs/KEYBOARD_RECOVERY.md)
 - [Travel lighting and calibration limitations](docs/TRAVEL_LIGHTING.md)

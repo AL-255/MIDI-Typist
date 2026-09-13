@@ -62,10 +62,10 @@ running by a previous owner (`stream off`), query the identity, and only then
 select `stream gui`.
 
 `cfg clean` is the **cold boot**: it erases both authorized pages (the saved
-calibration and the stored Fn-menu settings), exactly like Fn+R, and answers
+calibration record), exactly like Fn+R, and answers
 result 1 only after reading them back blank. Defaults then apply on the first
 neutral frame. `tools/flash_application.py` sends it after every flash so a new
-build cannot inherit the previous build's state; `--keep-settings` skips it.
+build cannot inherit the previous build's state; `--keep-calibration` skips it.
 
 `cfg velocity` sets the transmitted-velocity start of
 [the Fn+V editor](MIDI_DESIGN.md#transmitted-velocity-start): `LEVEL` is 1…10,

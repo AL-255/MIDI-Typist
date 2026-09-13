@@ -135,7 +135,7 @@ Newline-terminated ASCII, available only while no binary stream is active.
 | Command | Reply |
 | --- | --- |
 | `version` | `build=v0.1.0-RZ03-0499` — project version plus board build target |
-| `menu status` | Fn/menu state: `fn`, legacy editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `press_level`, `threshold_source`, `settings_gen`, `dirty`, `store_err`, `corrupt`, `settings` (`saved`/`cold`), `build`, `key`, `scale_name` |
+| `menu status` | Fn/menu state: `fn`, legacy editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `build`, `key`, `scale_name` |
 | `status`, `scan status` | `SCAN phase`, `profile`, `count`, `transfers`, `frames`, `markers`, `errors`, `settled`, `valid`, `calibrated`, `stream_dropped`, optional `fault` |
 | `light status` | `LIGHT phase`, `on`, `profile`, `transfers`, `frames`, `errors`, `calibrated`, `count`, optional `fault` |
 | keyboard/config changes | `KEYS host`, `fn`, `mode`, `act`, `rapid`, `enabled`, `saved`, `revision`, then `RAW enabled`, `armed`, `valid`, `revision` |

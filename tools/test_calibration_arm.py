@@ -93,6 +93,8 @@ def low_tests(args):
             assert dev.u32(0x4000041c)==1
         assert dev.call('flash_calibration_read',slot,0x2003d400)==0
         assert bytes(dev.cpu.mem_read(0x2003d400,512))==p
+        # Every erase/program in this flow went to the one authorized page.
+        assert dev.flash.touched=={SLOTS[slot]},dev.flash.touched
         before=len(dev.flash.commands)
         for invalid in (2,255,0xffffffff):
             assert dev.call('flash_calibration_erase',invalid)!=0
@@ -127,10 +129,7 @@ def live_tests(args):
     dev=Live(args.elf,args.reference); dev.service(400)
     s=snapshot(dev,'stream gui'); assert s.calibration_flags==4
     assert 0x20000000 <= dev.symbols['s_cal'] < dev.symbols['__app_load_end__'] <= 0x2001fc00
-    # Boot reads both pages three times: the integrity pass, the calibration
-    # part and the settings part. Never a write - a blank store has no checksum
-    # failure to clear.
-    assert len(dev.flash.commands)==192 and all(cmd==3 for cmd,_ in dev.flash.commands)
+    assert len(dev.flash.commands)==64 and all(cmd==3 for cmd,_ in dev.flash.commands)
     labels=sensor_labels()[61]
     dev.raw[labels.index('Fn')]=1000; dev.raw[labels.index('C')]=1000
     s=snapshot(dev); assert s.calibration_state==0 and not any(s.report)
@@ -167,6 +166,7 @@ def live_tests(args):
     assert sum(cmd==4 for cmd,_ in dev.flash.commands)==1
     assert sum(cmd==12 for cmd,_ in dev.flash.commands)==1
     assert bytes(dev.flash.pages[SLOTS[1]])==b'\xff'*512
+    assert dev.flash.touched=={SLOTS[0]},dev.flash.touched
     reboot=Live(args.elf,args.reference,dev.flash.pages); reboot.service(400)
     s=snapshot(reboot,'stream gui'); assert s.calibration_flags==6 and s.calibration_generation==1
     assert all(cmd==3 for cmd,_ in reboot.flash.commands)
@@ -192,139 +192,11 @@ def live_tests(args):
     assert all(not any(p) for p in dev.reports) and not any(v&8 for v in s.velocity_state)
     assert bytes(dev.flash.pages[SLOTS[0]])==previous_page
     assert sum(cmd==4 for cmd,_ in dev.flash.commands)==1
+    # The second save rotated to the other slot; this device wrote only that one.
+    assert dev.flash.touched=={SLOTS[1]},dev.flash.touched
     print('PASS compiled parallel calibration: concurrent hold telemetry, isolated release/motion, completed keys held, final 59-key batch, second A/B save')
-
-SETTINGS_OFF, SETTINGS_PAYLOAD_OFF, SETTINGS_END = 276, 306, 322
-def with_page(dev,slot,page):
-    dev.flash.pages[slot][:]=page
-    return dev
-
-def settings_arm_tests(args):
-    """Fn-menu settings survive a power cycle; another build is a cold boot."""
-    labels=sensor_labels()[61]
-    def keys(**values):
-        for label,value in values.items(): dev.raw[labels.index(label)]=value
-        dev.service(20)
-    def release_all():
-        for i in range(len(dev.raw)): dev.raw[i]=3900
-        dev.service(20)
-    def page(label):
-        keys(**{'Fn':2400,label:2400}); keys(**{'Fn':3900,label:3900}); dev.service(200)
-    def status():
-        dev.command('stream off'); dev.service(20)
-        reply=dev.command('menu status')
-        snapshot(dev,'stream gui')
-        return reply
-    def settle(limit=60):
-        """Service until the debounced mirror has stored everything pending."""
-        for _ in range(limit):
-            line=status()
-            if b'settings=saved' in line and b'dirty=0' in line: return True
-            dev.service(50)
-        return False
-
-    dev=Live(args.elf,args.reference); dev.service(400)
-    snapshot(dev,'stream gui')
-    assert b'settings=cold' in status() and b'press_level=0' in status() and b'dirty=0' in status()
-
-    # The mirror never writes while a key is down: the scan stays unarmed, so a
-    # change made now is only stored once every key is released again.
-    keys(Q=1000)
-    s=snapshot(dev,'cfg velocity 900 7'); assert s.result==1
-    dev.service(400)
-    assert b'settings=cold' in status() and b'dirty=1' in status(), status()
-    release_all()
-    assert settle(), status()
-    assert b'dirty=0' in status()
-    stored=bytes(dev.flash.pages[SLOTS[0]])
-    assert stored[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKS1' and stored[SETTINGS_OFF+4]==1
-    assert stored[SETTINGS_OFF+5]==0 and struct.unpack_from('<I',stored,SETTINGS_OFF+6)[0]==1
-    assert stored[SETTINGS_OFF+10:SETTINGS_OFF+30].rstrip(b'\0')==b'v0.1.0-RZ03-0499'
-    assert stored[SETTINGS_PAYLOAD_OFF+5]==7           # the host velocity start is mirrored
-    assert all(b==0xff for b in stored[SETTINGS_END:508])
-    assert struct.unpack_from('<I',stored,508)[0]==zlib.crc32(stored[:508])
-    assert bytes(dev.flash.pages[SLOTS[1]])==b'\xff'*512   # first save uses slot A
-    print('PASS ARM settings: released-key gate, slot A record layout, CRC, host velocity start mirrored')
-
-    # Fn+Enter selects MIDI mode and Fn+V opens the ten-step velocity bar; the
-    # menu path is mirrored through the same record, rotating to slot B.
-    keys(Fn=2400,Ent=2400); keys(Fn=3900,Ent=3900); dev.service(200)
-    page('V'); keys(**{'6':2400}); keys(**{'6':3900}); dev.service(200)
-    assert b'velocity_start=6' in status(), status()
-    page('Esc'); release_all()
-    page('J'); release_all()                 # Fn+J: the Janko layout toggle
-    assert settle(), status()
-    assert b'settings_gen>=2' not in status() or b'settings=saved' in status()
-    assert b'janko=1' in status(), status()
-    assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKS1'
-    assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_PAYLOAD_OFF+5]==6
-    print('PASS ARM settings: Fn+Enter/Fn+V menu path mirrored with A/B rotation')
-
-    # A power cycle reloads whatever the newest record says, without rewriting it.
-    pages={slot:bytes(dev.flash.pages[slot]) for slot in SLOTS}
-    reloaded=Live(args.elf,args.reference,pages=pages); reloaded.service(400)
-    s=snapshot(reloaded,'stream gui'); assert s.velocity_start==6, s.velocity_start
-    # The unplug/replug case: MIDI mode and the Janko layout come back.
-    assert s.performance_mode==1 and s.flags & 64, (s.performance_mode, s.flags)
-    reloaded.command('stream off'); reloaded.service(10)
-    line=reloaded.command('menu status')
-    assert b'velocity_start=6' in line and b'settings=saved' in line and b'settings_gen=2' in line
-    assert {slot:bytes(reloaded.flash.pages[slot]) for slot in SLOTS}==pages
-    print('PASS ARM settings: power-cycle reload applies the stored Fn-menu state without rewriting it')
-
-    # A record from another build is the cold-boot condition and stays untouched.
-    foreign=bytearray(pages[SLOTS[1]])
-    foreign[SETTINGS_OFF+10:SETTINGS_OFF+30]=b'v9.9.9-OTHER'.ljust(20,b'\0')
-    struct.pack_into('<I',foreign,508,zlib.crc32(bytes(foreign[:508])))
-    dev2=Live(args.elf,args.reference,pages={SLOTS[1]:bytes(foreign)}); dev2.service(400)
-    assert snapshot(dev2,'stream gui').velocity_start==1
-    dev2.command('stream off'); dev2.service(10)
-    assert b'settings=cold' in dev2.command('menu status')
-    assert bytes(dev2.flash.pages[SLOTS[1]])==bytes(foreign)
-    print('PASS ARM settings: another build\'s record is the cold-boot condition')
-
-    # cfg clean performs Fn+R: both parts erased, defaults applied, nothing
-    # re-stored afterwards, and the ACK reports the verified erase.
-    dev3=Live(args.elf,args.reference,pages=pages); dev3.service(400)
-    assert snapshot(dev3,'stream gui').velocity_start==6
-    s=snapshot(dev3,'cfg clean 910'); assert s.result==1, s.result
-    dev3.service(200)
-    assert snapshot(dev3).velocity_start==1
-    assert all(b==0xff for b in dev3.flash.pages[SLOTS[0]])
-    assert all(b==0xff for b in dev3.flash.pages[SLOTS[1]])
-    dev3.command('stream off'); dev3.service(10)
-    assert b'settings=cold' in dev3.command('menu status')
-    # A torn page - a power loss during a save - fails its checksum, so the boot
-    # integrity pass clears the region and the session starts from defaults.
-    torn=bytearray(pages[SLOTS[1]])
-    torn[300]^=0x20                       # a data byte: the stored CRC no longer matches
-    dev4=Live(args.elf,args.reference,pages={SLOTS[1]:bytes(torn)}); dev4.service(400)
-    assert snapshot(dev4,'stream gui').velocity_start==1
-    dev4.command('stream off'); dev4.service(10)
-    line=dev4.command('menu status')
-    # corrupt=2 reports the cleared page; store_err tracks the last operation, and
-    # the load that follows the scrub succeeds against the now-empty region.
-    assert b'settings=cold' in line and b'corrupt=2' in line and b'store_err=0' in line, line
-    assert all(b==0xff for b in dev4.flash.pages[SLOTS[0]])
-    assert all(b==0xff for b in dev4.flash.pages[SLOTS[1]])
-    assert dev4.flash.touched=={SLOTS[1]}, sorted(hex(a) for a in dev4.flash.touched)
-    print('PASS ARM integrity: a torn page is detected, cleared and cold-booted; only that page is erased')
-
-    # Every flash command these flows issued stayed inside the two authorized
-    # pages: the model rejects anything else and the touched set proves it.
-    touched=set()
-    for candidate in (dev,reloaded,dev2,dev3,dev4): touched |= candidate.flash.touched
-    assert touched and touched <= set(SLOTS), sorted(hex(a) for a in touched)
-    print('PASS ARM flash bounds: mirror, reload and cold boot touched only '
-          + ', '.join(hex(a) for a in sorted(touched)))
-
-    dev3.service(400)
-    assert all(b==0xff for b in dev3.flash.pages[SLOTS[0]])
-    snapshot(dev3,'stream gui')                             # telemetry must be on again
-    s=snapshot(dev3,'cfg clean 911'); assert s.result==1    # an empty store clears again
-    print('PASS ARM cold boot: cfg clean erases both parts like Fn+R and the store stays empty')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__); p.add_argument('elf'); p.add_argument('--reference',required=True)
-    args=p.parse_args(); low_tests(args); live_tests(args); settings_arm_tests(args)
+    args=p.parse_args(); low_tests(args); live_tests(args)
 if __name__=='__main__': main()
