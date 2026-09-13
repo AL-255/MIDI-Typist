@@ -87,7 +87,7 @@ void device_page_settings_put(uint8_t *page, const device_settings_t *s, uint32_
 {
     uint8_t *tail=page+SET_OFF;
     memset(tail,255,CAL_PAGE_SIZE-4u-SET_OFF);
-    memcpy(tail,"HKS1",4); tail[4]=SETTINGS_VERSION; tail[5]=0; put32(tail+6,gen);
+    memcpy(tail,"HKM1",4); tail[4]=SETTINGS_VERSION; tail[5]=0; put32(tail+6,gen);
     memset(tail+10,0,SETTINGS_BUILD_MAX);
     for (unsigned i=0; build && build[i] && i<SETTINGS_BUILD_MAX; ++i) tail[10+i]=(uint8_t)build[i];
     device_settings_encode(tail+SET_HDR,s);
@@ -96,7 +96,7 @@ void device_page_settings_put(uint8_t *page, const device_settings_t *s, uint32_
 bool device_page_settings_get(const uint8_t *page, device_settings_t *s, uint32_t *gen, char *build)
 {
     const uint8_t *tail=page+SET_OFF;
-    if (memcmp(tail,"HKS1",4) || tail[4]!=SETTINGS_VERSION || tail[5]) return false;
+    if (memcmp(tail,"HKM1",4) || tail[4]!=SETTINGS_VERSION || tail[5]) return false;
     if (!device_settings_decode(tail+SET_HDR,s)) return false;
     if (gen) *gen=get32(tail+6);
     if (build) { memcpy(build,tail+10,SETTINGS_BUILD_MAX); build[SETTINGS_BUILD_MAX-1]=0; }
@@ -240,7 +240,7 @@ bool calibration_store_save(calibration_store_t *s, const keyboard_calibration_t
     s->error=read(slot,verify);
     if (s->error) return false;
     if (memcmp(page,verify,sizeof(page)) || !device_page_valid(verify)) { s->error=0x20003; return false; }
-    s->generation++; s->slot=slot; s->saved=true;
+    s->generation++; s->slot=(uint8_t)slot; s->saved=true;
     return true;
 }
 bool calibration_store_save_settings(calibration_store_t *s, const device_settings_t *in,

@@ -11,6 +11,9 @@
 - Keep useful design rationale, original-firmware reference facts and supported
   compatibility behavior only where they explain the current implementation.
 - Check relative documentation links after moving or deleting a document.
+- Keep [`docs/TELEMETRY.md`](docs/TELEMETRY.md) complete: update it whenever a
+  stream, magic, field, rate, checksum or text reply changes, and keep the
+  per-stream documents it links to in step.
 - Preserve upstream SDK documentation, license notices and provenance; do not
   rewrite vendored material to satisfy the project-documentation rule.
 - Use `huntsman` for complete physical-board build examples and `simulator`

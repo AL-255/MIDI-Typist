@@ -118,7 +118,7 @@ meaningful velocity.
 
 `stream gui` sends 1152-byte GUI telemetry, at most once per 33 ms.
 Bytes 7..446 contain raw samples, thresholds and keyboard state; see
-[the full layout](MIDI_PROTOCOL.md#gui-telemetry).
+[the full layout](TELEMETRY.md#gui-snapshot-stream-gui).
 
 | Offset | Field |
 | --- | --- |

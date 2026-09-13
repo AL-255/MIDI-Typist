@@ -27,6 +27,8 @@ Shared application contracts are documented separately from those wire formats.
 - [Per-key velocity](KEY_VELOCITY.md), [normalization](NORMALIZED_VELOCITY.md)
   and [interval pop filter](MIDI_FILTER.md): independent capture and encoding.
 - [MIDI design](MIDI_DESIGN.md) and [USB/GUI protocol](MIDI_PROTOCOL.md).
+- [Device telemetry](TELEMETRY.md): every stream, field, rate and text reply the
+  application reports, and how hosts consume them.
 - [Root/scale selection](MIDI_SCALES.md): portable interval tables, selectors,
   shared note/LED filtering, modal safety and stored settings.
 - [Parallel calibration](CALIBRATION.md): operation, state machine, telemetry fields

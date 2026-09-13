@@ -99,56 +99,19 @@ before deciding whether to apply again.
 
 ## GUI telemetry
 
-Current firmware emits one 1152-byte telemetry layout, including MIDI fields,
-calibration status and per-key parallel-hold bits. See
-[calibration protocol](CALIBRATION.md).
+The application emits one 1152-byte telemetry layout, including MIDI fields,
+calibration status and per-key parallel-hold bits. Frames carry no version
+number: a constant magic and the fixed size identify them, while the console
+build identity records which application produced them. The complete field
+table, the other streams and the text replies are documented in
+[device telemetry](TELEMETRY.md); the calibration fields additionally appear in
+[calibration](CALIBRATION.md).
 
-Frames carry no version number: the constant magic and the fixed size identify
-the layout, while the build identity above records which application produced
-them. This is a coordinated firmware/host contract — a layout change updates
-this table, the decoder and the recorded identity together. 1152-byte,
-little-endian, latest-only snapshots, no faster than one per 33 ms:
-
-| Offset | Encoding | Meaning |
-| ---: | --- | --- |
-| 0 | 4 bytes | `HKG` and a NUL byte: constant frame magic |
-| 4 | u16 | 1152 |
-| 6 | u8 | Fn+V transmitted-velocity start, 1…10 (1 = 0%, 10 = 100%) |
-| 7, 8 | u8 each | profile 0…3, count 0/61/62/65 |
-| 9 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó layout=64 |
-| 10 | u8 | last result: initial=0, success=1, rejected=2 |
-| 11 | u8 | legacy Fn editor mode 0…2, **not** performance mode |
-| 12 | u32 | GUI sequence |
-| 16 | u32 | RAM config revision |
-| 20 | u32 | last command ID |
-| 24, 28 | u32 each | optical/LED error counts |
-| 32 | 65 × u16 | raw samples |
-| 162 | 65 × u16 | press thresholds |
-| 292 | 65 × u16 | release thresholds |
-| 422 | 9 bytes | sensor-down bitset |
-| 431 | 16 bytes | last accepted NKRO USB report |
-| 447 | 65 × float32 | normalized device velocity, 0…1 |
-| 707 | 65 × u32 | completed velocity fit counts |
-| 967 | 65 × u8 | velocity ready=1, valid=2, pending=4; calibration hold active=8 |
-| 1032 | u8 | performance mode: keyboard=0, MIDI=1 |
-| 1033 | i8 | octave offset −10…+10 |
-| 1034 | u8 | MIDI channel, currently always 1 |
-| 1035 | u8 | MIDI cleanup pending, 0 or 1 |
-| 1036 | 65 × u8 | base note per sensor; 255=unmapped |
-| 1101 | 3 bytes | zero padding |
-| 1104 | u32 | MIDI queue-overflow count |
-| 1108 | u32 | performance-mode change count |
-| 1112 | 36 bytes | [calibration state, completion bitmap, generation/error and reserved bytes](CALIBRATION.md#gui-protocol) |
-| 1148 | u32 | sum of the preceding 574 little-endian u16 words |
-
-Unused sensor slots are zero, including MIDI mapping padding; **active** unmapped
-sensor slots are 255. This checksum detects framing errors, not authentication.
-The decoder validates the magic, frame size, reserved bytes, value ranges and
-padding, and resynchronizes by dropping bytes until the next magic. Velocity is
-float32. Pressure is transmitted over MIDI, not duplicated as another GUI sensor
-array. The armed flag reflects the raw engine; calibration can suppress HID
-despite that flag. Use calibration state and the last submitted report to
-interpret output.
+`cfg` commands are acknowledged inside this stream - request ID and
+accepted/rejected in the snapshot - so a host needs `stream gui` active to
+observe a result and must serialize commands. Rejection, mismatched readback,
+malformed telemetry or stale/disconnected CDC stops the GUI's worker and
+cancels unsent queued changes.
 
 ## Host JSON
 
