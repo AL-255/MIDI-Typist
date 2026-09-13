@@ -16,6 +16,12 @@ from test_keyboard_mode_arm import snapshot
 from scan_bars import sensor_labels
 
 SLOTS=(0x7d400,0x7d600)
+# Regions the application must never erase or program. The flash model rejects
+# any controller command outside the two authorized pages, so a stray address
+# into the application image, the primary settings or the serial-number pages
+# fails the test instead of silently corrupting the device.
+PROTECTED=((0x00000,0x20000,'application image'),
+           (0x49000,0x49400,'primary settings and serial number'))
 
 def record(gen=1):
     p=bytearray(b'\xff'*512)
@@ -29,6 +35,7 @@ class FlashModel:
     def __init__(self,cpu):
         self.cpu=cpu
         self.pages={a:bytearray(b'\xff'*512) for a in SLOTS}
+        self.touched=set()   # pages an erase/program command addressed
         self.buffer={}; self.trace=[]; self.commands=[]; self.fail=None
         cpu.hook_add(UC_HOOK_MEM_WRITE,self.write,begin=0x40034000,end=0x40034fff)
     def u32(self,a): return int.from_bytes(self.cpu.mem_read(a,4),'little')
@@ -39,7 +46,10 @@ class FlashModel:
         address=self.u32(0x40034010)*16
         self.commands.append((v,address))
         base=address & ~511
-        assert base in SLOTS, ('outside authorized tail pages',hex(address))
+        assert base in SLOTS, ('flash command outside the two authorized pages',hex(address))
+        for start,end,what in PROTECTED:
+            assert not start <= address < end, ('flash command inside '+what,hex(address))
+        if v in (4,12): self.touched.add(base)
         assert v in (3,4,8,12),v
         status=5 if self.fail==v else 4
         if status==4:
@@ -279,6 +289,14 @@ def settings_arm_tests(args):
     assert all(b==0xff for b in dev3.flash.pages[SLOTS[1]])
     dev3.command('stream off'); dev3.service(10)
     assert b'settings=cold' in dev3.command('menu status')
+    # Every flash command these flows issued stayed inside the two authorized
+    # pages: the model rejects anything else and the touched set proves it.
+    touched=set()
+    for candidate in (dev,reloaded,dev2,dev3): touched |= candidate.flash.touched
+    assert touched and touched <= set(SLOTS), sorted(hex(a) for a in touched)
+    print('PASS ARM flash bounds: mirror, reload and cold boot touched only '
+          + ', '.join(hex(a) for a in sorted(touched)))
+
     dev3.service(400)
     assert all(b==0xff for b in dev3.flash.pages[SLOTS[0]])
     snapshot(dev3,'stream gui')                             # telemetry must be on again

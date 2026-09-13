@@ -44,24 +44,37 @@ static uint32_t flash_size(void)
 static status_t read_word(uint32_t address, uint8_t *out)
 {
     if (s_timeout) return 0x10001;
-    FLASH->INT_CLR_STATUS = 15u;
-    FLASH->STARTA = FLASH_STARTA_STARTA(address >> 4u);
-    FLASH->DATAW[0] = 0u; /* normal margin, ECC enabled, no DMACC */
-    FLASH->CMD = FLASH_CMD_CMD(3u);
-    for (unsigned spins = 0; spins < 96000u; ++spins) {
-        const uint32_t flags = FLASH->INT_STATUS;
-        if (!(flags & FLASH_INT_STATUS_DONE_MASK)) continue;
-        if (flags & FLASH_INT_STATUS_FAIL_MASK) return kStatus_FLASH_CommandFailure;
-        if (flags & FLASH_INT_STATUS_ERR_MASK) return kStatus_FLASH_CommandNotSupported;
-        if (flags & FLASH_INT_STATUS_ECC_ERR_MASK) return kStatus_FLASH_EccError;
-        for (unsigned i = 0; i < 4u; ++i) {
-            const uint32_t word = FLASH->DATAW[i];
-            memcpy(out + 4u*i, &word, sizeof(word));
+    status_t result = kStatus_FLASH_CommandFailure;
+    /* The controller intermittently reports FAIL/ERR/ECC for a read that
+     * succeeds when repeated; the reference driver read each word once. Retry
+     * twice so one flaky read cannot fail a store load, a save's read-back or
+     * the cold boot. A controller that never signals DONE still latches. */
+    for (unsigned attempt = 0; attempt < 3u; ++attempt) {
+        board_watchdog_refresh();
+        FLASH->INT_CLR_STATUS = 15u;
+        FLASH->STARTA = FLASH_STARTA_STARTA(address >> 4u);
+        FLASH->DATAW[0] = 0u; /* normal margin, ECC enabled, no DMACC */
+        FLASH->CMD = FLASH_CMD_CMD(3u);
+        bool done = false;
+        for (unsigned spins = 0; spins < 96000u; ++spins) {
+            const uint32_t flags = FLASH->INT_STATUS;
+            if (!(flags & FLASH_INT_STATUS_DONE_MASK)) continue;
+            done = true;
+            if (flags & FLASH_INT_STATUS_FAIL_MASK) { result = kStatus_FLASH_CommandFailure; break; }
+            if (flags & FLASH_INT_STATUS_ERR_MASK) { result = kStatus_FLASH_CommandNotSupported; break; }
+            if (flags & FLASH_INT_STATUS_ECC_ERR_MASK) { result = kStatus_FLASH_EccError; break; }
+            for (unsigned i = 0; i < 4u; ++i) {
+                const uint32_t word = FLASH->DATAW[i];
+                memcpy(out + 4u*i, &word, sizeof(word));
+            }
+            return kStatus_FLASH_Success;
         }
-        return kStatus_FLASH_Success;
+        if (!done) {
+            s_timeout = true; /* Do not issue another command into a stuck controller. */
+            return 0x10001;
+        }
     }
-    s_timeout = true; /* Do not issue another command into a stuck controller. */
-    return 0x10001;
+    return result;
 }
 static void put32(uint8_t *p, uint32_t v)
 {

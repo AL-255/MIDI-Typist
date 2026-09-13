@@ -122,7 +122,27 @@ checked against original ARM register transactions.
 
 The adapter accepts a slot number, never an arbitrary write address, and
 validates the page it is given with the same page predicate the store uses.
-Invalid slot, geometry, clock or record rejects before erase. CDC exposes no
+Invalid slot, geometry, clock or record rejects before erase.
+
+**Write bounds.** Every erase and program in the whole application lives in
+this adapter and derives its address from one of two constants, `CAL_SLOT_A`
+and `CAL_SLOT_B`; the shared application contains no flash write path at all
+(`keyboard_config.c` keeps its production commit RAM-only for exactly that
+reason), and no ROM/IAP API is linked. `config_allowed` additionally requires
+`slot<2`, the board clock and a flash size large enough to contain both pages
+plus the reserved tail. The application image occupies 0x0..0x20000, and the
+primary settings with the serial number sit at 0x49000..0x49400; neither is
+reachable from the adapter. The offline flash model enforces the same rule: it
+rejects any controller command whose page is not one of the two authorized
+pages, and it rejects the application and primary-settings ranges explicitly,
+so an ARM test fails rather than silently corrupting them. That test also
+reports the address set every mirror, reload and cold-boot flow touched, which
+is exactly `0x7d400` and `0x7d600`.
+
+The read path retries a failed word read twice before reporting an error. The
+reference driver read each word once; retrying keeps one flaky controller
+response from failing a boot load, a save's read-back or the cold boot, while
+a controller that stops signalling DONE still latches out further commands. CDC exposes no
 raw erase/program command: only calibration completion, mirrored Fn-menu
 changes and the cold boot can write. Fn+R previews `RESET`; release opens `RESET?`
 with full-brightness green Y/red N. After all keys are released, a fresh Y press
