@@ -153,5 +153,8 @@ not executed against the user's saved calibration during hardware validation.
 Physical key-combination presses, wheel travel/response in a synthesizer,
 text-animation appearance and release latency, acquisition cadence,
 saved-record cold boot, endurance and power-cut recovery remain unverified on
-this build. A modeled acquisition is not a physical key-holding test. Private
+this build. On the development unit the two storage pages at 0x78000/0x78200
+currently answer reads with controller status 116, so a save or Fn+R clear is
+refused there (the store never erases a page it cannot read); this is a
+property of that device's flash state, not of the verified write path. A modeled acquisition is not a physical key-holding test. Private
 endpoint exports and flash backups remain excluded from Git.

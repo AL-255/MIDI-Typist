@@ -25,12 +25,19 @@ python3 tools/keyboard_gui.py --device /dev/ttyACM1   # explicit node override
 
 Current application: `build-keyboard-fn-menu/huntsman_firmware.bin`, exactly 131072 bytes,
 linked at `0x20000000`, sha256
-`6163694a0bc11a4d58d719a7cd997cec6f89bd79cc6335ea821c0ea9a6ec95cd`
-(flashed with the sibling updater's application-only path and verified live:
-GUI telemetry, pinned-sensor stream at ~1.35 k samples/s, stream switch-back,
-bottom-out velocity windows at the shared 1500 threshold, and a physical
-Fn+J Jankó toggle reported through the new telemetry bit). Original
+`42df0959acbfbc5913b33db910f5db1b3aa0cae8b37d4331ef6460fc27674681`
+(flashed with the sibling updater's application-only path; the device
+re-enumerated in application mode and answered `version` and `menu status`
+live, with GUI `HKG` telemetry streaming. The pinned-sensor stream, velocity
+windows and the physical Fn+J Jankó toggle were verified on earlier builds of
+this same application and are untouched by this change). Original
 bootloader/update transport is unchanged.
+
+On this unit the flash script's follow-up cold boot cannot be confirmed:
+`cfg clean` answers `RESET failed; saved profile not confirmed cleared`
+because the two storage pages no longer read back after the earlier settings
+experiments, and the store refuses to erase contents it cannot read. The
+application still boots from a blank store with factory-derived endpoints.
 
 The Linux GUI uses Python's standard library and Tk (`python3-tk` must be
 installed). No pip packages are required. Your user needs access to the CDC
