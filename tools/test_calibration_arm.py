@@ -237,7 +237,7 @@ def settings_arm_tests(args):
     assert settle(), status()
     assert b'dirty=0' in status()
     stored=bytes(dev.flash.pages[SLOTS[0]])
-    assert stored[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKM1' and stored[SETTINGS_OFF+4]==1
+    assert stored[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKS1' and stored[SETTINGS_OFF+4]==1
     assert stored[SETTINGS_OFF+5]==0 and struct.unpack_from('<I',stored,SETTINGS_OFF+6)[0]==1
     assert stored[SETTINGS_OFF+10:SETTINGS_OFF+30].rstrip(b'\0')==b'v0.1.0-RZ03-0499'
     assert stored[SETTINGS_PAYLOAD_OFF+5]==7           # the host velocity start is mirrored
@@ -256,7 +256,7 @@ def settings_arm_tests(args):
     assert settle(), status()
     assert b'settings_gen>=2' not in status() or b'settings=saved' in status()
     assert b'janko=1' in status(), status()
-    assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKM1'
+    assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKS1'
     assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_PAYLOAD_OFF+5]==6
     print('PASS ARM settings: Fn+Enter/Fn+V menu path mirrored with A/B rotation')
 

@@ -3,7 +3,7 @@
 Calibration and the Fn-menu settings use **only two whole 512-byte pages at
 physical addresses 0x78000 and 0x78200**. The beginning of configuration
 storage, including the serial number and primary settings at 0x49000..0x49400,
-is not an erase target. The HKC1/HKM1 serializer and controller adapter belong
+is not an erase target. The HKC1/HKS1 serializer and controller adapter belong
 to the [Huntsman board](../firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c).
 Shared calibration requests storage through `keyboard_app_ops_t`; the board
 mirrors the Fn-menu settings itself. These addresses and this 65-sensor format
@@ -58,7 +58,7 @@ sensors. The settings block is:
 
 | Offset | Field |
 | --- | --- |
-| 276 | Four-byte `HKM1` magic (Fn-menu settings) |
+| 276 | Four-byte `HKS1` magic |
 | 280 | uint8 version 1, reserved zero |
 | 282 | uint32 settings generation |
 | 286 | 20-byte build identity, NUL-padded (`v0.1.0-RZ03-0499`) |

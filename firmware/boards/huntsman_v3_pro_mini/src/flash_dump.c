@@ -126,26 +126,12 @@ uint32_t flash_calibration_read(unsigned slot, uint8_t *page)
 {
     if (!page || !config_allowed(slot)) return kStatus_FLASH_AddressError;
     const uint32_t address=slot ? CAL_SLOT_B : CAL_SLOT_A;
-    uint32_t result=0;
-    /* The controller occasionally fails the first reads after a reset or a
-     * write, and a fresh page read then succeeds. Retry the page rather than
-     * the word, and report only a failure that survives every attempt. */
-    for (unsigned attempt=0; attempt<4u; ++attempt) {
-        if (attempt) {
-            /* Give the controller a few milliseconds between attempts: the
-             * first reads after a reset or a write can fail while the next
-             * page read, later in the same boot, succeeds. */
-            const uint32_t until=board_millis()+2u;
-            while ((int32_t)(board_millis()-until)<0) board_watchdog_refresh();
-        }
-        result=0;
-        for (unsigned i=0; i<CAL_PAGE_SIZE && !result; i+=16u) {
-            board_watchdog_refresh();
-            result=read_word(address+i,page+i);
-        }
-        if (!result) return 0;
+    for (unsigned i=0; i<CAL_PAGE_SIZE; i+=16u) {
+        board_watchdog_refresh();
+        uint32_t result=read_word(address+i,page+i);
+        if (result) return result;
     }
-    return result;
+    return 0;
 }
 uint32_t flash_calibration_erase(unsigned slot)
 {
