@@ -138,11 +138,12 @@ of `(level-1) * 127 / 9` and scale the remaining range:
 `velocity = floor + round((127 - floor) * v)`. The keyboard honours the
 measured dynamics at the low end while guaranteeing a minimum attack for
 quiet or partially-travelled presses. Fn+V opens the ten-step editor; the
-value is RAM-only, applies to every note key (including Jankó mode), and is
-reported by `menu status` as `velocity_start=1..10`.
+value applies to every note key (including Jankó mode), is reported by
+`menu status` as `velocity_start=1..10`, and is stored with the other Fn-menu
+settings so it survives a power cycle.
 
-Fn+J toggles the built-in **Jankó layout**, a RAM-only replacement note
-mapping for the letter, number and punctuation rows: two whole-tone rows
+Fn+J toggles the built-in **Jankó layout**, a replacement note
+mapping that is remembered across power cycles for the letter, number and punctuation rows: two whole-tone rows
 staggered against each other, so the physical keys form the arrangement
 requested for this keyboard. The table lives in `keyboard_midi.c` keyed by
 HID usage, so it stays portable; the two Shift keys are matched by their
@@ -155,7 +156,7 @@ mapping is not modified; leaving the layout restores it exactly. The
 root/scale filter still applies to Jankó notes, and **Fn+Left Shift is
 ineffective while the layout is active**: the lower rows always play.
 
-Fn+Left Shift toggles a RAM-only `lower_muted` flag via the shared preview/release menu.
+Fn+Left Shift toggles a `lower_muted` flag via the shared preview/release menu; the flag is stored with the other Fn-menu settings.
 The layout setup caches the Caps/Shift rows in a sensor bitmap through the
 board's `keyboard_lower_group` query. Huntsman uses nine bytes and physical
 IDs 0x1e..0x39, including ISO/JIS extras; the application does not assume those

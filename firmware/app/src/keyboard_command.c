@@ -45,5 +45,9 @@ bool keyboard_app_command(keyboard_app_t *s,const char *line,uint32_t now,
     else if(!strncmp(line,"cfg velocity ",13) && argument(&p,&a) && !*p && a>=1u && a<=10u) {
         keyboard_midi_set_velocity_start(s->midi,a); *result=1u;
     }
+    /* Cold boot: erase the stored profile and Fn-menu settings exactly like
+     * Fn+R, so a freshly flashed application cannot inherit stale state. */
+    else if(!strncmp(line,"cfg clean ",10) && !*p && healthy &&
+            keyboard_app_reset_profile(s)) *result=1u;
     return true;
 }

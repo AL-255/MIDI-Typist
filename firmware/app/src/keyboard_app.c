@@ -9,6 +9,17 @@ static void defaults(keyboard_app_t *s)
     calibration_init(s->cal);
     s->loaded=s->reset_pending=false;
 }
+static void log_message(keyboard_app_t *s,const char *message);
+bool keyboard_app_reset_profile(keyboard_app_t *s)
+{
+    if(!s->ops || !s->ops->clear_profile || !s->ops->clear_profile()) {
+        log_message(s,"RESET failed; saved profile not confirmed cleared\r\n");
+        return false;
+    }
+    s->reset_pending=true;
+    log_message(s,"RESET saved profile cleared; release all keys for defaults\r\n");
+    return true;
+}
 void keyboard_app_init(keyboard_app_t *s,keyboard_raw_t *raw,keyboard_midi_t *midi,
                        keyboard_menu_t *menu,keyboard_calibration_t *cal,
                        const keyboard_app_ops_t *ops)
@@ -67,12 +78,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     if(action==MENU_SELECT_KEY) (void)keyboard_midi_select_music(s->midi,raw,s->menu->selection,s->midi->music.scale);
     if(action==MENU_SELECT_SCALE) (void)keyboard_midi_select_music(s->midi,raw,s->midi->music.root,s->menu->selection);
     if(action==MENU_CALIBRATION) (void)keyboard_app_calibrate(s,now,s->frame_valid);
-    if(action==MENU_RESET) {
-        if(s->ops && s->ops->clear_profile && s->ops->clear_profile()) {
-            s->reset_pending=true;
-            log_message(s,"RESET saved profile cleared; release all keys for defaults\r\n");
-        } else log_message(s,"RESET failed; saved profile not confirmed cleared\r\n");
-    }
+    if(action==MENU_RESET) (void)keyboard_app_reset_profile(s);
     if(!s->loaded && s->frame_valid) {
         if(s->ops && s->ops->load_calibration) (void)s->ops->load_calibration(profile,count,lo,hi);
         s->loaded=true;

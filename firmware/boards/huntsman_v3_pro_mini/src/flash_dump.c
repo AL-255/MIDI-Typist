@@ -137,7 +137,7 @@ uint32_t flash_calibration_erase(unsigned slot)
 }
 uint32_t flash_calibration_write(unsigned slot, const uint8_t *page)
 {
-    if (!page || !config_allowed(slot) || !calibration_record_valid(page)) return kStatus_FLASH_AddressError;
+    if (!page || !config_allowed(slot) || !device_page_valid(page)) return kStatus_FLASH_AddressError;
     uint32_t result=flash_calibration_erase(slot);
     if (result) return result;
     const uint32_t address=slot ? CAL_SLOT_B : CAL_SLOT_A;

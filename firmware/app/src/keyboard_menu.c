@@ -169,6 +169,8 @@ static uint8_t press_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
     const uint8_t digit=keyboard_editor_digit(s->profile,s->keys[sensor]);
     if(!digit || digit==s->selection) return MENU_NONE;
     s->selection=digit;
+    s->midi_press_level=digit;
+    s->threshold_source=THRESHOLD_SOURCE_RAW;
     /* The page owns this edit, exactly like the keyboard trigger editor's
      * commit: apply it and keep its revision baseline so the page stays open
      * while levels are auditioned. */
@@ -241,8 +243,10 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     /* Only an explicit dirty actuation commit changes raw thresholds. Faults
      * and GUI changes cancel the editor without applying pending values. */
     if (before->mode==KEY_CONFIG_ACTUATION && before->dirty &&
-        raw->engine.config.revision!=before->revision)
+        raw->engine.config.revision!=before->revision) {
         (void)keyboard_menu_thresholds(raw,lower,upper);
+        s->threshold_source=THRESHOLD_SOURCE_CALIBRATED;
+    }
     const uint8_t *sensors=s->option_sensors;
     unsigned held=0;
     /* Menu edges retain their own Schmitt history when preview entry clears

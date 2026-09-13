@@ -24,7 +24,14 @@ static uint32_t erase_page(unsigned slot)
     if (erase_bad_verify) pages[slot][0]=0;
     return 0;
 }
-static uint32_t read_page(unsigned slot, uint8_t *out) { assert(slot<2); memcpy(out,pages[slot],512); return read_error; }
+static unsigned fail_reads; /* transient read failures, e.g. an ECC hole */
+static uint32_t read_page(unsigned slot, uint8_t *out)
+{
+    assert(slot<2); memcpy(out,pages[slot],512);
+    if (read_error) return read_error;
+    if (fail_reads) { --fail_reads; return 116; }
+    return 0;
+}
 static uint32_t write_page(unsigned slot, const uint8_t *in)
 {
     assert(slot<2); ++writes;
@@ -86,8 +93,124 @@ static void parallel(unsigned profile, uint32_t now)
         assert(!c.holds[i].active && c.lower[i]==(sums[i]+4000)/8001);
     }
 }
+static device_settings_t sample_settings(void)
+{
+    const device_settings_t s={.trigger_level=7,.rapid_level=3,.rapid_enabled=1,
+        .midi_press_level=9,.velocity_start=6,.janko=1,.lower_muted=1,.brightness=11,
+        .music_root=5,.music_scale=2,.octave=-3,.performance_mode=1};
+    return s;
+}
+/* Fn-menu settings share the two authorized pages with calibration: each part
+ * keeps its own generation and neither rewrite may destroy the other. */
+static void settings_tests(void)
+{
+    const char *build="v0.1.0-RZ03-0499";
+    memset(pages,255,sizeof(pages)); writes=erases=0;
+    read_error=write_error=erase_error=0;
+    calibration_store_t store; device_settings_t in=sample_settings(),out;
+    uint16_t lo[65],hi[65]; unsigned before;
+    memset(lo,0,sizeof(lo)); memset(hi,0,sizeof(hi));
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    assert(!store.saved);
+    /* Cold boot: nothing stored yet, so the application keeps its defaults. */
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(!store.settings_saved && store.settings_slot==255);
+    memset(&out,0,sizeof(out));
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(store.settings_saved && store.settings_slot==0 && store.settings_generation==1 && writes==1);
+    assert(!calibration_record_valid(pages[0]));   /* settings-only page */
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(store.settings_saved && !memcmp(&out,&in,sizeof(in)));
+    /* Rotation: the next save uses the other slot and reloads newest-first. */
+    in.brightness=3;
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(store.settings_slot==1 && store.settings_generation==2 && writes==2);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(out.brightness==3);
+    /* A calibration save lands in slot 0 and must keep the settings there. */
+    keyboard_calibration_t c=capture(1,70000);
+    assert(calibration_store_save(&store,&c,read_page,write_page));
+    assert(store.slot==0 && store.saved && writes==3);
+    assert(calibration_record_valid(pages[0]));
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(out.brightness==3 && out.midi_press_level==9);         /* newest settings kept */
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    assert(store.saved && lo[0]==c.lower[0] && hi[0]==c.upper[0]);
+    /* A settings save into the calibration slot keeps the calibration part. */
+    in.velocity_start=4;
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(store.settings_slot==0 && store.settings_generation==3 && writes==4);
+    assert(calibration_record_valid(pages[0]));
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    assert(store.saved && lo[0]==c.lower[0] && hi[0]==c.upper[0]);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(store.settings_saved && out.velocity_start==4 && out.brightness==3);
+    /* Another build's record is the cold-boot condition: nothing loads and the
+     * caller keeps the values it already applied. */
+    calibration_store_load_settings(&store,&out,"v0.2.0-RZ03-0499",read_page);
+    assert(!store.settings_saved && store.settings_slot==255 && out.velocity_start==4);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(store.settings_saved && store.settings_slot==0 && store.settings_generation==3);
+    /* Out-of-range payloads never reach the page. */
+    device_settings_t bad=in; bad.velocity_start=0; before=writes;
+    assert(!calibration_store_save_settings(&store,&bad,build,read_page,write_page));
+    assert(writes==before && store.error==0x20001);
+    bad=in; bad.music_scale=200;
+    assert(!calibration_store_save_settings(&store,&bad,build,read_page,write_page) && writes==before);
+    /* Unknown page contents are never erased, and write faults stay recoverable. */
+    uint8_t saved_page[512]; memcpy(saved_page,pages[1],512);
+    pages[1][0]=0; uint8_t unknown[512]; memcpy(unknown,pages[1],512); before=writes;
+    /* Unknown contents are never erased: the mirror skips that page and uses
+     * the other authorized slot instead. */
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(!memcmp(pages[1],unknown,512) && writes>before);
+    memcpy(pages[1],saved_page,512); calibration_store_load_settings(&store,&out,build,read_page);
+    write_error=105; assert(!calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    write_error=0;
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(store.settings_saved && out.velocity_start==4);
+    /* A clear also recovers a page that cannot be read at all: an interrupted
+     * program can leave ECC-invalid data that nothing else can reclaim. */
+    memcpy(pages[1],saved_page,512); fail_reads=2;
+    assert(calibration_store_clear(&store,read_page,erase_page) && erases==2);
+    for (unsigned i=0;i<sizeof(pages);++i) assert(((uint8_t *)pages)[i]==255);
+    fail_reads=0; memset(pages,255,sizeof(pages)); writes=0; erases=0;
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    in.brightness=5;   /* rotate into the other slot so both pages carry content */
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    /* A dead authorized page never blocks the mirror: the save falls back. */
+    memset(pages,255,sizeof(pages)); writes=0; erases=0; fail_reads=1;
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    in.velocity_start=9;
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(store.settings_slot==0 && store.settings_saved); /* preferred slot unreadable */
+    fail_reads=1;   /* the preferred slot stays unreadable on the next save too */
+    in.velocity_start=3;
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    assert(store.settings_slot==0 && store.settings_generation>1);
+    fail_reads=0;
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(out.velocity_start==3);
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    memcpy(pages[1],pages[0],512); erases=0;   /* both slots populated for the clear below */
+
+    /* Clearing (Fn+R and the flashing script) removes both parts. */
+    assert(calibration_store_clear(&store,read_page,erase_page));
+    assert(!store.saved && !store.settings_saved && store.settings_slot==255 && erases==2);
+    for (unsigned i=0;i<sizeof(pages);++i) assert(((uint8_t *)pages)[i]==255);
+    calibration_store_load_settings(&store,&out,build,read_page);
+    assert(!store.settings_saved);
+    /* Leave the shared fake-flash counters as the calibration body expects. */
+    writes=erases=0; read_error=write_error=erase_error=0;
+    puts("PASS device settings: cold boot, A/B rotation, calibration/settings coexistence, range and damage guards, clear");
+}
+
 int main(void)
 {
+    settings_tests();
     keyboard_calibration_t c=capture(1,0);
     (void)capture(2,0); (void)capture(3,UINT32_MAX-500);
     parallel(1,0); parallel(2,10000); parallel(3,UINT32_MAX-700);
@@ -168,9 +291,19 @@ int main(void)
     memcpy(pages,saved_pages,sizeof(pages));
     pages[0][0]=0;
     assert(!calibration_store_clear(&store,read_page,erase_page) && !erases && store.error==0x20002);
-    memcpy(pages,saved_pages,sizeof(pages)); read_error=116;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && !erases);
-    read_error=0; erase_error=105;
+    /* An explicit clear recovers a page that cannot be read at all: an
+     * interrupted program can leave ECC-invalid data that nothing else can
+     * reclaim, and both addresses are authorized pages. */
+    memcpy(pages,saved_pages,sizeof(pages)); fail_reads=2;
+    assert(calibration_store_clear(&store,read_page,erase_page) && erases==2 && !store.error);
+    erases=0; memcpy(pages,saved_pages,sizeof(pages)); read_error=116;
+    /* The erase still succeeds, so the clear completes and only the read-back
+     * stays broken: nothing loadable survives. */
+    assert(calibration_store_clear(&store,read_page,erase_page) && erases==2 && !store.error);
+    read_error=0; erases=0; memcpy(pages,saved_pages,sizeof(pages));
+    calibration_store_load(&store,1,61,lo,hi,read_page); /* restore the loaded state */
+    assert(store.saved);
+    erase_error=105;
     assert(!calibration_store_clear(&store,read_page,erase_page) && erases==1 && store.saved);
     erases=0; erase_error=0; erase_bad_verify=true;
     assert(!calibration_store_clear(&store,read_page,erase_page) && erases==1 && store.error==0x20003);

@@ -21,7 +21,8 @@ Firmware validates the pair and sensor count before changing anything, updates
 every active sensor in one main-loop operation, increments the configuration
 revision once, and clears key/velocity state once. The GUI waits for the ACK
 and verifies all threshold pairs in the returned snapshot. Invalid requests
-change neither configuration nor capture state. Settings remain RAM-only.
+change neither configuration nor capture state. Host threshold edits remain
+RAM-only, while the Fn-menu trigger and velocity choices are stored.
 
 Key tiles show current raw readback and latest completed normalized velocity
 (`v0.000`–`v1.000`). Selecting a key shows its velocity, completed-fit count and

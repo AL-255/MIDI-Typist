@@ -169,8 +169,11 @@ No build/test target flashes or resets hardware. Use only the supplied updater's
 reviewed application-only path after explicit authorization and record the exact
 binary hash. The updater is a separate sibling project, not bundled here.
 Do not overwrite bootloader, factory/security data, primary stock settings or
-secondary-controller regions. Calibration writes only its two documented tail
-pages. Do not use manual forced bootloader recovery as a
+secondary-controller regions. Calibration and the stored Fn-menu settings write
+only the two documented tail pages. `tools/flash_application.py` follows the
+flash with the cold boot: it sends `cfg clean` over CDC so the new build starts
+from its defaults instead of inheriting the previous build's stored state; pass
+`--keep-settings` to keep that state deliberately. Do not use manual forced bootloader recovery as a
 routine test. Application updates are authorized for this device; that does
 not authorize writes outside the application and documented calibration slots.
 Build validation does not establish comprehensive MIDI/DAW compatibility.

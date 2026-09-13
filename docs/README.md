@@ -28,11 +28,12 @@ Shared application contracts are documented separately from those wire formats.
   and [interval pop filter](MIDI_FILTER.md): independent capture and encoding.
 - [MIDI design](MIDI_DESIGN.md) and [USB/GUI protocol](MIDI_PROTOCOL.md).
 - [Root/scale selection](MIDI_SCALES.md): portable interval tables, selectors,
-  shared note/LED filtering, modal safety and RAM-only state.
+  shared note/LED filtering, modal safety and stored settings.
 - [Parallel calibration](CALIBRATION.md): operation, state machine, telemetry fields
   and validation limits.
-- [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, record layout,
-  validation, recovery limits and serial-number protection.
+- [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, calibration
+  and Fn-menu record layout, cold boot, validation, recovery limits and
+  serial-number protection.
 - [Flash acquisition](FLASH_DUMP.md): read-only dump commands and private backups.
 - [Whole scan display](SCAN_STREAM.md), [20-sample capture](LAST_KEY_STREAM.md)
   and [travel lighting](TRAVEL_LIGHTING.md): operation and protocol details.

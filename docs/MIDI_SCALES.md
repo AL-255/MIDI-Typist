@@ -94,8 +94,8 @@ they require a neutral retry. No GUI frame rate or delay loop controls the UI.
 ## Persistence and diagnostics
 
 Root, scale and lower-row mute survive performance-mode switches and fault
-cleanup, but init/RESET restores C/chromatic and both groups. They do not
-write flash and are not serialized in host JSON or telemetry. Telemetry continues to
+cleanup, are stored with the Fn-menu settings, and RESET restores C/chromatic
+and both groups. Host JSON and telemetry do not serialize them. Telemetry continues to
 report assigned mappings and raw sensor state, not effective filter state.
 After selecting `stream off`, `menu status` includes `root`, `scale`,
 `key`, `scale_name` and `music_page` (0 idle, 9 root, 10 scale), alongside

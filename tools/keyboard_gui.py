@@ -123,7 +123,7 @@ class App:
         self.velocity_entry.pack(side='left')
         self.velocity_button = ttk.Button(velocity_row,text='Apply velocity start',command=self.apply_velocity_start)
         self.velocity_button.pack(side='left',padx=6)
-        ttk.Label(panel,text='Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw 3800 = 0%, 1000 = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nRAM-only; host JSON export includes MIDI mappings.\nConfig edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
+        ttk.Label(panel,text='Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw 3800 = 0%, 1000 = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nPer-key and mapping edits are RAM-only; the on-device Fn choices, and the\nvelocity start set here, persist until Fn+R or `cfg clean`. Host JSON export\nincludes MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
         plot = ttk.Frame(lower); plot.pack(side='right',fill='both',expand=True)
         holdbar = ttk.Frame(plot); holdbar.pack(fill='x',pady=(0,4))
         self.hold_button = ttk.Checkbutton(holdbar,text=f'Hold first {CAPTURE_POINTS} pts of keystroke',

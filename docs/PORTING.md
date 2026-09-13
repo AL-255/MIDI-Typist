@@ -370,9 +370,13 @@ not a universal flash layout.
 
 Callbacks are synchronous with no context argument; the board supplies its
 single-owner storage context. Loading is attempted once after a valid layout
-frame, not continuously. The board owns storage generation/error telemetry.
-The current shared persistence contract covers calibration alone, not
-thresholds, mappings or every transient setting.
+frame, not continuously. The board owns storage generation/error telemetry. Persisting the Fn-menu
+settings is a board concern too: the shared application exposes the chosen
+levels and flags through `keyboard_menu_t`, `keyboard_midi_t` and
+`keyboard_raw_t`, and a port may store them beside its calibration record.
+Huntsman mirrors changes into the same two pages with a debounce and only when
+every key is released, and treats a record from another build as the cold-boot
+condition. Host `cfg` edits to thresholds and mappings remain RAM-only.
 
 Prove page ownership, execution/interrupt safety during erase, watchdog
 behavior, timeouts and power-loss recovery on the actual MCU. FF bytes alone

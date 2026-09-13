@@ -208,7 +208,7 @@ Light:       +1 step          +1 step          +1 step
 
 You can alternate K and L in the same Fn hold. This repeat exception applies
 only to brightness. Release all keys before choosing another setting or
-resuming typing/music. Brightness returns to its default on restart.
+resuming typing/music. Brightness is stored and returns with the next power cycle.
 
 ## 6. Adjust the trigger point
 
@@ -261,7 +261,7 @@ The editor uses each key's calibration bounds and retains fixed-threshold
 exceptions for some keys, so it does not assign one identical raw pair to
 every sensor. These levels are not millimeters or calibrated force. For an
 exact common pair, use **Apply thresholds to all keys** in the GUI instead.
-Edits are temporary until restart; a host profile can preserve the raw pairs.
+The chosen level is stored, so it returns with the next power cycle; per-key edits made from a host tool are temporary until restart, and a host profile can preserve the raw pairs.
 
 **Fn+Caps / RAPID:** this is a compatibility settings screen, not an enabled
 dynamic rapid-trigger feature. The active keyboard still uses the two raw
@@ -402,7 +402,7 @@ the curve: a soft press is lifted to the floor while harder presses still reach
 full velocity, which is useful when a host instrument ignores low velocities.
 The selected step is green and the steps below it stay lit; the page consumes
 all key input, so release every key after pressing **Esc** before playing
-again. The setting is global, RAM-only, applies in both playing layouts, and
+again. The setting is global, survives a power cycle, applies in both playing layouts, and
 is reported by `menu status` as `velocity_start=1..10`.
 
 ### Play the built-in Jankó layout
@@ -457,8 +457,8 @@ available, and custom bottom-row note assignments are unchanged.
 
 As with other settings previews, sounding notes are cleared and pending
 strikes cancelled before resuming from an all-keys-released state. The choice
-survives switching between keyboard and MIDI modes, but restart or RESET
-restores both groups. It is not stored in host profiles or calibration flash.
+survives switching between keyboard and MIDI modes and a power cycle, and RESET
+restores both groups. It is not stored in host profiles.
 The GUI still shows the saved note assignments; muted keys are not remapped
 to Off. For text diagnostics, `menu status` reports `lower_muted=1` or `0`.
 
@@ -505,7 +505,7 @@ Root:     C     C#     D     D#     E     F     F#     G     G#     A      A#   
 Root and scale can be selected in either order. The default is **C + 12T**,
 so all otherwise enabled mapped notes are initially available. Selecting T
 previews `CHROMATIC` and removes the scale restriction without changing mappings
-or lower-row mute. Root/scale survive mode switches, but restart or confirmed
+or lower-row mute. Root/scale survive mode switches and a power cycle, but confirmed
 RESET restores C/chromatic. They are not included in JSON profiles or saved
 calibration. The GUI still shows assigned notes, not their filtered status;
 `menu status` reports the active root and scale names over text CDC.
@@ -682,19 +682,25 @@ Close the GUI when finished; applied settings continue working without it.
 
 ## 10. Know what gets saved
 
-| Item | After closing the GUI | After application restart / power cycle | How to keep it |
+| Item | After closing the GUI | After power cycle | How to change it |
 | --- | --- | --- | --- |
 | Completed calibration endpoints | Kept | Kept on the device | Complete a calibration run |
-| Press/release thresholds | Kept | Default 3500 / 3600 | Save host JSON; load it again |
-| MIDI note mappings | Kept | Default 43-note map | Save host JSON; load it again |
-| Brightness | Kept | Default full brightness | Adjust with Fn+K/L |
-| Keyboard/MIDI mode | Kept | Keyboard mode | Switch with Fn+Enter |
-| MIDI octave offset | Kept, including across mode switches | Zero | Adjust with Right Alt/Ctrl |
-| Lower-row MIDI mute | Kept, including across mode switches | Both groups enabled | Toggle with Fn+Left Shift |
-| MIDI root / scale | Kept, including across mode switches | C / chromatic (12T) | Select with Fn+E / Fn+S |
+| Keyboard trigger level (Fn+Tab, keyboard mode) | Kept | Kept on the device | Fn+Tab editor |
+| MIDI trigger point (Fn+Tab, MIDI mode) | Kept | Kept on the device | Fn+Tab raw page |
+| Transmitted-velocity start (Fn+V) | Kept | Kept on the device | Fn+V editor or the GUI |
+| Brightness | Kept | Kept on the device | Fn+K/L |
+| Keyboard/MIDI mode | Kept | Kept on the device | Switch with Fn+Enter |
+| MIDI octave offset | Kept, including across mode switches | Kept on the device | Adjust with Right Alt/Ctrl |
+| Lower-row MIDI mute | Kept | Kept on the device | Toggle with Fn+Left Shift |
+| MIDI root / scale | Kept | Kept on the device | Select with Fn+E / Fn+S |
+| Per-key thresholds set from the GUI or CDC | Kept | Default 3500 / 3600 | Save host JSON; load it again |
+| MIDI note mappings set from the GUI or CDC | Kept | Default 43-note map | Save host JSON; load it again |
 | Output enable state | Kept | Enabled, waiting for neutral | Use GUI enable/disable |
 
-Only calibration currently persists on-device. A host profile contains
+Calibration and every Fn-menu choice persist on-device in the same two
+authorized tail pages; **Fn+R deletes them** and returns each item above to its
+default. Host edits over CDC - per-key thresholds and note mappings - stay in
+RAM and come back through a host profile, which contains
 thresholds and MIDI mappings, **not calibration, brightness, mode, octave, row mute, root, or scale**.
 Recalibrating does not overwrite your current raw threshold pairs. Committing
 a Fn+Tab trigger level does replace those pairs. There is no on-keyboard
@@ -830,7 +836,7 @@ mechanism. Do not write it to flash with a generic programmer.
 | Terminal is blank or shows binary garbage | CDC streams are binary. Use the matching decoder or GUI; send `stream off` before text status commands. |
 | Live/bar decoder shows nothing after another tool | Select `stream on` with a serial command client, close it, and reopen the decoder. |
 | Capture never triggers | Raw must fall below its capture threshold; check the actual readings and release before retrying. Keyboard thresholds do not set capture thresholds. |
-| Settings disappeared after restart | Only completed calibration persists on-device. Load your saved host profile for thresholds and MIDI mappings. |
+| Settings disappeared after restart | Completed calibration and every Fn-menu choice persist on-device; per-key thresholds and note mappings edited from a host tool do not. Load your saved host profile for those. |
 | Lights are off | Raise brightness with Fn+L. Check MIDI mappings, diagnostic `light off`, and scan/light error status in the GUI. |
 
 Do not use repeated resets, reflashes, or forced bootloader entry as routine
@@ -846,6 +852,10 @@ is a supported alias producing the same artifact. The
 `firmware` preset is USB-only and does not provide the features in this manual.
 The current USB device provides NKRO keyboard, MIDI, CDC diagnostics, and
 the compatible updater interface. The configuration GUI is not a flasher.
+`tools/flash_application.py` flashes and then performs the cold boot: it sends
+`cfg clean` over CDC so the new build starts from defaults instead of
+inheriting the previous build's stored calibration and Fn-menu settings
+(`--keep-settings` skips that).
 
 For users building from source, prerequisites are Arm GNU bare-metal tools
 (`arm-none-eabi-gcc`, tested 14.2.1), CMake 3.21+, Ninja, a native C compiler,

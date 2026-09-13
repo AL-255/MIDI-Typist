@@ -219,6 +219,9 @@ class Connection(threading.Thread):
                                     index,note = args
                                     if index >= snapshot.count or snapshot.midi_mapping[index] != note:
                                         raise ValueError('MIDI mapping readback differs from requested values')
+                                # `clean` is confirmed by its ACK alone: the device
+                                # verified the erase by reading both pages back blank
+                                # before answering result 1.
                                 if action == 'velocity':
                                     level, = args
                                     if not 1 <= level <= 10 or snapshot.velocity_start != level:

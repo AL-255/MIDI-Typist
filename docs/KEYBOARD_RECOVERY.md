@@ -30,7 +30,7 @@ the corresponding actual instructions. Some functions have noncontiguous bodies.
 | `0x200141f8` | FN state; release held actions whose layers differ | `firmware/app/src/keyboard_engine.c` |
 | `0x2000f41c` | Control action `0x70` enters actuation editor, `0x71` rapid-trigger editor | `firmware/app/src/keyboard_config.c` |
 | `0x200134fc` | Editor key handling, level changes, switching and exit | `firmware/app/src/keyboard_config.c` |
-| `0x2001a3bc` | Commit thresholds/profile changes | RAM-only subset in `firmware/app/src/keyboard_config.c` |
+| `0x2001a3bc` | Commit thresholds/profile changes | Level subset persisted by the Fn-menu settings record; per-key pairs stay RAM-only |
 | `0x2000cbf0`, `0x2000c1cc` | Layout patch and raw-sensor mapping | `firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c` |
 | `0x20015dec`, `0x2000e354` | Calibration endpoints and inverse raw-to-level conversion | `firmware/boards/huntsman_v3_pro_mini/src/optical_key.c`, `firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c` |
 | `0x20015c04`, `0x200164ac`, `0x2001620c`, `0x20015bc0` | Normal thresholds, rapid-trigger exclusions, editor previews | `firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c` |
@@ -98,7 +98,8 @@ reports. CDC does not need to stay open for normal keyboard operation.
 
 The Fn+Tab/Fn+Caps editors implement the recovered interactions above.
 Actuation commits convert the original normalized threshold rules into raw
-Schmitt pairs using calibrated bounds; these edits remain RAM-only. Fn+Enter
+Schmitt pairs using calibrated bounds; the chosen level is stored with the
+Fn-menu settings while per-key pairs stay RAM-only. Fn+Enter
 selects MIDI and Fn+C starts calibration in keyboard mode, outside editors.
 The [Fn menu](FN_MENU.md) supplies action hints, brightness controls and a
 tail-profile RESET. All settings choices preview their names while held and execute

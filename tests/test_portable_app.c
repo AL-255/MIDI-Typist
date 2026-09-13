@@ -182,6 +182,21 @@ static void commands(void)
         assert(keyboard_app_command(&app,bad[i],now,true,&ack,&result));
         assert(result==2 && raw.press[103]==3000);
     }
+    /* Cold boot: the host clears the store exactly like Fn+R, and defaults
+     * follow on the next neutral frame. */
+    assert(resets==0);
+    assert(keyboard_app_command(&app,"cfg clean 15",now,true,&ack,&result));
+    assert(ack==15 && result==1 && resets==1 && app.reset_pending);
+    /* Defaults wait for a neutral frame; a held key keeps the reset pending. */
+    samples[103]=1000; frame(); assert(app.reset_pending);
+    samples[103]=3900;
+    frame(); assert(!app.reset_pending && raw.press[103]==RAW_DEFAULT_PRESS);
+    for(unsigned i=0;i<4 && !raw.armed;++i) frame();
+    assert(raw.armed);                       /* fresh defaults re-arm on neutral input */
+    assert(keyboard_app_command(&app,"cfg clean 16 trailing",now,true,&ack,&result));
+    assert(ack==16 && result==2 && resets==1);
+    assert(keyboard_app_command(&app,"cfg clean 17",now,true,&ack,&result));
+    assert(ack==17 && result==1 && resets==2);
 }
 static void layout_change(void)
 {

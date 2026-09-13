@@ -74,7 +74,8 @@ remain separate indicators. MIDI velocity and aftertouch are unchanged.
 - **Fn+K / Fn+L** lowers/raises brightness across the original 20 levels.
   The `LIGHT-`/`LIGHT+` preview repeats while held; release changes one step.
   Keep Fn held and tap K/L repeatedly; each release changes another step.
-  Brightness and trigger-point edits are RAM-only.
+  Fn-menu choices, including brightness and the trigger point, are stored in
+  the two authorized tail pages and survive a power cycle; Fn+R clears them.
   See [Fn menu details](docs/FN_MENU.md).
 - All Fn settings options **preview while held and execute once on release of
   either key** (RESET opens confirmation). Except for repeated K/L taps while
@@ -219,8 +220,8 @@ octave and device-confirmed settings.
   with the firmware's velocity fit reproduced from the same window, until the
   next press. See [the GUI guide](docs/KEYBOARD_GUI.md#keystroke-hold-mode).
 
-**Calibration endpoints save to the device; thresholds and MIDI mappings
-remain RAM-only.** In keyboard mode use **Fn+C** or the GUI's **Calibrate keys
+**Calibration endpoints and the Fn-menu settings save to the device; host
+`cfg set`/`cfg all` threshold edits and MIDI mappings remain RAM-only.** In keyboard mode use **Fn+C** or the GUI's **Calibrate keys
 → device flash** button. Release all keys; wait 500 ms (purple → blue), then
 fully press and hold blue keys for one second until green. Multiple keys can
 be held together; moving/releasing one does not reset the others. Green keys
@@ -289,7 +290,7 @@ Selecting a CDC display does not select keyboard/MIDI performance mode.
 - [MIDI mapping and interval pop-filter behavior](docs/MIDI_FILTER.md)
 - [GUI telemetry, command acknowledgments and profile format](docs/MIDI_PROTOCOL.md)
 - [Parallel calibration and its physical save/readback record](docs/CALIBRATION.md)
-- [Tail-page storage and serial-number protection](docs/DEVICE_CONFIG_STORAGE.md)
+- [Tail-page storage, Fn-menu persistence and serial-number protection](docs/DEVICE_CONFIG_STORAGE.md)
 - [Build and test instructions](docs/BUILDING.md)
 - [Optical/keyboard recovery](docs/KEYBOARD_RECOVERY.md)
 - [Travel lighting and calibration limitations](docs/TRAVEL_LIGHTING.md)

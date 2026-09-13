@@ -10,6 +10,11 @@ enum { MENU_NONE, MENU_CALIBRATION, MENU_TRIGGER, MENU_MODE, MENU_LIGHT_DOWN, ME
        MENU_VELOCITY, MENU_VELOCITY_SET, MENU_SELECT_KEY, MENU_SELECT_SCALE };
 #define MENU_OPTION_COUNT MENU_VELOCITY
 
+/* Which menu action last wrote the press thresholds. The keyboard trigger
+ * editor derives both bounds from the calibration; the MIDI trigger page
+ * overrides the press point only. Persisted so a power cycle restores the
+ * same pair. */
+enum { THRESHOLD_SOURCE_NONE = 0, THRESHOLD_SOURCE_CALIBRATED, THRESHOLD_SOURCE_RAW };
 typedef struct {
     uint32_t bar_at, pending_revision;
     uint8_t profile, keys[RAW_KEY_COUNT], fn, tab, c, enter, k, l, caps, r, y, n, s, e, shift;
@@ -17,6 +22,8 @@ typedef struct {
     uint16_t previous;
     uint8_t brightness, bar, pending, pending_sensor;
     uint8_t music_page, choice_sensor, selection;
+    uint8_t threshold_source; /* 0 defaults, 1 keyboard editor, 2 MIDI page */
+    uint8_t midi_press_level; /* Fn+Tab step 1..10, 0 while unset */
     bool choice_ready;
     bool velocity_page;
     bool press_page;

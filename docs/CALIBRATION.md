@@ -46,14 +46,17 @@ RAM, share velocity buffers, or change the flash calibration record format.
 It does not change active bounds until a complete save passes readback.
 New bounds drive linear travel lighting and MIDI aftertouch. Schmitt thresholds
 remain raw ADC values; calibration does not silently change press/release
-settings or velocity scaling. Thresholds and MIDI mappings are still RAM-only
-with host JSON import/export. Calibration endpoints alone persist on-device.
+settings or velocity scaling. Host threshold and MIDI-mapping edits are still
+RAM-only with host JSON import/export. Calibration endpoints and the Fn-menu
+settings persist on-device in the same two pages ([device storage](DEVICE_CONFIG_STORAGE.md)).
 
 ## Persistence
 
-Only physical pages **0x7d400 and 0x7d600** are writable. Both were independently
+Only physical pages **0x7d400 and 0x7d600** are writable, and they carry both
+the calibration part and the stored Fn-menu settings. Both were independently
 verified as FF inside an original free allocator block. The primary settings,
-serial number, bootloader and application image are untouched by calibration.
+serial number, bootloader and application image are untouched by calibration
+or by a settings mirror.
 See [record format, original-driver evidence and power-failure behavior](DEVICE_CONFIG_STORAGE.md).
 Stock firmware may reclaim this previously unused space; keep private backups.
 

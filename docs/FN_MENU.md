@@ -98,8 +98,11 @@ HID/MIDI, and leaving it requires all keys released before playing resumes.
 The page reports its level through `menu status` (`velocity_start=1..10`).
 Level 1 transmits the measured velocity unchanged, level 10 transmits every
 note at full velocity, and the steps between raise the floor of the curve
-(see [MIDI design](MIDI_DESIGN.md#transmitted-velocity-start)). The setting is
-RAM-only and survives mode switches.
+(see [MIDI design](MIDI_DESIGN.md#transmitted-velocity-start)). The setting
+survives mode switches and a power cycle: it is part of the stored Fn-menu
+settings ([device storage](DEVICE_CONFIG_STORAGE.md)), and RESET clears it.
+The MIDI-mode Fn+Tab step is stored the same way, so the chosen trigger point
+also returns with the next power cycle.
 
 ## Jankó layout toggle
 
@@ -126,8 +129,8 @@ note keys go dark, except Enter's blue mode marker. Esc/Tab-row notes and
 bottom-row controls/custom note mappings are unaffected. Left Shift remains discoverable
 in the Fn menu while muted. Preview/toggle uses the ordinary MIDI cleanup path,
 including pending strikes and shared-pitch owners, so held notes cannot stick.
-No mapping or threshold is changed. Both groups start enabled; the RAM-only
-mute survives mode switches and clears on application restart or confirmed RESET.
+No mapping or threshold is changed. Both groups start enabled; the mute
+survives mode switches and a power cycle, and confirmed RESET clears it.
 It is not stored in host JSON. Telemetry continues reporting assigned mappings;
 `menu status` exposes `lower_muted=0/1` for the current setting.
 
@@ -150,8 +153,8 @@ The page consumes input until exit and uses ordinary all-neutral rearming.
 Faults, disable, calibration and configuration revision changes cancel it.
 The trigger editor's Escape-to-commit behavior is separate and unchanged.
 
-Root and scale are RAM-only, start at C/chromatic, survive mode switches and
-reset to defaults with application init/RESET. They filter assigned pitches,
+Root and scale start at C/chromatic, survive mode switches and a power cycle,
+and reset to defaults with RESET or a cold boot. They filter assigned pitches,
 intersecting with the physical lower-row gate and valid octave-transposed
 note range. No mappings are rewritten. Enter/control indicators stay explicit
 overlays. `menu status` reports root/scale IDs, names and the modal page.
@@ -193,9 +196,10 @@ The original fixed-threshold keys retain their normalized exceptions.
 Commit replaces custom GUI pairs, increments the raw configuration revision
 once, cancels pending velocity captures and requires a neutral scan before
 typing resumes. The GUI reads back the resulting raw pairs. Disabling output,
-invalid scans or USB reset cancel an uncommitted edit. Committed pairs and the
-last global level survive temporary disable/reset handling, but are RAM-only
-and return to defaults on application restart. Calibration alone persists.
+invalid scans or USB reset cancel an uncommitted edit. The committed level is stored
+with the Fn-menu settings, so a power cycle re-derives the same per-key pairs
+from it and the loaded calibration. Host `cfg set`/`cfg all` edits to those
+pairs stay RAM-only, and RESET returns everything to defaults.
 
 The editor's last global level is not an inverse representation of arbitrary
 per-key GUI pairs. GUI changes do not change that saved menu selection.
@@ -272,7 +276,8 @@ no automatic timeout or erase. Invalid/stale scans, USB reset, disable,
 calibration entry and GUI configuration changes cancel it without erasing.
 After cancellation or confirmation, release all keys to resume normal output.
 
-Only a confirmed Y press clears our calibration records at `0x7d400` and `0x7d600`. Both pages
+Only a confirmed Y press clears our records at `0x7d400` and `0x7d600`: the
+saved calibration and the stored Fn-menu settings. Both pages
 must be blank or recognizable HKC1 records before any erase. Nonblank pages
 are erased and read back; the older slot is retired before the current one.
 Blank pages are not erased again. Unknown data, controller errors or failed
@@ -281,8 +286,10 @@ is not atomic across power loss; an interrupted reset may retain the newest
 record, or finish clearing it, but must not resurrect an older one.
 
 After successful clearing, release all keys. The application restores default
-thresholds, mappings, mode/octave and brightness, and rebuilds optical defaults
-on neutral input without rebooting the USB device. The next GUI snapshots show
+thresholds, mappings, trigger and velocity levels, mode/octave and brightness,
+and rebuilds optical defaults on neutral input without rebooting the USB device.
+The host equivalent is `cfg clean`, which the flashing script sends after every
+flash ([cold boot](DEVICE_CONFIG_STORAGE.md#mirroring-the-fn-menu)). The next GUI snapshots show
 no saved calibration (generation 0). Factory settings, serial-number storage,
 bootloader, application image and optical-ASIC firmware are never erase targets.
 Reset deletion is not undoable on-device; recalibrate or use a private backup.
@@ -291,7 +298,11 @@ Reset deletion is not undoable on-device; recalibrate or use a private backup.
 
 Close the GUI/other CDC tools, select `stream off`, then issue `menu status`
 to read Fn state, editor mode, current/saved actuation level and brightness
-index/PWM, `reset_confirm` and confirmation `ready` flags. Select `stream gui`
+index/PWM, `reset_confirm` and confirmation `ready` flags. The MIDI trigger
+step, lower-row mute, Jankó flag, root/scale, music page, velocity start and
+the stored settings state appear as `press_level`, `threshold_source`,
+`lower_muted`, `janko`, `root`, `scale`, `music_page`, `velocity_start`,
+`settings` (`saved`/`cold`), `settings_gen`, `dirty` and `store_err`. Select `stream gui`
 to resume GUI telemetry. GUI telemetry framing is
 defined by the Huntsman port; use the matching GUI from this checkout.
 

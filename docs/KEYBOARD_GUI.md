@@ -25,7 +25,7 @@ python3 tools/keyboard_gui.py --device /dev/ttyACM1   # explicit node override
 
 Current application: `build-keyboard-fn-menu/huntsman_firmware.bin`, exactly 131072 bytes,
 linked at `0x20000000`, sha256
-`14f2f239fe94f1701f79e76ac62f704042bad6e60b813b57ee07ab80364a5e84`
+`bfd1fa329fedf281b18d6107578fadf587809aca34d30b592146cc11ea68fad2`
 (flashed with the sibling updater's application-only path and verified live:
 GUI telemetry, pinned-sensor stream at ~1.35 k samples/s, stream switch-back,
 bottom-out velocity windows at the shared 1500 threshold, and a physical
@@ -146,7 +146,9 @@ device needs no extra state:
   applied value back from telemetry offset 6. The device accepts it in either
   performance mode: the GUI cannot toggle MIDI mode, which Fn+Enter does.
 
-Both are RAM-only. The per-key detail panel also names the Fn+Tab level nearest
+The velocity start is stored with the other Fn-menu settings, so it survives a
+power cycle just like the on-device Fn+V choice. Per-key trigger writes stay in
+RAM: only the keyboard's own Fn+Tab step is stored. The per-key detail panel also names the Fn+Tab level nearest
 to the selected key's press threshold, so a hand-edited pair still shows where
 it sits on the bar, and the status line carries the connected build identity
 reported by `version` (for example `build v0.1.0-RZ03-0499`).
@@ -194,18 +196,21 @@ falls back to the 33 ms telemetry frames with device-fit attribution instead.
 
 ## Profiles and persistence
 
-Thresholds and keyboard enable state are **RAM-only**. Closing the GUI leaves
-them active; unplugging/restarting restores defaults. Save/load JSON profiles
-on the computer. Nothing writes bootloader, factory calibration, ASIC firmware
-or unreviewed flash storage. MIDI mappings are likewise RAM-only. Calibration
-endpoints alone persist on-device in the two documented unused tail pages.
+Thresholds, MIDI mappings and keyboard enable state edited over CDC are
+**RAM-only**. Closing the GUI leaves them active; unplugging/restarting
+restores the keyboard's own choices. Save/load JSON profiles on the computer.
+Nothing writes bootloader, factory calibration, ASIC firmware or unreviewed
+flash storage. Calibration endpoints and the Fn-menu settings (trigger level
+and source, MIDI trigger step, velocity start, Jankó layout, lower-row mute,
+brightness, root/scale, octave, performance mode) persist on-device in the two
+documented unused tail pages; see [device storage](DEVICE_CONFIG_STORAGE.md).
 Host JSON profiles do not contain calibration, performance mode or octave.
-They also do not contain Fn+Left Shift's MIDI lower-row mute. This setting is RAM-only,
-survives mode switches and leaves the displayed mappings intact. A Caps/Shift
+They also do not contain Fn+Left Shift's MIDI lower-row mute. The mute survives
+mode switches and a power cycle and leaves the displayed mappings intact. A Caps/Shift
 row key can show an assigned note in the GUI yet be muted by Fn+Left Shift; hold the
 combo to preview `LOWER-ON`, then release to restore it. `menu status` reports
 the flag over text CDC; the GUI telemetry format is unchanged.
-Fn+E/Fn+S also select RAM-only MIDI root/scale filters. These are not GUI
+Fn+E/Fn+S also select MIDI root/scale filters (stored, cleared by RESET). These are not GUI
 mapping edits or JSON fields. Assigned notes can be silent/dark because of
 the current filter; the GUI still shows their assignments and raw down state.
 Use `menu status` for root/scale names, or T in the Fn+S menu for chromatic.
@@ -285,6 +290,9 @@ hardware verification (application flashed via the sibling updater): the
 `version` identity handshake after a stale stream (`v0.1.0-RZ03-0499`), GUI
 telemetry framing, `cfg velocity` writes with telemetry readback in keyboard
 mode, per-key `cfg set` trigger writes with the release threshold preserved,
-hold-mode stream engagement at the measured optical rate (~1.35 k samples/s),
-velocity window capture and GUI telemetry resume. Physical Fn+Tab and Fn+V
-presses, which need a person at the board, remain a manual check.
+the settings mirror (`settings=saved`, `settings_gen` incrementing) and its
+survival across a reflash with `--keep-settings`, the flashing script's cold
+boot returning the device to defaults, hold-mode stream engagement at the
+measured optical rate (~1.35 k samples/s), velocity window capture and GUI
+telemetry resume. Physical Fn+Tab and Fn+V presses, which need a person at the
+board, remain a manual check.
