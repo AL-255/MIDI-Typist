@@ -61,7 +61,7 @@ Production additionally reads CRC-checked persistent calibration blocks
 (`0x2001ad30`: flash offsets `0x49000`, `0x49600`, `0x49c00`) and applies
 overrides in `0x20015dec`. Those persistent reads/overrides are not implemented
 here. Instead, our own calibration writes only the verified unused tail pages
-0x7d400 and 0x7d600; it does not replace the primary factory/settings blocks.
+0x78000 and 0x78200; it does not replace the primary factory/settings blocks.
 Accurate full-stroke millimeter proportionality still requires physical
 measurements. The LED mapping/protocol and PWM arithmetic are independently
 testable without assuming that accuracy.

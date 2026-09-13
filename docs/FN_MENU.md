@@ -276,7 +276,7 @@ no automatic timeout or erase. Invalid/stale scans, USB reset, disable,
 calibration entry and GUI configuration changes cancel it without erasing.
 After cancellation or confirmation, release all keys to resume normal output.
 
-Only a confirmed Y press clears our records at `0x7d400` and `0x7d600`: the
+Only a confirmed Y press clears our records at `0x78000` and `0x78200`: the
 saved calibration and the stored Fn-menu settings. Both pages
 must be blank or recognizable HKC1 records before any erase. Nonblank pages
 are erased and read back; the older slot is retired before the current one.

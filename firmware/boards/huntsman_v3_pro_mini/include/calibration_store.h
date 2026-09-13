@@ -3,8 +3,8 @@
 #include "keyboard_calibration.h"
 #include "keyboard_menu.h"
 #define CAL_PAGE_SIZE 512u
-#define CAL_SLOT_A 0x7d400u
-#define CAL_SLOT_B 0x7d600u
+#define CAL_SLOT_A 0x78000u
+#define CAL_SLOT_B 0x78200u
 /* The two authorized pages carry a calibration part and an optional settings
  * part, each with its own generation, so one page rewrite updates either
  * without disturbing the other. */

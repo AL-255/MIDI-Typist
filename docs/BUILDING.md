@@ -80,7 +80,7 @@ application-image configuration reservation. These are RAM execution-image
 addresses; controller readback established physical application base 0x8000.
 Calibration's 1324-byte per-key state is writable RAM inside the image region,
 explicitly initialized at startup. Persistent records instead use only the
-verified FF tail pages 0x7d400 and 0x7d600. Post-build checks enforce the reservation,
+verified FF pages 0x78000 and 0x78200. Post-build checks enforce the reservation,
 blank application-image reservation, reset/stack bounds, USB VID/PID, interface order,
 endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.

@@ -52,7 +52,7 @@ settings persist on-device in the same two pages ([device storage](DEVICE_CONFIG
 
 ## Persistence
 
-Only physical pages **0x7d400 and 0x7d600** are writable, and they carry both
+Only physical pages **0x78000 and 0x78200** are writable, and they carry both
 the calibration part and the stored Fn-menu settings. Both were independently
 verified as FF inside an original free allocator block. The primary settings,
 serial number, bootloader and application image are untouched by calibration

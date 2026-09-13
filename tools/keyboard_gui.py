@@ -350,7 +350,7 @@ class App:
         if not self.usable() or self.snapshot.performance_mode: return
         if not messagebox.askyesno('Calibrate all keys',
             'Keyboard output pauses. Release ALL keys; wait for blue. Fully press and hold blue keys for one second until green. You may hold multiple keys together; each key has an independent timer. Include Fn and modifiers.\n\n'
-            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration in two dedicated tail pages (0x7d400 / 0x7d600), preserving the serial-number area. Continue?'): return
+            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration in two dedicated pages (0x78000 / 0x78200) inside the original allocator's free block, preserving the serial-number area. Continue?'): return
         try:
             self.connection.submit('calibrate')
             self.message.set('Calibration requested; ACK starts the routine, not a flash save. Watch progress below.')

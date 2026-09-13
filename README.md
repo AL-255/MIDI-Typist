@@ -229,7 +229,7 @@ may stay held while you calibrate the rest. Include Fn and modifiers. Five secon
 of inactivity or GUI cancellation discards the attempt. Completion saves all
 endpoints; the GUI shows progress and saved generation.
 
-Only pages **0x7d400 and 0x7d600**, independently verified unused and FF-filled,
+Only pages **0x78000 and 0x78200**, independently verified unused and FF-filled,
 are write targets. Serial-number/primary settings pages are never erased.
 The application-image reservation remains unused. Returning to stock may
 reclaim the tail space and discard custom calibration.

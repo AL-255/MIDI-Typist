@@ -25,7 +25,7 @@ python3 tools/keyboard_gui.py --device /dev/ttyACM1   # explicit node override
 
 Current application: `build-keyboard-fn-menu/huntsman_firmware.bin`, exactly 131072 bytes,
 linked at `0x20000000`, sha256
-`c6ff4ffabdfe4a3775768501252c41a552cc40006c0ba45c82699293715c74be`
+`e98a914c6e50d0a270fdaebc8d64a6fb0204e3a76509568a0d2e7a4acd159dc3`
 (flashed with the sibling updater's application-only path and verified live:
 GUI telemetry, pinned-sensor stream at ~1.35 k samples/s, stream switch-back,
 bottom-out velocity windows at the shared 1500 threshold, and a physical
@@ -291,8 +291,8 @@ hardware verification (application flashed via the sibling updater): the
 telemetry framing, `cfg velocity` writes with telemetry readback in keyboard
 mode, per-key `cfg set` trigger writes with the release threshold preserved,
 the settings mirror (`settings=saved`, `settings_gen` incrementing) and its
-survival across a reflash with `--keep-settings`, the flashing script's cold
-boot returning the device to defaults, hold-mode stream engagement at the
+survival across a reflash with `--keep-settings` on the board's storage pages,
+the flashing script's cold boot returning the device to defaults, hold-mode stream engagement at the
 measured optical rate (~1.35 k samples/s), velocity window capture and GUI
 telemetry resume. Physical Fn+Tab and Fn+V presses, which need a person at the
 board, remain a manual check.

@@ -806,7 +806,7 @@ pages, using a new filename for each backup:
 
 ```sh
 python3 -u tools/dump_flash.py --device /dev/ttyACM0 \
-  --start 0x7d400 --length 0x400 \
+  --start 0x78000 --length 0x400 \
   --output device-dumps/calibration-backup.device-dump.bin
 ```
 

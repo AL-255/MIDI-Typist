@@ -27,8 +27,8 @@
   dumps, serial-number data or credentials.
 - Implement only the application. Preserve bootloader, primary settings and
   serial-number storage, factory/security data and secondary-ASIC firmware.
-  Calibration and profile RESET may modify only their two documented tail pages,
-  0x7d400/0x7d600. Do not execute RESET on a user's saved calibration merely to test it.
+  Calibration and profile RESET may modify only their two documented storage
+  pages, 0x78000/0x78200 (verified FF inside the original allocator's free block). Do not execute RESET on a user's saved calibration merely to test it.
 - Use the supplied updater for application flashing. Application flashes are
   authorized for this device; tests/builds must not implicitly flash or reset it.
   Manual forced bootloader recovery is not a routine test strategy.

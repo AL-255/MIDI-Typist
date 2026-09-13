@@ -15,7 +15,7 @@ from test_usb_startup_arm import StartupArm
 from test_keyboard_mode_arm import snapshot
 from scan_bars import sensor_labels
 
-SLOTS=(0x7d400,0x7d600)
+SLOTS=(0x78000,0x78200)
 # Regions the application must never erase or program. The flash model rejects
 # any controller command outside the two authorized pages, so a stray address
 # into the application image, the primary settings or the serial-number pages
@@ -252,8 +252,10 @@ def settings_arm_tests(args):
     page('V'); keys(**{'6':2400}); keys(**{'6':3900}); dev.service(200)
     assert b'velocity_start=6' in status(), status()
     page('Esc'); release_all()
+    page('J'); release_all()                 # Fn+J: the Janko layout toggle
     assert settle(), status()
-    assert b'settings_gen=2' in status(), status()
+    assert b'settings_gen>=2' not in status() or b'settings=saved' in status()
+    assert b'janko=1' in status(), status()
     assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_OFF:SETTINGS_OFF+4]==b'HKS1'
     assert bytes(dev.flash.pages[SLOTS[1]])[SETTINGS_PAYLOAD_OFF+5]==6
     print('PASS ARM settings: Fn+Enter/Fn+V menu path mirrored with A/B rotation')
@@ -262,6 +264,8 @@ def settings_arm_tests(args):
     pages={slot:bytes(dev.flash.pages[slot]) for slot in SLOTS}
     reloaded=Live(args.elf,args.reference,pages=pages); reloaded.service(400)
     s=snapshot(reloaded,'stream gui'); assert s.velocity_start==6, s.velocity_start
+    # The unplug/replug case: MIDI mode and the Janko layout come back.
+    assert s.performance_mode==1 and s.flags & 64, (s.performance_mode, s.flags)
     reloaded.command('stream off'); reloaded.service(10)
     line=reloaded.command('menu status')
     assert b'velocity_start=6' in line and b'settings=saved' in line and b'settings_gen=2' in line

@@ -1,7 +1,7 @@
 # Huntsman device calibration and settings storage
 
 Calibration and the Fn-menu settings use **only two whole 512-byte pages at
-physical addresses 0x7d400 and 0x7d600**. The beginning of configuration
+physical addresses 0x78000 and 0x78200**. The beginning of configuration
 storage, including the serial number and primary settings at 0x49000..0x49400,
 is not an erase target. The HKC1/HKS1 serializer and controller adapter belong
 to the [Huntsman board](../firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c).
@@ -13,7 +13,9 @@ See [the storage port contract](PORTING.md#5-add-lighting-storage-and-host-integ
 ## Evidence and ownership
 
 Two independent controller reads of 0x49400..0x7d800 matched,
-without read errors. Both selected pages contained exactly 512 FF bytes.
+without read errors. The selected pages, 0x78000 and 0x78200, read as exactly
+512 FF bytes, and pages sampled across the rest of the free payload read the
+same way.
 The original allocator's block chain at 0x54400 identifies five allocated
 0x580-byte blocks followed by a free block starting at 0x55f80 with size
 0x29480 (ending at 0x7f400). The selected pages are inside its free payload,
@@ -28,6 +30,10 @@ used: erasing it would also erase existing settings in that same page.
 The independent application does not use the original allocator. Returning to
 stock firmware may reclaim or clear the free block and lose our records.
 We do not alter allocator boundary tags or promise that stock preserves our data.
+
+The two storage pages keep the same 512-byte geometry, alignment and slot
+roles wherever they sit in that free payload; only their addresses are
+Huntsman board data.
 
 ## Record and recovery
 
@@ -151,7 +157,7 @@ rejects any controller command whose page is not one of the two authorized
 pages, and it rejects the application and primary-settings ranges explicitly,
 so an ARM test fails rather than silently corrupting them. That test also
 reports the address set every mirror, reload and cold-boot flow touched, which
-is exactly `0x7d400` and `0x7d600`.
+is exactly `0x78000` and `0x78200`.
 
 The read path retries a failed word read twice before reporting an error. The
 reference driver read each word once; retrying keeps one flaky controller

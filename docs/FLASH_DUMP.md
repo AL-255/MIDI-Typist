@@ -27,7 +27,7 @@ other CDC users before acquisition. Host keyboard/scan/light processing
 continues; the dumper takes ownership of the CDC stream only. It stops the
 stream on exit; reopen the GUI or explicitly select another stream afterward.
 Wait for any calibration run to finish before acquiring a dump. To read only
-the calibration slots, use `--start 0x7d400 --length 0x400` with a new private
+the calibration slots, use `--start 0x78000 --length 0x400` with a new private
 output name. A raw dump alone does not decode or validate the HKC1 record CRC;
 the format is documented in [storage](DEVICE_CONFIG_STORAGE.md).
 
@@ -105,7 +105,7 @@ controller completion is modeled; only real acquisition validates board behavior
 
 The user's latest constraint permits writes **only to unused pages near the
 end**, preserving the beginning containing the serial number. Selected and
-twice-read FF pages are 0x7d400 and 0x7d600. Primary pages at 0x49000/0x49200
+twice-read FF pages are 0x78000 and 0x78200. Primary pages at 0x49000/0x49200
 must not be erased. Future application flashes are authorized, but bootloader,
 factory/security and secondary-ASIC writes remain out of scope.
 The original configuration writer at `0x200156cc` stores its primary 701-byte
