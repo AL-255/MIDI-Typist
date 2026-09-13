@@ -11,6 +11,10 @@
  * encodes from this framebuffer when submitting its hardware transfer. */
 void keyboard_light_set(uint8_t profile, unsigned sensor, uint8_t *frame,
                         uint8_t red, uint8_t green, uint8_t blue);
+/* Reads back what set() wrote, so application code can keep an existing
+ * intensity and change only the hue. Out-of-range sensors read as zero. */
+void keyboard_light_get(uint8_t profile, unsigned sensor, const uint8_t *frame,
+                        uint8_t *red, uint8_t *green, uint8_t *blue);
 uint8_t lighting_travel_pwm(uint16_t raw, uint16_t lower, uint16_t upper);
 void lighting_travel_frame(uint8_t profile, const uint16_t *raw, const uint16_t *lower,
                           const uint16_t *upper, bool valid, uint8_t *frame);

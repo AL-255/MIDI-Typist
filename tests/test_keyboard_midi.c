@@ -383,25 +383,31 @@ static void janko_mode(void)
     janko_strike(0x1d,63,0); /* Z    D#4 */
     janko_strike(0x05,71,0); /* B    B4  */
     janko_strike(0xe5,83,32);/* RSh  B5  */
-    /* The Jankó layout paints its black keys (accidentals) yellow, and leaves
-     * the diatonic keys to the normal note/travel backlighting. */
+    /* The Jankó layout tints its black keys yellow while keeping the travel
+     * intensity the white keys show, so both dim and brighten identically. */
     {
+        const struct { unsigned usage, modifier; bool black; uint8_t travel; } keys[] = {
+            {0xe1,2,true,90},    /* Left Shift  C#4: dim, unpressed  */
+            {0x1d,0,true,200},   /* Z           D#4: bright, pressed */
+            {0x07,0,true,0},     /* D           F#4                  */
+            {0x1b,0,false,140},  /* X           F4                   */
+            {0x04,0,false,0},    /* A           D4                   */
+            {0xe5,32,false,0},   /* Right Shift B5                   */
+        };
         uint8_t frame[LIGHTING_FRAME_SIZE];
         memset(frame,0,sizeof(frame));
-        keyboard_midi_lights(&midi,frame,midi.changed_at);
-        const struct { unsigned usage, modifier; bool black; } keys[] = {
-            {0xe1,2,true},   /* Left Shift  C#4 */
-            {0x1d,0,true},   /* Z           D#4 */
-            {0x07,0,true},   /* D           F#4 */
-            {0x1b,0,false},  /* X           F4  */
-            {0x04,0,false},  /* A           D4  */
-            {0xe5,32,false}, /* Right Shift B5  */
-        };
         for (unsigned i=0;i<sizeof(keys)/sizeof(keys[0]);++i) {
             const unsigned index=sensor((uint8_t)(keys[i].modifier?0:keys[i].usage),(uint8_t)keys[i].modifier);
             const lighting_channels_t *c=&g_lighting_channels[midi.profile-1][index];
-            const bool yellow=frame[c->red]==255 && frame[c->green]==255 && frame[c->blue]==0;
-            assert(yellow==keys[i].black);
+            uint8_t *cell=frame+(unsigned)c->controller*192u;
+            cell[c->red]=cell[c->green]=cell[c->blue]=keys[i].travel;
+        }
+        keyboard_midi_lights(&midi,frame,midi.changed_at);
+        for (unsigned i=0;i<sizeof(keys)/sizeof(keys[0]);++i) {
+            const unsigned index=sensor((uint8_t)(keys[i].modifier?0:keys[i].usage),(uint8_t)keys[i].modifier);
+            const lighting_channels_t *c=&g_lighting_channels[midi.profile-1][index];
+            const uint8_t blue=keys[i].black ? 0u : keys[i].travel;
+            assert(frame[c->red]==keys[i].travel && frame[c->green]==keys[i].travel && frame[c->blue]==blue);
         }
     }
     /* Backspace, backslash and Enter complete their rows' whole-tone runs. */

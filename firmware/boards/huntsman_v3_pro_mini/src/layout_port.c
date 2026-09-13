@@ -64,3 +64,11 @@ void keyboard_light_set(uint8_t profile, unsigned sensor, uint8_t *frame,
     uint8_t *p=frame+(unsigned)c->controller*192u;
     p[c->red]=red; p[c->green]=green; p[c->blue]=blue;
 }
+void keyboard_light_get(uint8_t profile, unsigned sensor, const uint8_t *frame,
+                        uint8_t *red, uint8_t *green, uint8_t *blue)
+{
+    if(sensor>=keyboard_layout_count(profile)) { *red=*green=*blue=0u; return; }
+    const lighting_channels_t *c=&g_lighting_channels[profile-1u][sensor];
+    const uint8_t *p=frame+(unsigned)c->controller*192u;
+    *red=p[c->red]; *green=p[c->green]; *blue=p[c->blue];
+}

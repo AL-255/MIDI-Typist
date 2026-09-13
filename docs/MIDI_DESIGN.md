@@ -151,9 +151,9 @@ modifier mask, and keys outside the table (the bottom-row controls and the
 remaining modifier roles) keep their configured mapping and role. Each row is a
 whole-tone run: the number row ends at Backspace (C6), the Tab row at backslash
 (C#6) and the Caps row at Enter (C6). Keys whose layout note is an accidental are
-lit yellow - the piano's black keys - while the diatonic keys keep their normal
-note and travel backlighting; a key muted by the root/scale filter stays dark
-like any other disabled note. The toggle uses the same
+tinted yellow - the piano's black keys - keeping the travel intensity the
+diatonic keys show, so both dim and brighten together; a key muted by the
+root/scale filter stays dark like any other disabled note. The toggle uses the same
 preview/release menu path, is available in MIDI mode only, aborts voices and
 invalidates raw arming. While it is active the Fn hint on J turns green, telemetry
 reports it in flags bit 6, and `menu status` prints `janko=1`. The configured

@@ -439,10 +439,16 @@ void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now
              (s->octave > 0 && s->role[i] == ROLE_UP));
         if (s->mode && !note_enabled(s,i))
             keyboard_light_set(s->profile,i,frame,0,0,0);
-        /* Yellow marks the black keys of the Jankó layout. It replaces the
-         * travel backlighting on those keys, pressed or not. */
-        else if (s->mode && s->janko && janko_black_key(s,i))
-            keyboard_light_set(s->profile,i,frame,255,255,0);
+        /* Yellow marks the black keys of the Jankó layout. Only the hue
+         * changes: the travel intensity painted a moment ago is kept, so a
+         * black key dims and brightens exactly like a white one. */
+        else if (s->mode && s->janko && janko_black_key(s,i)) {
+            uint8_t red, green, blue;
+            keyboard_light_get(s->profile,i,frame,&red,&green,&blue);
+            const uint8_t level = red > green ? (red > blue ? red : blue)
+                                              : (green > blue ? green : blue);
+            keyboard_light_set(s->profile,i,frame,level,level,0u);
+        }
         /* Mode/octave hints remain explicit overlays, not note backlighting. */
         if (s->role[i] != ROLE_ENTER && !(s->mode && s->role[i]>=ROLE_DOWN)) continue;
         if (octave_key) {

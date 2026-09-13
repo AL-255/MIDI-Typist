@@ -76,3 +76,8 @@ void keyboard_light_set(uint8_t p,unsigned sensor,uint8_t *frame,uint8_t r,uint8
     if(sensor>=keyboard_layout_count(p)) return;
     frame[sensor*3]=r; frame[sensor*3+1]=g; frame[sensor*3+2]=b;
 }
+void keyboard_light_get(uint8_t p,unsigned sensor,const uint8_t *frame,uint8_t *r,uint8_t *g,uint8_t *b)
+{
+    if(sensor>=keyboard_layout_count(p)) { *r=*g=*b=0u; return; }
+    *r=frame[sensor*3]; *g=frame[sensor*3+1]; *b=frame[sensor*3+2];
+}
