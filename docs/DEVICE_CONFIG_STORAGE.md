@@ -67,28 +67,42 @@ values, non-zero reserved bytes or unknown magic invalidate the block, never the
 calibration part. Host `cfg set`/`cfg all` threshold edits and `cfg midi`
 mappings are not stored.
 
-Boot reads both pages, takes the newest valid generation of each part
-independently, and writes nothing. Without a valid settings record, or with one
-whose build identity differs from the running application, the application keeps
-its defaults: that is the **cold-boot condition**, and it is why a freshly
-flashed build cannot inherit the previous build's state.
+Boot runs an **integrity pass** over both pages before anything is loaded. Each
+page must be blank, or carry our markers with a CRC32 that matches over bytes
+0..507; the checksum therefore covers the header, both bound arrays, the
+settings block and the padding, so any single changed byte and any partial
+program (a power loss mid-write leaves a written prefix and an erased tail)
+fails it. A page that fails is corruption, and the pass then **clears the whole
+region** and continues: the session is a cold boot from an empty store. A clean
+store is only read - no boot-time erase or program happens unless corruption has
+to be cleared. A page that cannot be read at all cannot be classified, so it is
+left alone and the load path reports the read error instead of erasing the
+region on every boot.
+
+After that pass, boot takes the newest valid generation of each part
+independently. Without a valid settings record, or with one whose build identity
+differs from the running application, the application keeps its defaults: that
+is the **cold-boot condition**, and it is why a freshly flashed build cannot
+inherit the previous build's state.
 
 A save writes only the inactive page, leaving the other record untouched. Before
 erase, the target must read successfully and be entirely FF or carry our
 recognizable HKC1 header. Unknown contents cause a save failure, not an erase: a
 page holding data we did not write is skipped and the save falls back to the
-other authorized slot, so one damaged or foreign page never disables persistence.
-A recognizable torn record may be replaced. Rewriting one part preserves the
-other: a calibration save keeps the settings block in its page and a settings
-save keeps that page's calibration part.
+other authorized slot, so one damaged or foreign page never disables
+persistence. Rewriting one part preserves the other: a calibration save keeps
+the settings block in its page and a settings save keeps that page's
+calibration part.
 
-Clearing is the one deliberate deletion request (Fn+R, `cfg clean`). It still
-refuses to erase a readable page holding unknown contents, but a page that
-cannot be read at all - an interrupted program can leave ECC-invalid data - is
-erased anyway, because both addresses are authorized pages and nothing else can
-reclaim them. If the erase itself succeeds and only the read-back stays broken,
-the clear is satisfied: an unreadable page holds no record this application
-could load again. If the erase fails, the clear fails and reports it.
+Clearing wipes the whole region. Both callers are deliberate: Fn+R and
+`cfg clean` from an operator, and the boot integrity pass after a checksum
+failure. Every non-blank page is erased, including content we cannot identify
+and a page that cannot be read at all - an interrupted program can leave
+ECC-invalid data that nothing else can reclaim - because both addresses are
+authorized pages. If an erase succeeds and only the read-back stays broken, the
+clear is satisfied: such a page holds no record this application could load
+again. If an erase fails, the clear fails and reports it, and the region is left
+as it was.
 
 The full page is erased, programmed, read back and compared byte for byte,
 including CRC, before RAM state and the active generation are updated. Power
@@ -177,11 +191,13 @@ movement/release, timing, layouts, rollover, noise, cancellation, CRC damage,
 unexpected page contents, error handling and all 512 byte-cut points in an
 interrupted inactive-page write, plus settings round-trips, A/B rotation,
 calibration/settings coexistence in one page, cold boot on a foreign build,
-range and damage guards, slot fallback for an unreadable page and clearing
-(including recovery of a page that stays unreadable). ARM tests compare exact register writes
+range and damage guards, slot fallback for an unreadable page, clearing
+(including recovery of a page that stays unreadable) and the integrity pass:
+every one of the 512 single-byte corruptions and every 16-byte-granular partial
+program is detected and cleared to a cold boot. ARM tests compare exact register writes
 with executed original erase/program instructions, then exercise compiled Fn+C,
 CDC commands, complete sequential and parallel simulated 61-key acquisition,
 save and reboot loading, the released-key mirror gate, a pre-seeded record
-applied on boot and `cfg clean`.
+applied on boot, a torn page detected and cleared at boot, and `cfg clean`.
 These tests never access the real keyboard. See [calibration operation](CALIBRATION.md)
 for physical validation status and limitations.

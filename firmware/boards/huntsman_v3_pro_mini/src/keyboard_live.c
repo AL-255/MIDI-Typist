@@ -119,6 +119,13 @@ static void settings_poll(uint32_t now)
 
 static bool load_calibration(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi)
 {
+    /* Integrity pass first: a torn page (power loss during erase or program)
+     * fails its checksum, and the whole region is cleared so this boot is a
+     * cold boot instead of a half-applied record. Clean stores are untouched. */
+    if(!calibration_store_scrub(&s_cal_store,flash_calibration_read,flash_calibration_erase))
+        debug_write("STORE foreign page kept; storage locked out\r\n");
+    else if(s_cal_store.corrupt_slots)
+        debug_write("STORE checksum failure cleared; cold boot\r\n");
     calibration_store_load(&s_cal_store,profile,count,lo,hi,flash_calibration_read);
     if(s_cal_store.saved) s_scan.calibrated=count;
     settings_restore(lo,hi);
@@ -435,6 +442,7 @@ bool keyboard_live_command(const char *line)
         value(" threshold_source=",s_menu.threshold_source);
         value(" settings_gen=",s_cal_store.settings_saved?s_cal_store.settings_generation:0u);
         value(" dirty=",s_settings_dirty_at?1u:0u); value(" store_err=",s_cal_store.error);
+        value(" corrupt=",s_cal_store.corrupt_slots);
         debug_write(" settings="); debug_write(s_cal_store.settings_saved?"saved":"cold");
         debug_write(" build=" MT_BUILD_ID);
         debug_write(" key="); debug_write(midi_root_names[s_midi.music.root]);
@@ -459,6 +467,7 @@ bool keyboard_live_command(const char *line)
                     "cfg midi ID SENSOR NOTE (0..127, 255=unmapped); Fn+Enter toggles MIDI; LCtrl/LAlt octave-/+\r\n"
                     "cfg velocity ID LEVEL (1..10, Fn+V: 0% .. 100% transmitted-velocity start)\r\n"
                     "cfg clean ID (cold boot: erase saved calibration and Fn-menu settings, like Fn+R)\r\n"
+                    "A checksum failure at boot clears the region and starts from defaults.\r\n"
                     "Standalone raw keyboard auto-arms after neutral scan; settings RAM-only.\r\n");
 #endif
 #ifdef HUNTSMAN_TRAVEL_LIGHTING

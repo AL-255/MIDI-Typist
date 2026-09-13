@@ -208,9 +208,71 @@ static void settings_tests(void)
     puts("PASS device settings: cold boot, A/B rotation, calibration/settings coexistence, range and damage guards, clear");
 }
 
+/* Corruption handling: the CRC32 covers every byte of the page except itself,
+ * so any single-byte change is detected, and a detected tear clears the whole
+ * region so the next state is a cold boot rather than a half-applied record. */
+static void integrity_tests(void)
+{
+    const char *build="v0.1.0-RZ03-0499";
+    memset(pages,255,sizeof(pages)); writes=erases=0; fail_reads=0;
+    read_error=write_error=erase_error=0; erase_bad_verify=false;
+    calibration_store_t store; device_settings_t in=sample_settings(),out;
+    uint16_t lo[65],hi[65];
+    memset(lo,0,sizeof(lo)); memset(hi,0,sizeof(hi));
+    calibration_store_load(&store,1,61,lo,hi,read_page);
+    in.velocity_start=6;
+    assert(calibration_store_save_settings(&store,&in,build,read_page,write_page));
+    uint8_t saved[512]; memcpy(saved,pages[0],512);
+    /* A clean page passes the pass untouched, with no erase. */
+    assert(calibration_store_scrub(&store,read_page,erase_page));
+    assert(!store.corrupt_slots && !store.error && !erases && !memcmp(saved,pages[0],512));
+    /* Every single-byte change, anywhere in the page, is detected and cleared. */
+    for (unsigned offset=0;offset<CAL_PAGE_SIZE;++offset) {
+        memset(pages,255,sizeof(pages)); memcpy(pages[0],saved,512);
+        pages[0][offset]^=0x55u; erases=0;
+        assert(!device_page_valid(pages[0]));
+        calibration_store_t probe={0};
+        assert(calibration_store_scrub(&probe,read_page,erase_page));
+        /* Only the corrupted page holds content, so it is the only erase. */
+        assert(probe.corrupt_slots==1u && probe.error==STORE_ERROR_CORRUPT && erases==1);
+        for (unsigned i=0;i<sizeof(pages);++i) assert(((uint8_t *)pages)[i]==255);
+        calibration_store_load_settings(&probe,&out,build,read_page);
+        calibration_store_load(&probe,1,61,lo,hi,read_page);
+        assert(!probe.settings_saved && !probe.saved);   /* cold boot */
+    }
+    /* A power loss during program leaves a prefix of the page written and the
+     * rest erased. Every such tear fails the checksum, so a boot clears the
+     * region and continues from defaults instead of using a partial record. */
+    for (unsigned cut=0;cut<CAL_PAGE_SIZE;cut+=16u) {   /* the full page is not a tear */
+        memset(pages,255,sizeof(pages)); memcpy(pages[0],saved,cut); erases=0;
+        calibration_store_t torn={0};
+        assert(calibration_store_scrub(&torn,read_page,erase_page));
+        assert(cut ? (torn.corrupt_slots==1u && torn.error==STORE_ERROR_CORRUPT && erases==1)
+                   : (!torn.corrupt_slots && !erases));
+        for (unsigned i=0;i<sizeof(pages);++i) assert(((uint8_t *)pages)[i]==255);
+        calibration_store_load(&torn,1,61,lo,hi,read_page);
+        calibration_store_load_settings(&torn,&out,build,read_page);
+        assert(!torn.saved && !torn.settings_saved);
+    }
+    /* Content that is readable but not a valid record is corruption of the
+     * region, so the pass clears it and reports a cold boot. */
+    memset(pages,255,sizeof(pages)); pages[0][0]=0x5au; erases=0;
+    calibration_store_t probe={0};
+    assert(calibration_store_scrub(&probe,read_page,erase_page));
+    assert(probe.corrupt_slots==1u && probe.error==STORE_ERROR_CORRUPT && erases==1 && pages[0][0]==0xff);
+    /* An unreadable page cannot be classified, so it is left alone. */
+    memset(pages,255,sizeof(pages)); memcpy(pages[0],saved,512); fail_reads=2; erases=0;
+    calibration_store_t unreadable={0};
+    assert(calibration_store_scrub(&unreadable,read_page,erase_page));
+    assert(!unreadable.corrupt_slots && !erases && !memcmp(pages[0],saved,512));
+    fail_reads=0;
+    fail_reads=0; read_error=write_error=erase_error=0; writes=erases=0;
+    puts("PASS flash integrity: all 512 single-byte corruptions detected and cleared to a cold boot; unreadable pages reported, not guessed at");
+}
+
 int main(void)
 {
-    settings_tests();
+    settings_tests(); integrity_tests();
     keyboard_calibration_t c=capture(1,0);
     (void)capture(2,0); (void)capture(3,UINT32_MAX-500);
     parallel(1,0); parallel(2,10000); parallel(3,UINT32_MAX-700);
@@ -288,9 +350,13 @@ int main(void)
             calibration_store_load(&reboot,1,61,lo,hi,read_page);
             assert(!reboot.saved || reboot.generation==0); /* never the older UINT32_MAX record */
         }
-    memcpy(pages,saved_pages,sizeof(pages));
+    /* A clear wipes the whole region, including content we cannot identify:
+     * it is a deliberate deletion of the two authorized pages, while a save
+     * still skips such a page and uses the other slot. */
+    memcpy(pages,saved_pages,sizeof(pages)); erases=0;
     pages[0][0]=0;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && !erases && store.error==0x20002);
+    assert(calibration_store_clear(&store,read_page,erase_page) && erases==2);
+    erases=0;
     /* An explicit clear recovers a page that cannot be read at all: an
      * interrupted program can leave ECC-invalid data that nothing else can
      * reclaim, and both addresses are authorized pages. */

@@ -14,10 +14,18 @@
 typedef uint32_t (*cal_read_fn)(unsigned slot, uint8_t *page);
 typedef uint32_t (*cal_write_fn)(unsigned slot, const uint8_t *page);
 typedef uint32_t (*cal_erase_fn)(unsigned slot);
+/* Store failures beyond the controller codes. */
+#define STORE_ERROR_INVALID   0x20001u  /* value out of range for the record  */
+#define STORE_ERROR_FOREIGN   0x20002u  /* readable page we did not write     */
+#define STORE_ERROR_VERIFY    0x20003u  /* erase/program did not read back    */
+#define STORE_ERROR_CORRUPT   0x20004u  /* checksum failure, region cleared   */
 typedef struct {
     uint32_t generation, error;
     uint8_t slot;
     bool saved;
+    /* Bitmask of pages whose checksum failed and which were therefore cleared
+     * by the boot integrity pass, so the session is a cold boot. */
+    uint8_t corrupt_slots;
     /* Settings part of the same pages; settings_saved stays false for a blank,
      * unknown or foreign-build record, which is the cold-boot condition. */
     uint32_t settings_generation;
@@ -49,6 +57,13 @@ void device_settings_encode(uint8_t *payload, const device_settings_t *s);
 bool device_settings_decode(const uint8_t *payload, device_settings_t *s);
 void device_page_settings_put(uint8_t *page, const device_settings_t *s, uint32_t gen, const char *build);
 bool device_page_settings_get(const uint8_t *page, device_settings_t *s, uint32_t *gen, char *build);
+/* Boot integrity pass. Every page is checked against its CRC32 before anything
+ * is loaded; a non-blank page carrying our markers that fails the check is a
+ * torn write (power loss during erase or program), and the whole region is
+ * cleared so corruption always ends as a cold boot. A readable page with
+ * foreign contents is never deleted, and an unreadable page is reported by the
+ * load path rather than guessed at. */
+bool calibration_store_scrub(calibration_store_t *s, cal_read_fn read, cal_erase_fn erase);
 void calibration_store_load(calibration_store_t *s, uint8_t profile, uint8_t count, uint16_t *lo, uint16_t *hi, cal_read_fn read);
 /* Reads the settings part alone, so it can run after calibration endpoints are
  * known. expect_build mismatches leave settings_saved false. */

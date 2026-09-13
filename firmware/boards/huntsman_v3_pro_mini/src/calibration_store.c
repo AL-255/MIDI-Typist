@@ -129,21 +129,38 @@ bool calibration_record_valid(const uint8_t *p)
     if (!owned(p) || get32(p+CAL_PAGE_SIZE-4u)!=calibration_crc32(p,CAL_PAGE_SIZE-4u) || !calibration_part(p)) return false;
     return settings_absent(p) || device_page_settings_get(p,&probe,0,0);
 }
+bool calibration_store_scrub(calibration_store_t *s, cal_read_fn read, cal_erase_fn erase)
+{
+    uint8_t page[CAL_PAGE_SIZE];
+    uint8_t suspect=0u;
+    for (unsigned slot=0;slot<2;++slot) {
+        /* An unreadable page cannot be classified, so it is reported through the
+         * load path's error instead of erasing the region on every boot. */
+        if (read(slot,page)) continue;
+        if (blank(page) || device_page_valid(page)) continue;
+        suspect|=(uint8_t)(1u<<slot);
+    }
+    if (!suspect) return true;
+    if (!calibration_store_clear(s,read,erase)) return false;
+    s->corrupt_slots|=suspect;
+    s->error=STORE_ERROR_CORRUPT;
+    return true;
+}
 bool calibration_store_clear(calibration_store_t *s, cal_read_fn read, cal_erase_fn erase)
 {
     uint8_t page[CAL_PAGE_SIZE];
     bool empty[2], unreadable[2];
-    /* Check BOTH pages before any erase; never delete unidentified contents.
-     * A clear is the one explicit deletion request (Fn+R, `cfg clean`), so a
-     * page that cannot be read at all - an interrupted program can leave
-     * ECC-invalid data - is erased anyway: it is one of the two authorized
-     * pages, and nothing else can ever read or reclaim it. Saves stay strict. */
+    /* Wipe the whole region. Both callers are deliberate deletion requests
+     * (Fn+R and `cfg clean`, or the boot integrity pass after a checksum
+     * failure), the two pages are ours by verification, and an unreadable page
+     * - an interrupted program can leave ECC-invalid data - is erased too,
+     * because nothing else can read or reclaim it. Saves stay strict: they
+     * skip content they did not write and use the other slot. */
     for (unsigned slot=0;slot<2;++slot) {
         s->error=read(slot,page);
         unreadable[slot]=s->error!=0;
-        if (unreadable[slot]) continue;
-        empty[slot]=blank(page);
-        if (!empty[slot] && !owned(page)) { s->error=0x20002; return false; }
+        empty[slot]=!unreadable[slot] && blank(page);
+        s->error=0;
     }
     /* Retire the older slot first; never resurrect it if reset is interrupted. */
     unsigned first=s->saved && s->slot<2 ? s->slot^1u : 0u;

@@ -127,9 +127,10 @@ def live_tests(args):
     dev=Live(args.elf,args.reference); dev.service(400)
     s=snapshot(dev,'stream gui'); assert s.calibration_flags==4
     assert 0x20000000 <= dev.symbols['s_cal'] < dev.symbols['__app_load_end__'] <= 0x2001fc00
-    # Boot reads the calibration part and the settings part of both pages. Never
-    # a write: a cold boot leaves a blank store blank.
-    assert len(dev.flash.commands)==128 and all(cmd==3 for cmd,_ in dev.flash.commands)
+    # Boot reads both pages three times: the integrity pass, the calibration
+    # part and the settings part. Never a write - a blank store has no checksum
+    # failure to clear.
+    assert len(dev.flash.commands)==192 and all(cmd==3 for cmd,_ in dev.flash.commands)
     labels=sensor_labels()[61]
     dev.raw[labels.index('Fn')]=1000; dev.raw[labels.index('C')]=1000
     s=snapshot(dev); assert s.calibration_state==0 and not any(s.report)
@@ -289,10 +290,26 @@ def settings_arm_tests(args):
     assert all(b==0xff for b in dev3.flash.pages[SLOTS[1]])
     dev3.command('stream off'); dev3.service(10)
     assert b'settings=cold' in dev3.command('menu status')
+    # A torn page - a power loss during a save - fails its checksum, so the boot
+    # integrity pass clears the region and the session starts from defaults.
+    torn=bytearray(pages[SLOTS[1]])
+    torn[300]^=0x20                       # a data byte: the stored CRC no longer matches
+    dev4=Live(args.elf,args.reference,pages={SLOTS[1]:bytes(torn)}); dev4.service(400)
+    assert snapshot(dev4,'stream gui').velocity_start==1
+    dev4.command('stream off'); dev4.service(10)
+    line=dev4.command('menu status')
+    # corrupt=2 reports the cleared page; store_err tracks the last operation, and
+    # the load that follows the scrub succeeds against the now-empty region.
+    assert b'settings=cold' in line and b'corrupt=2' in line and b'store_err=0' in line, line
+    assert all(b==0xff for b in dev4.flash.pages[SLOTS[0]])
+    assert all(b==0xff for b in dev4.flash.pages[SLOTS[1]])
+    assert dev4.flash.touched=={SLOTS[1]}, sorted(hex(a) for a in dev4.flash.touched)
+    print('PASS ARM integrity: a torn page is detected, cleared and cold-booted; only that page is erased')
+
     # Every flash command these flows issued stayed inside the two authorized
     # pages: the model rejects anything else and the touched set proves it.
     touched=set()
-    for candidate in (dev,reloaded,dev2,dev3): touched |= candidate.flash.touched
+    for candidate in (dev,reloaded,dev2,dev3,dev4): touched |= candidate.flash.touched
     assert touched and touched <= set(SLOTS), sorted(hex(a) for a in touched)
     print('PASS ARM flash bounds: mirror, reload and cold boot touched only '
           + ', '.join(hex(a) for a in sorted(touched)))
