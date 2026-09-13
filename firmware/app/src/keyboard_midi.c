@@ -411,6 +411,18 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     }
 }
 
+/* Jankó layout marker: the keys that play accidentals are the piano's black
+ * keys. Pitch class alone decides, so the marker follows the octave offset and
+ * every row stays readable at a glance. */
+static bool janko_black_key(const keyboard_midi_t *s, unsigned sensor)
+{
+    const uint8_t note = note_mapping(s, sensor);
+    if (note == MIDI_UNMAPPED) return false;
+    switch (note % 12u) {
+        case 1u: case 3u: case 6u: case 8u: case 10u: return true;
+        default: return false;
+    }
+}
 void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now)
 {
     if (!s->profile) return;
@@ -427,6 +439,10 @@ void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now
              (s->octave > 0 && s->role[i] == ROLE_UP));
         if (s->mode && !note_enabled(s,i))
             keyboard_light_set(s->profile,i,frame,0,0,0);
+        /* Yellow marks the black keys of the Jankó layout. It replaces the
+         * travel backlighting on those keys, pressed or not. */
+        else if (s->mode && s->janko && janko_black_key(s,i))
+            keyboard_light_set(s->profile,i,frame,255,255,0);
         /* Mode/octave hints remain explicit overlays, not note backlighting. */
         if (s->role[i] != ROLE_ENTER && !(s->mode && s->role[i]>=ROLE_DOWN)) continue;
         if (octave_key) {

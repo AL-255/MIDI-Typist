@@ -112,8 +112,12 @@ must be released before output resumes: the toggle aborts voices and pending
 strikes. The layout replaces the playing notes of the letter, number and
 punctuation rows with a staggered whole-tone arrangement; the configured
 mapping is untouched and returns when the layout is switched off. The
-root/scale filter still applies. **Fn+Left Shift is ineffective in Jankó
-mode** — the lower rows always play — and the J hint stays green as a reminder.
+root/scale filter still applies. The keys that play accidentals — the layout's
+black keys — are lit yellow, so the two staggered rows can be read at a glance;
+the diatonic keys keep their normal note and travel backlighting, and a key the
+root/scale filter disables stays dark like any other disabled note.
+**Fn+Left Shift is ineffective in Jankó mode** — the lower rows always play —
+and the J hint stays green as a reminder.
 
 ## MIDI lower-row toggle
 

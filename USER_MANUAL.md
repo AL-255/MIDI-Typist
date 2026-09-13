@@ -410,7 +410,9 @@ is reported by `menu status` as `velocity_start=1..10`.
 In MIDI mode, hold **Fn+J** to preview `JANKO`, then release either key to
 switch the playing notes to the built-in staggered whole-tone layout. Release
 all keys before playing again. The J hint turns green while it is active, and
-`menu status` reports `janko=1`.
+`menu status` reports `janko=1`. The black keys of the
+layout - every key that plays a sharp - glow yellow, so the staggered rows can
+be read at a glance; the white keys keep their normal backlighting.
 
 ```text
 Esc  1   2   3   4   5   6   7   8   9   0   -   =   Bksp
