@@ -2,7 +2,7 @@
 
 The `huntsman` build provides GUI telemetry, normalized float velocity, per-key
 bottom-out velocity windows and the gated interval pop filter. See
-[MIDI design](MIDI_DESIGN.md) and [current validation](CALIBRATION.md#validation-status).
+[MIDI design](MIDI_DESIGN.md) and [current validation](VALIDATION.md).
 
 ```sh
 cmake --preset huntsman
@@ -21,8 +21,8 @@ Firmware validates the pair and sensor count before changing anything, updates
 every active sensor in one main-loop operation, increments the configuration
 revision once, and clears key/velocity state once. The GUI waits for the ACK
 and verifies all threshold pairs in the returned snapshot. Invalid requests
-change neither configuration nor capture state. Host threshold edits remain
-RAM-only, while the Fn-menu trigger and velocity choices are stored.
+change neither configuration nor capture state. Host thresholds and committed
+Fn-menu choices save automatically after neutral and 250 ms without changes.
 
 Key tiles show current raw readback and latest completed normalized velocity
 (`v0.000`–`v1.000`). Selecting a key shows its velocity, completed-fit count and
@@ -107,59 +107,19 @@ key. Completion counters are retained until application restart. No fit spans
 an invalid scan or a configuration change. The existing global neutral guard
 for HID output is separate from these independent per-key velocity gates.
 
-MIDI buffers each new note and emits the Note On when its key's window closes,
-so the attack velocity is the completed estimate of that press; a window that
-closes without a fit still releases the buffered note with the last value.
-Press thresholds below the bottom-out 1500 make every press bottom out at the
-trigger, so no fit can complete — keep press thresholds above 1500 for
-meaningful velocity.
+MIDI waits for the strike's window to close before transmitting Note On.
+A trigger at/below the floor still uses the next readback for a one-interval
+estimate; short windows have less noise rejection. See [filter edge cases](MIDI_FILTER.md).
 
 ## Telemetry
 
-`stream gui` sends 1152-byte GUI telemetry, at most once per 33 ms.
-Bytes 7..446 contain raw samples, thresholds and keyboard state; see
-[the full layout](TELEMETRY.md#gui-snapshot-stream-gui).
-
-| Offset | Field |
-| --- | --- |
-| 0 | `HKG` and a NUL byte (constant magic) |
-| 4 | uint16 length = 1152 |
-| 6 | Fn+V transmitted-velocity start, 1…10 |
-| 447 | 65 float32 normalized velocities |
-| 707 | 65 uint32 completed-fit counters |
-| 967 | 65 state bytes: release-armed=1, result-valid=2, pending velocity=4, calibration hold=8 |
-| 1032 | MIDI and calibration fields; see [full protocol](MIDI_PROTOCOL.md) |
-| 1148 | uint32 sum of the preceding 574 little-endian uint16 words |
-
-Unused sensor slots are zero. Values are little-endian IEEE-754 float32.
-The stable USB-owned buffer is 1152 bytes, separate from the latest unsent
-snapshot. Whole/compact streaming retains its existing 640-byte batching limits
-and existing semantics. Dedicated USB SRAM allocation is unchanged.
-
-Velocity computation processes every received valid scan, not every GUI frame.
-**GUI telemetry is latest-only**, not a lossless velocity event log: several
-captures of a key between snapshots increment its counter, but only the latest
-result is displayed. MIDI performance separately consumes completed estimates
-for Note On events; GUI frames are not the MIDI event source.
+The [GUI wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines velocity,
+completion counters and ready/valid/pending bits. Firmware computes every
+received valid scan; GUI telemetry is latest-only, not a velocity event log.
+MIDI consumes estimates independently of GUI snapshots.
 
 ## Validation and image
 
-```sh
-cmake --preset host-tests
-cmake --build --preset host-tests
-ctest --preset host-tests
-python3 -B tools/test_keyboard_gui_tk.py
-cmake --build --preset huntsman --target audit-lighting
-```
-
-Coverage: 65 simultaneous different slopes; equality/release gating; bottom-out
-window cuts; newest-press window ownership under rapid retriggers; 16,640
-randomized per-key observations checked against a full-history oracle;
-invalid/config cancellation; velocity with HID disabled; actual ARM DMA ->
-estimates -> telemetry readback and MIDI Note On velocity; atomic all-key command and
-invalid-request rejection; FS/HS larger-frame transport and pending-buffer
-immutability; legacy decoder compatibility; GUI button/ACK/readback tests via
-PTY and a private virtual display; USB/updater/lighting/stream regressions.
-
-These tests use synthetic hardware responses and do not establish physical
-press behavior or new-image stability on the board.
+See [Building](BUILDING.md) and [Validation](VALIDATION.md). Tests cover
+concurrent slopes, equality/rearming, window cuts, rapid retriggers, invalid
+input, atomic threshold edits, serialization and GUI ACK/readback.

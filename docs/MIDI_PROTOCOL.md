@@ -61,11 +61,13 @@ available while no binary stream is active, so hosts stop any stream left
 running by a previous owner (`stream off`), query the identity, and only then
 select `stream gui`.
 
-`cfg clean` is the **cold boot**: it erases both authorized pages (the saved
-calibration record), exactly like Fn+R, and answers
-result 1 only after reading them back blank. Defaults then apply on the first
-neutral frame. `tools/flash_application.py` sends it after every flash so a new
-build cannot inherit the previous build's state; `--keep-calibration` skips it.
+`cfg clean` explicitly resets custom settings and calibration, exactly like
+Fn+R. It erases both authorized pages and answers result 1 only after CMD5
+blank verification. Compatible firmware updates do not send it by default. It requires a valid scan less than
+100 ms old, releases active outputs and cancels unfinished strikes. Defaults
+apply only after a fresh all-keys-released frame; the erase ACK alone does not
+mean that step has completed. `tools/flash_application.py --reset-settings`
+requests this explicitly; normal flashing retains compatible custom saves.
 
 `cfg velocity` sets the transmitted-velocity start of
 [the Fn+V editor](MIDI_DESIGN.md#transmitted-velocity-start): `LEVEL` is 1…10,
@@ -83,8 +85,9 @@ snapshot contains the exact new value; the GUI checks both ACK and readback.
 
 `cfg enable` governs HID and MIDI performance output, not raw scanning or the
 velocity monitor. Threshold edits and all-key application retain their existing
-Schmitt validation and neutral-arming rules. Threshold/mapping/enable edits do
-not write flash, enter the bootloader or reset the MCU. `cfg calibrate` starts
+Schmitt validation and neutral-arming rules. Threshold/mapping/enable edits
+schedule a save after neutral and 250 ms without further changes; they do not
+enter the bootloader or reset the MCU. `cfg calibrate` starts
 the keyboard-mode calibration routine; only completion of all keys saves
 endpoints to the two authorized tail pages. Its ACK means accepted, not saved.
 `cfg calcancel` discards the staged attempt. While calibrating, other config
@@ -127,6 +130,5 @@ all 61 unique, correctly labelled sensors. Notes are 0…127 or 255; reserved
 control keys must use 255. Invalid pairs, boolean numeric fields, duplicates,
 wrong labels, missing entries and invalid MIDI values are rejected before
 commands are queued. Importing a version-1 file leaves MIDI mappings unchanged.
-The current firmware supports version-2 JSON. Mode and octave are transient
-performance state; calibration
-records are separate. Neither is part of the host threshold/mapping profile.
+The current firmware supports version-2 JSON. Mode, octave and calibration
+persist in the complete device snapshot but are not included in host JSON.

@@ -6,7 +6,7 @@ Use --live for a latest-only serial display (20 lines/s by default), --hex
 for hexadecimal readbacks, --bars for labelled in-place colored blocks,
 or --summary for capture rates. --last-key requests compact device streaming
 on a tty, identifies the triggering key, prints its next 20 readbacks plus
-a first-five-sample, pop-filtered velocity estimate assuming 8 kHz, and exits. Add --repeat
+a bottom-out-window velocity estimate (up to ten samples, assumed 8 kHz), and exits. Add --repeat
 to re-arm after release and capture again until Ctrl-C.
 """
 import argparse
@@ -136,7 +136,7 @@ def main():
     parser.add_argument('--start', type=int, default=0, help='first raw sensor index in bar viewport (default 0)')
     parser.add_argument('--rate', type=float, default=20., help='maximum live display lines/s (default 20)')
     parser.add_argument('--duration', type=float, help='stop live display after this many seconds')
-    parser.add_argument('--last-key', action='store_true', help='identify triggering key, print next 20 readbacks and first-five-sample pop-filtered velocity at assumed 8 kHz; fail on loss')
+    parser.add_argument('--last-key', action='store_true', help='identify triggering key, print next 20 readbacks and bottom-out-window velocity (up to ten samples, assumed 8 kHz); fail on loss')
     parser.add_argument('--repeat', action='store_true', help='with --last-key, re-arm when the captured key rises above threshold; repeat until Ctrl-C')
     parser.add_argument('--layout', choices=('ansi','iso','jis'), default='ansi', help='last-key label mapping (default ansi, matching this keyboard)')
     parser.add_argument('--threshold', type=int, default=3800, help='last-key press when raw drops strictly below this value (default 3800)')
@@ -175,7 +175,7 @@ def main():
         try:
             print(f'Capture Armed: input={args.capture}; trigger=raw<{args.threshold}; '
                   f'layout={args.layout}; next=20 (excluding trigger); '
-                  f'report_timeout={args.timeout:g}s; velocity_fit=5@8000Hz (assumed); '
+                  f'report_timeout={args.timeout:g}s; velocity_fit=up-to-10@8000Hz (assumed), floor=1500; '
                   f'repeat={"on" if args.repeat else "off"}; awaiting stream', flush=True)
             if original is not None:
                 import secrets

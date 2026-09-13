@@ -39,7 +39,7 @@ See [the platform guide](PORTING.md#2-describe-keys-independently-of-scan-order)
 assigned note + octave offset
            |
            +-- unmapped or outside 0..127? -- reject
-           +-- disabled physical row? ------ reject
+           +-- disabled row outside Jankó? - reject
            +-- outside root/scale mask? ---- reject
            |
            +-- eligible for Note On and ordinary note backlighting
@@ -59,7 +59,8 @@ requires all-neutral input. The existing cleanup sends Note Offs and neutral
 controllers with bounded USB retry. Duplicate-pitch reference counts and
 velocity windows are cleared together, preventing a delayed old strike from
 appearing under a new filter. Thresholds, note mappings and calibration are
-unchanged. The lower-row mute remains an independent intersecting filter.
+unchanged. Lower-row mute intersects with scale filtering outside Jankó;
+Jankó bypasses row mute but retains the root/scale filter.
 
 ## Table-driven menu integration
 
@@ -94,8 +95,8 @@ they require a neutral retry. No GUI frame rate or delay loop controls the UI.
 ## Persistence and diagnostics
 
 Root, scale and lower-row mute survive performance-mode switches and fault
-cleanup but not a power cycle - like every other Fn-menu choice they live in
-RAM - and RESET restores C/chromatic and both groups. Host JSON and telemetry do not serialize them. Telemetry continues to
+cleanup and power cycles after automatic save. RESET restores C/chromatic
+and both groups. Host JSON and telemetry do not serialize them. Telemetry continues to
 report assigned mappings and raw sensor state, not effective filter state.
 After selecting `stream off`, `menu status` includes `root`, `scale`,
 `key`, `scale_name` and `music_page` (0 idle, 9 root, 10 scale), alongside
@@ -103,14 +104,6 @@ After selecting `stream off`, `menu status` includes `root`, `scale`,
 
 ## Verification
 
-The native MIDI suite independently checks the ten interval lists for all
-12 roots and 128 notes, selector uniqueness, all 120 root/scale output/LED
-combinations, all layouts' menu choices, custom mappings, row-filter
-intersection, held-choice hysteresis, simultaneous rejection, cancellation,
-mode persistence, defaults and cleanup under USB backpressure.
-Compiled ARM tests drive actual scan/CDC/MIDI/I2C application paths with
-synthetic hardware replies: C and C-sharp major, filtered-key root selection,
-H/P/T scale choices, Escape cancellation, output isolation and unchanged
-mapping/threshold telemetry. These are modeled keypresses, not a physical
-performance or timing measurement. Build/native commands and optional audits
-are in [BUILDING.md](BUILDING.md); no test implicitly flashes a device.
+[Tests](BUILDING.md) cover all 120 root/scale combinations, every MIDI pitch,
+selector cancellation, row gates, cleanup, packet suppression and LED masks.
+See [physical limits](VALIDATION.md).

@@ -1,7 +1,7 @@
 # Firmware-normalized floating-point velocity
 
 Normalization is shared application behavior. The `huntsman` build exposes
-it over GUI telemetry; see [current validation](CALIBRATION.md#validation-status).
+it over GUI telemetry; see [current validation](VALIDATION.md).
 
 The keyboard collects a velocity window from the triggering sample onward
 (ten readbacks maximum, closed early by the shared bottom-out threshold of
@@ -38,20 +38,5 @@ the 65-element telemetry array is not a universal sensor-capacity limit.
 
 ## Build and tests
 
-```sh
-cmake --preset host-tests
-cmake --build --preset host-tests
-cmake --preset huntsman
-cmake --build --preset huntsman
-ctest --preset host-tests
-python3 -B tools/test_keyboard_gui_tk.py
-cmake --build --preset huntsman --target audit-keyboard
-```
-
-Native and compiled ARM tests cover negative/zero clamping, fractional
-bottom-out windows, below/above 4,500,000 fits, independent 65-key captures,
-newest-press window ownership, filtered ten-sample windows and unfiltered
-five-sample windows, and float32 CDC serialization.
-GUI/decoder tests cover display formatting, old-format compatibility,
-invalid float rejection, and apply-all/readback behavior.
-These tests are offline and do not constitute hardware validation.
+[Building](BUILDING.md) and [Validation](VALIDATION.md) cover clamping,
+fractional fits, simultaneous captures, float32 encoding and invalid values.

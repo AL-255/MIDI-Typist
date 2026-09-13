@@ -2,7 +2,7 @@
 
 The `huntsman` application includes a bounded CDC
 flash reader alongside MIDI, lighting and parallel calibration.
-Dump commands are read-only; calibration has separate, tightly bounded
+Dump commands are read-only; settings/calibration use separate, tightly bounded
 tail-page write APIs.
 See [write scope and recovery](DEVICE_CONFIG_STORAGE.md).
 The [flash reader](../firmware/boards/huntsman_v3_pro_mini/src/flash_dump.c)
@@ -28,7 +28,7 @@ continues; the dumper takes ownership of the CDC stream only. It stops the
 stream on exit; reopen the GUI or explicitly select another stream afterward.
 Wait for any calibration run to finish before acquiring a dump. To read only
 the calibration slots, use `--start 0x78000 --length 0x400` with a new private
-output name. A raw dump alone does not decode or validate the HKC1 record CRC;
+output name. A raw dump alone does not decode or validate the MTP1 whole-profile record CRC;
 the format is documented in [storage](DEVICE_CONFIG_STORAGE.md).
 
 Outputs are private mode-0600 files and are never overwritten. `device-dumps/`
@@ -70,19 +70,8 @@ be used as a restoration image**. The JSON lists every failed word address.
 Repeated matching errors establish stable holes, not successful data recovery.
 Do not infer that an ECC error means a word is blank.
 
-HBD1 is exactly 128 bytes, little-endian:
-
-| Offset | Content |
-| --- | --- |
-| 0 | `HBD1` magic |
-| 4, 8, 12 | uint32 request ID, physical address, payload length (64) |
-| 16, 20, 24 | uint32 flash size, page size, request status |
-| 28 | reserved zero |
-| 32 | four uint32 SDK read statuses, in address order |
-| 48 | 64 readback bytes, failed words zero-filled |
-| 112, 116 | uint32 production PARTID register and SDK DIEID register |
-| 120 | reserved zero |
-| 124 | standard IEEE CRC32 over bytes 0..123 |
+[Telemetry](TELEMETRY.md#flash-dump-dump-read) defines the 128-byte HBD1
+response, four independent word statuses, geometry and CRC-32.
 
 The response uses the existing binary CDC buffers, not the lossy debug ring.
 Pending USB memory remains immutable. A second request cannot overwrite a
@@ -103,26 +92,15 @@ controller completion is modeled; only real acquisition validates board behavior
 
 ## Configuration authority
 
-The user's latest constraint permits writes **only to unused pages near the
-end**, preserving the beginning containing the serial number. Selected and
-twice-read FF pages are 0x78000 and 0x78200. Primary pages at 0x49000/0x49200
-must not be erased. Future application flashes are authorized, but bootloader,
-factory/security and secondary-ASIC writes remain out of scope.
-The original configuration writer at `0x200156cc` stores its primary 701-byte
-record at `0x49000`; its storage helper at `0x2000be9c` uses 512-byte page
-read/modify/erase/program/verify. These are storage facts, not copied code.
+Only custom pages `0x78000` and `0x78200` may be erased/programmed.
+Razer settings and serial bytes at `0x49000..0x49400` remain protected.
+The production writer stores its primary 701-byte record at `0x49000`;
+that is reference evidence, not our write destination. See
+[storage safety](DEVICE_CONFIG_STORAGE.md).
 
 ## Device readback and backup limits
 
-The application image occupies physical `0x8000..0x28000`. Its full readback
-matches the current build without controller/ECC read errors.
-See [validation status](CALIBRATION.md#validation-status).
-Application/configuration acquisitions, endpoint CSV/JSON and their metadata
-are private, Git-ignored files under `device-dumps/`.
-
-The private bootloader-region acquisition has ECC holes in its first 304
-bytes, including its vectors. **It is not a restorable bootloader image.**
-Matching reads with matching holes do not recover the missing bytes. The
-serial-number/primary-configuration backup is complete; do not publish it.
-Keep backups and their error-map sidecars together, and never infer that
-unreadable words are FF.
+Physical application bytes occupy `0x8000..0x28000`. See [Validation](VALIDATION.md)
+for current checks. Keep acquisitions and their error maps private.
+A dump with ECC holes, especially missing boot vectors, is not restorable.
+Identical repeated errors do not recover missing bytes or prove blank flash.

@@ -30,7 +30,7 @@ the corresponding actual instructions. Some functions have noncontiguous bodies.
 | `0x200141f8` | FN state; release held actions whose layers differ | `firmware/app/src/keyboard_engine.c` |
 | `0x2000f41c` | Control action `0x70` enters actuation editor, `0x71` rapid-trigger editor | `firmware/app/src/keyboard_config.c` |
 | `0x200134fc` | Editor key handling, level changes, switching and exit | `firmware/app/src/keyboard_config.c` |
-| `0x2001a3bc` | Commit thresholds/profile changes | Level subset persisted by the Fn-menu settings record; per-key pairs stay RAM-only |
+| `0x2001a3bc` | Commit thresholds/profile changes | Committed levels and per-key pairs persisted by the board's complete snapshot |
 | `0x2000cbf0`, `0x2000c1cc` | Layout patch and raw-sensor mapping | `firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c` |
 | `0x20015dec`, `0x2000e354` | Calibration endpoints and inverse raw-to-level conversion | `firmware/boards/huntsman_v3_pro_mini/src/optical_key.c`, `firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c` |
 | `0x20015c04`, `0x200164ac`, `0x2001620c`, `0x20015bc0` | Normal thresholds, rapid-trigger exclusions, editor previews | `firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c` |
@@ -98,8 +98,8 @@ reports. CDC does not need to stay open for normal keyboard operation.
 
 The Fn+Tab/Fn+Caps editors implement the recovered interactions above.
 Actuation commits convert the original normalized threshold rules into raw
-Schmitt pairs using calibrated bounds; the chosen level lives in RAM with the
-rest of the Fn-menu choices while per-key pairs do too. Fn+Enter
+Schmitt pairs using calibrated bounds; committed levels and pairs persist
+in the complete custom snapshot. Fn+Enter
 selects MIDI and Fn+C starts calibration in keyboard mode, outside editors.
 The [Fn menu](FN_MENU.md) supplies action hints, brightness controls and a
 tail-profile RESET. All settings choices preview their names while held and execute
@@ -133,5 +133,5 @@ Use the [build guide](BUILDING.md) to run native tests and `audit-keyboard`.
 Reference-backed checks execute original initialized tables and compiled
 application paths with modeled peripherals. They do not prove electrical
 timing, physical scan cadence or full factory-feature equivalence. The
-[validation record](CALIBRATION.md#validation-status) describes the current
+[validation record](VALIDATION.md) describes the current
 build and its hardware verification limits.

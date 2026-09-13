@@ -1,52 +1,33 @@
 # MIDI-Typist keyboard user manual
 
-For the **Huntsman V3 Pro Mini**, using the complete **`huntsman` firmware**
-(also available as `keyboard-fn-menu`).
-
-This manual covers the keyboard as it works now: typing, MIDI performance,
-lighting, calibration, the configuration GUI, and troubleshooting. All
-illustrations are embedded text; no images, downloads, or special Markdown
-extensions are needed. The layout drawings show the **61-key ANSI model**.
-Key names refer to the physical keycaps, even when their output is different.
-This is the Huntsman operating guide, not a layout promise for other hardware.
-Developers adding a keyboard or MCU should use the [platform porting guide](docs/PORTING.md).
+For the Huntsman V3 Pro Mini with the complete `huntsman` firmware.
+The keyboard works without the GUI. It sends keyboard/MIDI data, not audio.
 
 ## Contents
 
-- [1. Start here](#1-start-here)
-- [2. Find your way around](#2-find-your-way-around)
-- [3. Read the lights](#3-read-the-lights)
-- [4. Type and use Fn shortcuts](#4-type-and-use-fn-shortcuts)
-- [5. Use the settings menu](#5-use-the-settings-menu)
-- [6. Adjust the trigger point](#6-adjust-the-trigger-point)
-- [7. Calibrate the keys](#7-calibrate-the-keys)
-- [8. Play MIDI](#8-play-midi)
-- [9. Use the configuration GUI](#9-use-the-configuration-gui)
-- [10. Know what gets saved](#10-know-what-gets-saved)
-- [11. Reset custom settings](#11-reset-custom-settings)
-- [12. Inspect sensor readings](#12-inspect-sensor-readings)
-- [13. Troubleshooting](#13-troubleshooting)
-- [14. Firmware maintenance](#14-firmware-maintenance)
-- [Quick reference](#quick-reference)
+- [Start here](#1-start-here)
+- [Layout and lights](#2-find-your-way-around)
+- [Typing shortcuts](#4-type-and-use-fn-shortcuts)
+- [Settings menu](#5-use-the-settings-menu)
+- [Triggers](#6-adjust-the-trigger-point) and [calibration](#7-calibrate-the-keys)
+- [MIDI](#8-play-midi)
+- [GUI](#9-use-the-configuration-gui)
+- [Saving](#10-know-what-gets-saved) and [reset](#11-reset-custom-settings)
+- [Diagnostics](#12-inspect-sensor-readings), [troubleshooting](#13-troubleshooting)
+  and [firmware maintenance](#14-firmware-maintenance)
 
 ## 1. Start here
 
-1. Connect the keyboard to USB with all keys released.
-2. It starts in **keyboard mode**. Enter is green during normal operation.
-   You can type without opening the GUI or a serial monitor.
-3. For arrows, use **Right Alt = Left**, **Menu = Down**,
-   **Right Ctrl = Right**, and **Right Shift = Up**.
-4. To play music, hold **Fn+Enter**. The keyboard spells `MIDI` in blue.
-   Release the combo, then release all keys. Enter is now blue.
-5. Select the keyboard's MIDI input in your music application and route it
-   to an instrument listening on **MIDI channel 1**. The keyboard sends
-   musical control data; it does not generate audio itself.
-6. Hold Fn+Enter again to preview green `KEYBOARD`, then release to return
-   to typing.
+1. Connect USB with all keys released. Saved settings return automatically.
+   A first installation starts in keyboard mode: Enter is green.
+2. To play music, hold **Fn+Enter** to preview blue `MIDI`, then release.
+   Release all keys; Enter stays blue.
+3. Select this keyboard's MIDI input in your music application, route channel 1
+   to an instrument, and enable input monitoring.
+4. Fn+Enter again previews green `KEYBOARD`; release to return to typing.
 
-> After a mode switch, settings change, or calibration, release **all** keys
-> before trying to type or play. This prevents held keys from becoming
-> accidental keystrokes or notes when input resumes.
+After changing a mode or setting, release all keys before playing/typing.
+Before unplugging, wait for settings to save; see [saving](#10-know-what-gets-saved).
 
 ## 2. Find your way around
 
@@ -60,286 +41,180 @@ Developers adding a keyboard or MCU should use the [platform porting guide](docs
 [LCtrl ][LWin ][ LAlt ][               Space               ][  Fn  ][RAlt ][ Menu ][RCtrl]
 ```
 
-This is a position guide, not a scale drawing. `[` and `]` are the two
-bracket keycaps; `\` is backslash. **Fn is immediately to the right of
-Space**, followed by Right Alt. The key marked Menu may have a menu icon.
+The drawing and GUI describe ANSI. Fn is immediately right of Space; Right Alt
+is next. Firmware also has ISO/JIS sensor maps, but the GUI rejects editing those
+layouts rather than mislabelling them.
 
 ### The right-hand cluster changes with the mode
 
-```text
-                   KEYBOARD MODE             MIDI MODE
-  Right Shift           Up arrow             Unmapped by default
-
-  [Fn][RAlt][Menu][RCtrl]                  [Fn][RAlt][Menu][RCtrl]
-       Left  Down Right                       Oct-  Off  Oct+
-```
-
-Right Alt, Right Ctrl, and Right Shift **do not act as modifiers in keyboard
-mode**. Left Ctrl, Left Alt, Left Windows, and Left Shift still have their
-ordinary typing functions. The GUI keeps physical key names so that selecting
-a key always selects the same sensor.
+| Physical key | Keyboard mode | MIDI mode |
+| --- | --- | --- |
+| Right Alt | Left arrow | Octave down |
+| Menu | Down arrow | Configurable note; unmapped by default |
+| Right Ctrl | Right arrow | Octave up |
+| Right Shift | Up arrow | Configurable note; unmapped by default |
+| Left Ctrl / Left Alt | Normal modifiers | Pitch bend down / up |
+| Left Windows | Normal modifier | Modulation wheel |
+| Space | Space | Sustain pedal |
 
 ## 3. Read the lights
 
-The meaning of a color depends on what you are doing:
+| Appearance | Meaning |
+| --- | --- |
+| Green / blue Enter | Keyboard / MIDI mode |
+| White keys, dimming as pressed | Ordinary travel lighting |
+| Dark MIDI note keys | Unmapped, muted, outside scale or out of MIDI range |
+| Blue bottom-row controls | Octave, pitch, modulation and sustain |
+| Blinking Right Alt / Ctrl | Negative / positive octave offset; faster means more octaves |
+| Green keys while Fn held | Typing shortcuts |
+| White settings keys while Fn held | Available settings; active Jankó/row choices may be green |
+| Purple → blue → amber → green | Calibration: release/settle → pending → holding → registered |
+| Red calibration feedback | Cancelled, timed out or failed; read GUI status |
 
-| Situation | What you see | Meaning |
-| --- | --- | --- |
-| Normal keyboard mode | Green Enter; other resting keys white | Ready for typing |
-| Normal MIDI mode | Blue Enter and six blue controls; mapped notes white | Ready for music; unmapped note keys are dark |
-| Pressing an ordinary illuminated key | The key becomes dimmer | Greater optical travel; brightness is inverted |
-| Holding Fn in keyboard mode | Green shortcut keys | These send keyboard functions while held |
-| Holding Fn | White settings keys; Enter in the target mode's color | Hold a setting combo to preview it; release to act |
-| Holding a settings combo | A word traced across the keycaps | The pending action's name, not typed text |
-| MIDI octave shifted | Right Alt or Right Ctrl flashes blue | Negative or positive octave shift; faster means more octaves |
-| Calibration | Purple → blue → amber → green | Release → waiting → holding → registered |
-| Reset confirmation | Animated `RESET?`, solid green Y and red N | Confirm with Y or cancel with N |
+Enter and control indicators remain visible even when their note is filtered.
+Normal markers use global brightness. Fn previews, reset confirmation and
+calibration feedback have their own visibility rules.
 
 ### How to read a word on the keyboard
 
-For `MIDI`, the M, I, and D keycaps form the background at 30% intensity.
-One letter at a time rises to 100%, including repeated letters:
+All letters in the word light at 30%; one letter at a time reaches 100% for
+0.2 seconds. Repeated letters flash repeatedly. After the word, a 0.5-second
+pause precedes the repeat.
 
 ```text
-Time:       0.0 s       0.2 s       0.4 s       0.6 s       0.8–1.3 s
-Highlight:    M           I           D           I           pause
-Background: M I D       M I D       M I D       M I D         M I D
-                                                            then repeat
+MIDI:   M → I → D → I → pause → M …
+        bright letter moves; the other word letters stay dim
 ```
 
-Read the highlighted letters in time order, not left-to-right on the board.
-`MIDI` is blue, `KEYBOARD` is green, and other action names are white.
-`+` uses the `=`/`+` key; `?` uses the `/`/`?` key. Releasing either combo
-member stops the preview and triggers the action; you do not need to wait for
-the word to finish. The visible change follows the next LED update.
-
-Global brightness scales normal key lighting and mode indicators. Fn hints
-remain visible at a minimum brightness even when normal brightness is off;
-text previews and calibration/editor feedback use their own intensity.
-An explicit diagnostic `light off` command or invalid scan can still blank
-the lights.
+Release either combo key to stop immediately and perform the action.
+Mode names use Enter's target color; other action names are white.
 
 ## 4. Type and use Fn shortcuts
 
-Multiple keys may be held at once (NKRO). The operating system controls
-ordinary key-repeat behavior.
+A press occurs strictly below the press threshold; release occurs strictly
+above the release threshold. Equality retains the current state. Multiple
+keys can remain down; the operating system controls typing repeat.
 
 ### The top row with Fn held
 
-Read vertically: the upper line is the physical key; the lower line is its
-Fn output. All fourteen keys below are hinted green.
-
 ```text
-Key:  Esc   1    2    3    4    5    6    7    8    9    0    -    =   Bksp
-Fn:    `   F1   F2   F3   F4   F5   F6   F7   F8   F9  F10  F11  F12   Del
+Physical: Esc  1  2  3  4  5  6  7  8  9  0   -   =   Backspace
+Fn:        `  F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12  Delete
 ```
+
+Fn+Left Shift+Esc can type tilde. Press Fn before Esc for the Fn-layer action.
 
 ### Navigation shortcuts
 
-| Hold Fn and press | Sends |
+| Combo | Output |
 | --- | --- |
-| Y | Insert |
-| P | Print Screen |
-| H | Home |
-| J | Page Up |
-| N | End |
-| M | Page Down |
+| Fn+Y | Insert |
+| Fn+P | Print Screen |
+| Fn+H / Fn+N | Home / End |
+| Fn+J / Fn+M | Page Up / Page Down |
 
-These six keys are also green while Fn is held. Their positions are:
-
-```text
-         ... [T][Y:Insert][U][I][O][P:Print Screen] ...
-         ... [G][H:Home][J:Page Up][K][L] ...
-         ... [B][N:End ][M:Page Down][,][.] ...
-```
-
-Keep Fn held and tap several shortcuts in succession. They act like normal
-held keys, with **no word preview and no release-to-execute delay**. Releasing
-either member releases the shortcut. Releasing Fn first does not type the
-underlying letter. A letter already held before Fn retains its original
-output until released; release and press it again to use its Fn action.
-Your operating system and active application determine what Insert, Print
-Screen, and the other delivered keycodes do.
-
-These shortcuts apply to keyboard mode, not MIDI mode. The GUI edits
-thresholds and MIDI notes, not these keyboard keycode assignments.
+These green-hinted shortcuts act while held, unlike settings. Hold Fn and tap
+them repeatedly. Releasing either key ends the shortcut. MIDI mode does not
+send this typing layer; Fn+J and other settings have their MIDI meanings.
 
 ## 5. Use the settings menu
 
-Settings are different from the green typing shortcuts:
-
 ```text
-Hold Fn → press a settings key → read the preview → release either key
-                                                        |
-                                                   action happens
-                                                        |
-                                             release all keys to resume
+Hold Fn + settings key → read preview → release either → action
+                                                      → release all keys
 ```
 
-| Combo | Word shown | Result on release | Available in |
-| --- | --- | --- | --- |
-| Fn+Enter | MIDI or KEYBOARD | Switch to the named mode | Both modes |
-| Fn+C | CALIBRATION | Start calibration | Keyboard |
-| Fn+Tab | TRIGGER | Open the trigger-point editor | Keyboard |
-| Fn+Caps | RAPID | Open the compatibility editor; see below | Keyboard |
-| Fn+K | LIGHT- | Lower brightness one step | Both modes |
-| Fn+L | LIGHT+ | Raise brightness one step | Both modes |
-| Fn+Left Shift | LOWER-OFF or LOWER-ON | Mute or restore the Caps/Shift rows' notes | MIDI |
-| Fn+E | KEY | Open root-note selection | MIDI |
-| Fn+S | SCALE | Open scale selection | MIDI |
-| Fn+R | RESET | Open confirmation; does not erase yet | Both modes |
+| Combo | Preview / action | Mode |
+| --- | --- | --- |
+| Fn+Enter | MIDI / KEYBOARD: switch mode | Both |
+| Fn+C | CALIBRATION: start calibration | Keyboard |
+| Fn+Tab | TRIGGER: open the mode's trigger editor | Both |
+| Fn+Caps | RAPID: compatibility editor, not raw rapid-trigger behavior | Keyboard |
+| Fn+K / Fn+L | LIGHT− / LIGHT+: brightness down / up | Both |
+| Fn+J | JANKO: toggle built-in layout | MIDI |
+| Fn+V | VELOCITY: open velocity-start editor | MIDI |
+| Fn+Left Shift | LOWER-OFF / LOWER-ON: mute / restore lower playing rows | MIDI |
+| Fn+E / Fn+S | KEY / SCALE: select root / scale | MIDI |
+| Fn+R | RESET: open confirmation, not erase yet | Both |
 
-Press Fn before the settings key, or press both together. A settings key
-already held before Fn needs a fresh press. Choose one setting at a time;
-simultaneous settings choices are rejected. A preview pauses normal output.
-In MIDI mode, holding Fn prevents new notes, releases sustain and centers the wheel controls;
-entering a settings preview also clears sounding/pending notes.
+Press Fn first or both together; a setting held before Fn needs a fresh press.
+Choose one setting at a time. In MIDI mode Fn suppresses new notes, releases
+sustain and centers wheels; entering a settings preview clears sounding notes.
 
 ### Brightness: keep Fn held and tap
 
-There are 20 brightness levels, including off. Each K/L release changes one
-step; holding the combo longer only repeats its word, not the adjustment.
-
-```text
-Fn:  [---------------------- held -----------------------]
-L:       press/release    press/release    press/release
-Light:       +1 step          +1 step          +1 step
-```
-
-You can alternate K and L in the same Fn hold. This repeat exception applies
-only to brightness. Release all keys before choosing another setting or
-resuming typing/music. Brightness is stored and returns with the next power cycle.
+Hold Fn, tap K or L as often as needed, then release Fn. Each K/L release
+changes one of 20 brightness levels. Other settings require all keys released
+before another action. Fn hints remain usable at zero normal brightness.
 
 ## 6. Adjust the trigger point
 
-A raw sensor reading **decreases as you press farther**. It is carried in
-a 16-bit field, but valid readings are 1–4096, not a 0–65535 travel scale.
-Typical rest/fully pressed readings are around 4000/1000; each key can differ.
-
 ### Understand press and release thresholds
 
-Defaults are **press 3500 / release 3600**:
+Readback decreases as the key goes down. Defaults are **press 3500,
+release 3600**, with allowed pairs `1 ≤ press < release ≤ 4095`.
 
 ```text
-Press farther → raw falls
-Rest ~4000 ────── 3600 ────── 3500 ────── fully pressed ~1000
-                  |            |
-Release above here             Press below here
-                  +------------+
-                  keep previous state
-
-3499: becomes down       3500–3600: stays as it was       3601: becomes up
+Released (~3900) ── press ↓ ── <3500: DOWN
+Held             ─ release ↑ ── >3600: UP
+                     3500…3600 retains the previous state
 ```
 
-The gap prevents small fluctuations from rapidly pressing and releasing a
-key. Equality does not change state. A **higher press number triggers
-earlier**, and a lower one requires deeper travel. Always keep
-`1 <= press < release <= 4095`, with release safely below the key's idle
-reading. A release value above idle can prevent the entire keyboard from
-arming after a settings change.
+The gap prevents repeated triggers near one threshold. Leave margin below
+each key's resting reading so it can release. Calibration measures travel
+bounds; it does not change these raw thresholds automatically.
 
 ### Quick adjustment without the GUI
 
-1. In keyboard mode, hold **Fn+Tab** to preview `TRIGGER`.
-2. Release the combo and all other keys. The editor stays open after Fn
-   is released; ordinary typing is paused.
-3. Tap **1–9 or 0** to choose level 1–10. A lower level triggers at shallower
-   travel; a higher level requires deeper travel. The range is approximately
-   2.5% at level 1, then 10%, 20%, …, 90% at level 10, with per-key exceptions.
-4. The selected number is green; a white number-row bar shows observed
-   travel. Escape is red. Other keys are dark.
-5. Press **Escape** to apply and exit. Fn+Tab also applies and exits.
-6. Release all keys to resume typing. Check the resulting raw pairs in the
-   GUI if you want exact values.
+In keyboard mode, release Fn+Tab to enter. Choose 1…0 (levels 1…10);
+the selected digit is green and the white bar shows travel. Escape or Fn+Tab
+**commits and exits**; Escape is not Cancel here. Releasing Fn alone does not
+exit. Arrow controls step the selection.
 
-> **Escape saves the pending editor selection; it is not Cancel.** A committed
-> global trigger adjustment replaces individual GUI threshold pairs. To
-> discard a pending edit without applying it, use **Disable keyboard** in
-> the GUI, then release all keys and re-enable.
-
-The editor uses each key's calibration bounds and retains fixed-threshold
-exceptions for some keys, so it does not assign one identical raw pair to
-every sensor. These levels are not millimeters or calibrated force. For an
-exact common pair, use **Apply thresholds to all keys** in the GUI instead.
-The chosen level is stored, so it returns with the next power cycle; per-key edits made from a host tool are temporary until restart, and a host profile can preserve the raw pairs.
-
-**Fn+Caps / RAPID:** this is a compatibility settings screen, not an enabled
-dynamic rapid-trigger feature. The active keyboard still uses the two raw
-Schmitt thresholds. Numbers select a compatibility level, Caps alone toggles
-its compatibility flag, and Escape exits. Use Fn+Tab or the GUI for actual
-typing sensitivity. Exit any editor before calibrating or switching mode.
+The global level converts calibrated travel into every key's threshold pair,
+including recovered fixed-threshold exceptions. It replaces custom GUI pairs.
+Use the GUI for independent per-key settings. Fn+Caps retains its editor
+interaction but does not implement rapid-trigger operation in the raw engine.
 
 ## 7. Calibrate the keys
 
-Calibration teaches the device each key's resting and fully pressed optical
-values. It improves travel lighting and MIDI aftertouch. It **does not
-automatically change** raw trigger thresholds, MIDI note mappings, wheel
-endpoints, or velocity scaling.
-
 ### Run a calibration
 
-1. Enter keyboard mode. Hold **Fn+C**, read `CALIBRATION`, and release.
-   Alternatively, connect the GUI and click **Calibrate keys → device flash**.
-2. **Release every key.** During the purple phase, leave the keyboard untouched
-   for 0.5 seconds so it can capture the resting values.
-3. When the keys turn blue, fully press and hold one or more keys. Each
-   active key turns amber. Hold steadily for one second until it turns green.
-4. Continue with the remaining blue keys. You may press several together,
-   start each at a different time, and leave green keys held. Include Fn,
-   modifiers, Space, Enter, and all other keys—not just MIDI notes.
-5. When all 61 keys are registered, the device saves the complete result.
-   Release all keys to resume operation. Green briefly confirms completion;
-   the GUI shows completion and a saved calibration generation.
+1. In keyboard mode release Fn+C, or click **Calibrate keys → device flash**.
+2. Release every key. Leave untouched for 0.5 seconds while purple.
+3. Fully press one or more blue keys and hold for one second. Each becomes
+   amber, then green independently. Include Fn, modifiers and Space.
+4. Continue until all 61 keys register. Green keys may remain held while
+   you press others. Then release all keys to resume.
 
 ```text
-All keys:   PURPLE  ── untouched for 0.5 s ──>  BLUE
-
-Key A:      BLUE ── hold fully ── AMBER ── 1 s stable ── GREEN
-Key S:      BLUE ─────── hold fully ── AMBER ── 1 s stable ── GREEN
-Key D:      BLUE ── hold ── release ── BLUE ── hold again ...
-            Each key has its own timer; D does not reset A or S.
-
-Every key registered ──> save complete calibration ──> release all ──> ready
+Release all → 0.5 s settle → blue keys → hold 1 s → green
+                              ↑             |
+                              └─ more keys ─┘ → all complete → save
 ```
 
-Fully bottom out the keys; a shallow touch is not a full-travel calibration.
-A candidate must fall to at most half its own rest reading. Motion over
-64 counts restarts that key's stable-hold timer; releasing a pending key
-also restarts only its timer. Completed keys do not need to be repeated.
+Moving or releasing an unfinished key restarts only its hold. Five seconds
+without progress, GUI cancellation or scan/USB failure discards the staged
+run; previous calibration remains. No partial calibration is saved.
+Wait for completion and saved generation, not just the start acknowledgment.
 
-**Do not pause for five seconds without progress.** Inactivity aborts and
-discards the attempt. The GUI's **Cancel calibration** button also discards
-it. Red feedback indicates cancellation, timeout, or failure. The previous
-active calibration remains unchanged unless the entire new run saves
-successfully. Do not disconnect USB while saving.
-
-A successful calibration survives restart. Only the two reserved custom
-calibration pages are used; the factory serial-number area is not overwritten.
-A start acknowledgment in the GUI means the routine started, not that it
-has already saved. Wait for completion and the saved-generation confirmation.
+New bounds affect lighting and aftertouch. They do not prove calibrated force,
+millimeters or velocity. See [calibration design](docs/CALIBRATION.md).
 
 ## 8. Play MIDI
 
 ### Connect to an instrument
 
-1. Hold Fn+Enter, preview `MIDI`, release, then release all keys.
-2. In your music application, enable the keyboard's USB-MIDI input, shown as
-   **Huntsman V3 Pro Mini MIDI** or a related port name.
-3. Route channel 1 to a software instrument; enable its monitoring/record-arm
-   function as required by that application.
-4. Play the white-lit note keys. A fast press affects attack velocity;
-   continuing to press farther changes polyphonic aftertouch.
-
-Typing is suppressed in MIDI mode. Notes send Note On/Off on channel 1, with
-attack velocity 1–127 and polyphonic key pressure 0–127. Release velocity is
-fixed at zero. Your instrument must support **polyphonic aftertouch** to
-respond independently to each note's travel; channel aftertouch is different.
-Aftertouch is an optical-travel proxy, not a calibrated force measurement.
+Use Fn+Enter to select MIDI, then select its input in your DAW/synth.
+All messages use channel 1: notes, velocity, polyphonic aftertouch, pitch bend,
+modulation and sustain. This is not MPE. Your instrument must support a message
+for it to have an audible effect.
 
 ### Default notes: two overlapping playing ranges
 
-Read each key above its note. The groups show increasing pitch, not exact
-physical key spacing. `#` means sharp; `Bksp` is Backspace, `LShift` is Left Shift.
+Read the physical key above its note; these groups show pitch order, not spacing.
+This project calls note 60 C4, 72 C5 and 84 C6. Other software may label octaves
+differently; compare note numbers.
 
 ```text
 UPPER RANGE
@@ -357,65 +232,30 @@ Key:    M    K    ,    L    .    /    '
 Note:   C5  C#5   D5  D#5   E5   F5  F#5
 ```
 
-There are 43 default note keys. Other note-capable keys are unmapped and
-dark until assigned in the GUI. Enter remains a blue mode indicator even
-when unmapped. Left Shift is C4 only in MIDI mode; Right Shift is unmapped
-by default but can be assigned a note.
-
-This project calls MIDI note **60 = C4**, **72 = C5**, **84 = C6**, with each
-semitone adding one. Some music software labels octaves differently; compare
-the MIDI number rather than assuming its displayed C4 is the same pitch.
-GUI mappings accept note numbers 0–127, note names, or Off.
-
-The two ranges overlap. If two held keys map to the same MIDI pitch, they
-share one sounding note: the first press starts it, the last release stops
-it, and aftertouch follows the greater travel. The second key does not
-retrigger that pitch or replace its attack velocity. Different pitches remain
-independent; this is channel-1 polyphonic MIDI, not MPE.
+There are 43 default note keys. Other note-capable keys are dark until assigned;
+Enter still marks the mode. Keys mapped to the same pitch share one note:
+first press starts it, last release stops it, maximum held travel supplies
+aftertouch. The second key does not retrigger or replace attack velocity.
 
 ### Move the trigger point in MIDI mode
 
-In MIDI mode the press threshold is normally left at its 3500 default. Hold
-**Fn+Tab** to preview `TRIGGER`, release either key, and the number row becomes
-a ten-step bar: press `1` for the deepest point, which sits at the bottom-out
-floor of the velocity window (1500), or `0` for the shallowest, one count below
-the 3600 release threshold; the steps between are spread across that range. Every key gets the same point, release
-thresholds are untouched, and pressing **Esc** leaves the page. The selected
-step is green with the steps below it lit. Because the point itself decides
-what counts as a press, deep selections need firm presses on the digits, the
-chord and Escape. Velocity keeps working at every step.
+Fn+Tab opens the MIDI raw-trigger page. Choose 1…0, then Escape to commit.
+Level 1 is the deepest threshold (1500); level 10 is 3599. Each key retains
+its release threshold; press is capped below it. The GUI offers the same
+range and per-key editing. Release all keys afterward.
 
 ### Set the transmitted-velocity start
 
-In MIDI mode, hold **Fn+V** to preview `VELOCITY`, then release either key to
-open the ten-step editor. The number row becomes a bar; press a digit to pick
-the starting point of the velocity curve and press **Esc** to leave:
-
-```text
-1    2    3    4    5    6    7    8    9    0
-0%  11%  22%  33%  44%  56%  67%  78%  89% 100%
-```
-
-`1` transmits the measured velocity unchanged, so soft presses stay soft.
-`0` transmits every note at full velocity. The steps between raise the floor of
-the curve: a soft press is lifted to the floor while harder presses still reach
-full velocity, which is useful when a host instrument ignores low velocities.
-The selected step is green and the steps below it stay lit; the page consumes
-all key input, so release every key after pressing **Esc** before playing
-again. The setting is global, applies in both playing layouts, and is reported
-by `menu status` as `velocity_start=1..10`; it lives in RAM, so a power cycle
-returns it to level 1.
+Fn+V opens VELOCITY. Choose 1…0 and Escape to commit:
+1 preserves measured velocity, 10 sends maximum velocity; intermediate
+levels raise the minimum without removing variation above it.
+The GUI's **Velocity start** edits the same device setting.
 
 ### Play the built-in Jankó layout
 
-In MIDI mode, hold **Fn+J** to preview `JANKO`, then release either key to
-switch the playing notes to the built-in staggered whole-tone layout. Release
-all keys before playing again. The J hint turns green while it is active, and
-`menu status` reports `janko=1`. The black keys of the
-layout - every key that plays a sharp - glow yellow, so the staggered rows can
-be read at a glance. Only the colour changes: a black key dims and brightens
-with pressure exactly like a white one, and the white keys keep their normal
-backlighting.
+Fn+J toggles Jankó on release. Whole-tone rows are staggered; sharp-note
+positions glow yellow. Custom mappings remain stored and return when Jankó
+is switched off. The GUI shows effective Jankó captions while active.
 
 ```text
 Esc  1   2   3   4   5   6   7   8   9   0   -   =   Bksp
@@ -431,493 +271,226 @@ LSh  Z   X   C   V   B   N   M   ,   .   /   RSh
 C#4  D#4 F4  G4  A4  B4  C#5 D#5 F5  G5  A5  B5
 ```
 
-Holding Fn+J again previews `JANKO` and switches back; the notes you
-configured are restored exactly, because the layout never edits your mapping.
-The bottom-row octave/bend/modulation/sustain controls keep their normal
-behavior, and the root/scale filter still applies to the
-layout's notes. **Fn+Left Shift is ineffective while the layout is active:**
-the lower rows always play. The GUI shows `JANKÓ layout (Fn+J)` in its status
-line and labels the keys with the layout's notes until you switch back.
+Scale and octave still apply. Jankó bypasses lower-row mute: both lower rows
+play while it is active. Control roles do not change.
 
 ### Use only the upper playing range
 
-In MIDI mode, hold **Fn+Left Shift** to preview `LOWER-OFF`, then release either key.
-Release all keys to resume playing. The two lower letter rows become silent
-and their note lights go dark:
-
-```text
-Esc  1  2  3 ... Backspace       kept
-Tab  Q  W  E ... backslash       kept
-Caps A  S  D ... Enter           notes muted
-LShift Z X C ... RShift          notes muted
-LCtrl LWin LAlt Space Fn ...     bottom row unchanged
-```
-
-Hold Fn+Left Shift again to preview `LOWER-ON`; release to restore those rows. Left Shift is
-hinted white in the MIDI Fn menu, even when its note is muted. This setting
-does not change keyboard mode or erase mappings. Any custom note assigned
-to a key in the Caps/Shift rows is also muted—including Enter, although its
-blue mode indicator stays lit. The octave/bend/modulation controls remain
-available, and custom bottom-row note assignments are unchanged.
-
-As with other settings previews, sounding notes are cleared and pending
-strikes cancelled before resuming from an all-keys-released state. The choice
-survives switching between keyboard and MIDI modes and a power cycle, and RESET
-restores both groups. It is not stored in host profiles.
-The GUI still shows the saved note assignments; muted keys are not remapped
-to Off. For text diagnostics, `menu status` reports `lower_muted=1` or `0`.
+Outside Jankó, Fn+Left Shift mutes/restores the physical Caps and Shift rows. The Esc/Tab rows
+and bottom-row controls remain. Muted note keys go dark; Enter's blue marker
+remains but its note is muted. Mappings are unchanged.
 
 ### Choose a root and scale
 
-This feature **filters notes; it does not move or retune your mappings**.
-For example, C major leaves C, D, E, F, G, A, and B playable in every octave.
-The other mapped notes are silent and dark. A mapped key must also be in an
-enabled row and transpose to MIDI 0–127 to play. Blue controls and Enter's
-mode marker remain visible even when a note is filtered out.
+Release Fn+E to open KEY, then release all keys. Choose the upper piano-row
+key for the root (Tab=C, 1=C#, Q=D, 2=D#, W=E, E=F, 4=F#, R=G,
+5=G#, T=A, 6=A#, Y=B). The equivalent second octave works too.
+Selectors use this fixed piano map even when Jankó or custom mappings are active.
 
-1. In MIDI mode, hold **Fn+E** to preview `KEY`, then release the combo.
-2. Release all keys. The upper piano keys become root selectors. Available
-   selectors are dim white, the current root is green, and Escape is red.
-3. Hold the desired root key. The keyboard spells its name, such as `D` or
-   `C-SHARP`. Release it to apply, leave the menu, and release all keys to play.
-4. Hold **Fn+S** to preview `SCALE`, then release and let all keys up.
-5. Hold one of the scale selectors below to preview the full scale name.
-   Release to apply and exit. **Escape cancels**, including during a choice
-   preview. Do not press two choices at once; if you do, release all and retry.
+Fn+S similarly opens SCALE:
 
-The root selectors are the fixed upper piano layout, not your current GUI
-assignments. Either octave selects the same root pitch class. Filtered or
-remapped keys remain usable as selectors; octave shifting does not change them.
-
-```text
-Key:   Tab/ U   1/8   Q/I   2/9   W/O   E/P   4/-   R/[   5/=   T/]   6/Bksp  Y/\
-Root:     C     C#     D     D#     E     F     F#     G     G#     A      A#     B
-```
-
-| Selector | Scale | Semitone intervals above the root |
+| Key | Scale | Semitone intervals above root |
 | --- | --- | --- |
-| J | maJor | 0, 2, 4, 5, 7, 9, 11 |
-| I | mInor (natural minor) | 0, 2, 3, 5, 7, 8, 10 |
+| J | Major | 0, 2, 4, 5, 7, 9, 11 |
+| I | Natural minor | 0, 2, 3, 5, 7, 8, 10 |
 | D | Dorian | 0, 2, 3, 5, 7, 9, 10 |
-| H | pHrygian | 0, 1, 3, 5, 7, 8, 10 |
-| Y | lYdian | 0, 2, 4, 6, 7, 9, 11 |
+| H | Phrygian | 0, 1, 3, 5, 7, 8, 10 |
+| Y | Lydian | 0, 2, 4, 6, 7, 9, 11 |
 | M | Mixolydian | 0, 2, 4, 5, 7, 9, 10 |
 | L | Locrian | 0, 1, 3, 5, 6, 8, 10 |
-| P | major Pentatonic | 0, 2, 4, 7, 9 |
-| O | minOr pentatonic | 0, 3, 5, 7, 10 |
-| T | 12T / chromatic | All twelve semitones; no scale restriction |
+| P | Major pentatonic | 0, 2, 4, 7, 9 |
+| O | Minor pentatonic | 0, 3, 5, 7, 10 |
+| T | Chromatic / 12T | All twelve |
 
-Root and scale can be selected in either order. The default is **C + 12T**,
-so all otherwise enabled mapped notes are initially available. Selecting T
-previews `CHROMATIC` and removes the scale restriction without changing mappings
-or lower-row mute. Root/scale survive mode switches and a power cycle, but confirmed
-RESET restores C/chromatic. They are not included in JSON profiles or saved
-calibration. The GUI still shows assigned notes, not their filtered status;
-`menu status` reports the active root and scale names over text CDC.
-
-Entering either menu clears sounding/pending notes. Menu key presses never
-play notes. Changes take effect only when a choice is released; USB/scan faults,
-output disable, or configuration changes cancel an unfinished choice.
+Choices are dim white, current choice green and Escape red. Hold a choice to
+preview its name, release to commit. **Escape cancels** these menus.
+Root and scale can be selected in either order. Only in-scale, enabled,
+mapped, in-range notes light and play. T removes the scale filter.
+Control/mode markers remain visible. Default is C/chromatic.
 
 ### Octave, pitch bend, modulation, and sustain
 
-```text
-LEFT OF SPACE                            RIGHT OF SPACE
-[ LCtrl ][ LWin ][ LAlt ] [ Space ... ] [ Fn ][ RAlt ][ Menu ][ RCtrl ]
-  Bend-    Mod    Bend+     Sustain            Oct-              Oct+
-```
+| Control | Function |
+| --- | --- |
+| Right Alt / Right Ctrl | One octave down / up per press, limited to ±10 |
+| Left Ctrl / Left Alt | Bend down / up; opposing depths sum |
+| Left Windows | Modulation (CC1) |
+| Space | Sustain (CC64): 127 while down, 0 on release |
 
-| Control | How to use it | Feedback |
-| --- | --- | --- |
-| Right Alt | Tap to lower notes by one octave | Flashes blue for negative shift |
-| Right Ctrl | Tap to raise notes by one octave | Flashes blue for positive shift |
-| Left Ctrl | Press farther to bend pitch down | Steady blue |
-| Left Alt | Press farther to bend pitch up | Steady blue |
-| Left Windows | Press farther for modulation, CC1 | Steady blue |
-| Space | Hold for sustain, CC64; release to lift the pedal | Steady blue |
+Octave changes affect new notes; held notes keep their pitch. Out-of-range notes
+are silent. Only the shifted direction blinks, faster for larger offsets.
 
-Octave shifting acts once per press, within −10…+10. Faster flashing means a
-larger shift: a full cycle is 1.2 s at ±1 and 0.12 s at ±10. At zero both
-octave controls are steady blue. The GUI displays the exact offset. Tap the
-opposite octave key until the offset is zero; switching modes alone does not
-reset it. Held notes retain their original pitch. Transposed notes outside
-0–127 are silent rather than wrapping to another pitch.
-
-Wheels use fixed readings: **3800 or higher = 0%**, **1000 or lower = 100%**,
-linear between them. They can respond before the key's trigger threshold.
-Equal Left Ctrl/Left Alt depth cancels pitch bend to center. Modulation is
-0–127; pitch bend is 14-bit, centered at 8192. Your instrument determines
-the bend range in semitones and what CC1 controls. Calibration and threshold
-changes do not change wheel endpoints.
-
-Space sends **CC64 = 127** when its reading falls below its press threshold,
-and **CC64 = 0** when it rises above its release threshold. Defaults are
-**3500 / 3600**; equality holds the current state. This is an on/off pedal,
-not half-pedaling, and its thresholds can be edited in the GUI. Choose an
-instrument that supports sustain on MIDI channel 1. Space remains available
-with every root/scale and with the lower rows muted; it is not assignable to
-a note. Its blue light matches Enter and follows global brightness.
-
-Fn releases sustain; menus, mode changes and fault cleanup also send pedal-off.
-Release Space and press again to resume afterward. Sustain changes are ordered
-with note events, including when USB is temporarily busy. In keyboard mode,
-Space continues to type a normal space.
+Wheels use fixed readback endpoints: 3800 is 0%, 1000 is 100%; per-key
+calibration/threshold changes do not rescale them. Pitch bend spans −100…+100%.
+Space uses its editable Schmitt thresholds. Whether sustain or polyphonic
+aftertouch is audible depends on the receiving instrument.
 
 ### What the velocity number means
 
-Each key independently collects a velocity window from the first sample
-**below** its press threshold. The window holds up to ten readbacks and closes
-early when the key crosses the shared bottom-out threshold of 1500 (that
-sample is excluded), so very fast presses fit on only a few samples. The
-firmware divides the total drop by the number of intervals; windows longer
-than five samples discard the interval furthest from their median first.
-It scales the result to a float from **0 to 1**, with 4,500,000 counts/s as
-the maximum. A fresh strike is armed after the key exceeds its release
-threshold. The GUI displays the last completed strike's value, not current
-pressure; a held key need not show a continuously changing velocity.
+The firmware estimates each key independently from up to ten readbacks starting
+at the trigger, stopping near bottom-out. Windows longer than five samples
+discard one outlier interval. The result is normalized to 0…1 with
+4,500,000 counts/s as maximum, then converted to Note On velocity 1…127.
 
-The calculation assumes 8000 scans/s. Actual 8 kHz hardware acquisition has
-not been established, so this is not a calibrated speed in distance/time.
-Very short taps still produce ordered Note On/Off once the window closes,
-but the resulting sound may be very short or inaudible. Keep press thresholds
-above 1500: below the bottom-out threshold no window can collect a fit.
+This is not force or measured physical speed. The math assumes 8000 scans/s;
+measured pinned delivery is about 1.36 ksample/s. The GUI displays the device
+float, not an estimate from its ~30 Hz snapshots. See [velocity design](docs/KEY_VELOCITY.md).
 
 ## 9. Use the configuration GUI
 
-The provided GUI runs on Linux with Python 3.10+ and Tk. It uses the Python
-standard library; no pip packages are needed. Run commands from the repository
-root. Install your distribution's Python Tk package if it is missing.
+On Linux, install Python and Tk, close other CDC readers, then run:
 
 ```sh
 python3 tools/keyboard_gui.py
-```
-
-This auto-detects the keyboard's CDC port by its USB identity (`1532:02b0`).
-Pass an explicit node with `--device` (for example
-`python3 tools/keyboard_gui.py --device /dev/ttyACM1`) if several matching
-boards are connected or detection finds nothing. **Detect** reruns the scan,
-and **Connect** also runs it when the device field is empty or `auto`.
-
-Use the actual device path if it differs. Your account needs serial-port
-read/write permission; do not run the configuration GUI as root. Close other
-serial readers before clicking **Connect**. For a no-device demonstration:
-
-```sh
+# Offline preview:
 python3 tools/keyboard_gui.py --demo
 ```
 
+Your user needs access to the serial device. Use `--device /dev/ttyACM0` to
+select a port explicitly. The GUI supports ANSI editing only.
+
 ### Read the screen
 
-```text
-+------------------------------------------------------------------+
-| Device / Connect | Enable keyboard | Disable keyboard | Profiles  |
-| Connection, mode, octave, scan health and configuration status     |
-+------------------------------------------------------------------+
-|                  Click a key on the keyboard drawing              |
-|                  key name / MIDI mapping                         |
-|                  raw reading / last velocity                      |
-+------------------------------------------------------------------+
-| Calibrate keys -> device flash | Cancel calibration | Progress    |
-+-------------------------------+----------------------------------+
-| Selected key and sensor ID    |                                  |
-| Device-confirmed thresholds  |       Recent raw-value plot        |
-| Press / release inputs       |                                  |
-| Apply selected / apply all   |                                  |
-| MIDI note / apply mapping    |                                  |
-+-------------------------------+----------------------------------+
-```
-
-This is a simplified guide, not a screenshot. **Orange** means the sensor
-is down; **cyan outline** means selected. Calibration temporarily uses its
-purple/blue/amber/green colors. Raw numbers are live readings, while velocity
-is the last completed fit. The GUI refreshes about 30 times/s; this does
-not set the keyboard's scan rate. Its submitted NKRO report is a diagnostic
-view, not proof that an application received a keystroke.
-
-Checking **Hold first 20 pts of keystroke** above the plot changes it from
-the scrolling waveform to a held per-keystroke capture for velocity-curve
-tuning: the GUI switches the device to a full-rate per-key stream (every
-optical scan frame — the fastest rate the keyboard produces, about
-1.35 k samples/s on this hardware; the keyboard drawing pauses while it is
-active) and holds the first 20 samples after the selected key's trigger, with
-the trigger sample marked in orange. The firmware's velocity fit is
-reproduced from the same bottom-out window the device uses and shown as
-counts/s and 0–1. A new press replaces the held capture; changing the
-selected key or unchecking the mode clears it and restores live telemetry.
-
-The GUI supports editing the ANSI/61-key layout. Firmware also handles
-ISO/62 and JIS/65, but the GUI rejects those layouts rather than placing
-their sensors under incorrect keycaps.
+Connect, then select a drawn key. Tiles show live raw values, press state and
+latest velocity. The panel shows thresholds, note/control role, waveform,
+calibration progress and settings-save status. Stale telemetry disables edits.
+A displayed HID submission is not proof of host receipt.
 
 ### Change one key or all keys
 
-1. Click **Disable keyboard** to prevent typing or MIDI while tuning. Despite
-   its label, this disables both output modes; readings and velocity continue.
-2. Click the desired key on the drawing.
-3. Enter the press/release pair, for example **3500 / 3600**.
-4. Click **Apply to selected key**, or **Apply thresholds to all keys** to
-   assign that same pair to every key in one device update.
-5. Wait for acknowledgment and matching readback. Editing a text field alone
-   does not change the keyboard.
-6. Release all keys and click **Enable keyboard** when ready.
-
-Stale/disconnected telemetry and active calibration/editor states restrict
-ordinary edits. Configuration changes release existing output and require
-neutral input again. Disabling/re-enabling does not switch performance mode.
+Disable keyboard output while tuning if needed. Enter press/release values,
+then **Apply to selected key**, or confirm **Apply thresholds to all keys**.
+The GUI checks command acknowledgment and actual readback. Invalid pairs change
+nothing. Release all keys after an edit; remember to re-enable output.
 
 ### Assign a MIDI note
 
-Select the physical key, enter a note such as `C5`, `F#5`, `Eb4`, a number
-such as `72`, or `Off`, then click **Apply MIDI mapping** and wait for readback.
-Mappings can be edited in either performance mode. Fn, Left Ctrl/Windows/Alt,
-Right Alt/Ctrl, and Space are reserved controls and cannot be assigned notes.
-Enter may be mapped but still serves the Fn+Enter mode combo.
+Choose a note number 0…127, note name (sharps/flats accepted), or Off.
+Fn, left Ctrl/Windows/Alt, right Alt/Ctrl and Space are reserved controls.
+Changing a mapping releases held output and waits for neutral.
 
 ### Save and load a host profile
 
-**Save profile…** writes the confirmed threshold pairs and MIDI mappings
-to JSON on the computer. It does not save unsubmitted input fields or
-calibration endpoints. **Load + apply profile…** validates the file, disables
-output, applies settings with readback, and restores the previous enable state.
-Load is not atomic: if it fails partway, some confirmed changes may remain
-and output normally stays disabled. Inspect the status and retry explicitly;
-do not assume the previous configuration was restored.
+JSON export/import stores thresholds and MIDI assignments, not calibration or
+all menu settings. It is optional: device saves are automatic.
+Import temporarily disables output, checks each edit, then restores output
+on success. It is not atomic; a failed batch may leave confirmed edits applied.
 
-Close the GUI when finished; applied settings continue working without it.
+The optional **Hold first 20 pts of keystroke** view switches to the selected
+sensor's full-rate stream. GUI status pauses and edits disable until return.
+It captures 20 points **including the trigger**, unlike the CLI's next 20.
+Overflow fails rather than joining samples across a gap.
+See [GUI guide](docs/KEYBOARD_GUI.md#keystroke-hold-mode).
 
 ## 10. Know what gets saved
 
-| Item | After closing the GUI | After power cycle | How to change it |
-| --- | --- | --- | --- |
-| Completed calibration endpoints | Kept | Kept on the device | Complete a calibration run |
-| Keyboard trigger level (Fn+Tab, keyboard mode) | Kept | Default | Fn+Tab editor |
-| MIDI trigger point (Fn+Tab, MIDI mode) | Kept | Default | Fn+Tab raw page |
-| Transmitted-velocity start (Fn+V) | Kept | Default (level 1) | Fn+V editor or the GUI |
-| Brightness | Kept | Default | Fn+K/L |
-| Keyboard/MIDI mode | Kept | Default (keyboard) | Switch with Fn+Enter |
-| MIDI octave offset | Kept, including across mode switches | Default | Adjust with Right Alt/Ctrl |
-| Lower-row MIDI mute | Kept | Default | Toggle with Fn+Left Shift |
-| MIDI root / scale | Kept | Default | Select with Fn+E / Fn+S |
-| Per-key thresholds set from the GUI or CDC | Kept | Default 3500 / 3600 | Save host JSON; load it again |
-| MIDI note mappings set from the GUI or CDC | Kept | Default 43-note map | Save host JSON; load it again |
-| Output enable state | Kept | Enabled, waiting for neutral | Use GUI enable/disable |
+The device automatically saves committed modes (including Jankó), brightness,
+root/scale, row mute, octave, velocity start, per-key thresholds/mappings,
+output enable and completed calibration.
 
-Only the calibration endpoints persist on-device, in the two authorized tail
-pages. Every Fn-menu choice is RAM-only and returns to its default at the next
-power cycle; **Fn+R clears the menu choices and deletes the stored
-calibration**, returning each item above to its default. Host edits over CDC - per-key thresholds and note mappings - stay in
-RAM and come back through a host profile, which contains
-thresholds and MIDI mappings, **not calibration, brightness, mode, octave, row mute, root, or scale**.
-Recalibrating does not overwrite your current raw threshold pairs. Committing
-a Fn+Tab trigger level does replace those pairs. There is no on-keyboard
-saved-profile selector or implemented media-control menu.
+Release all keys and wait for **settings saved** before unplugging.
+Saving waits for 250 ms without changes and no open menu/calibration.
+Without the GUI, leave all keys released for at least half a second.
+Unplugging while pending can restore the previous complete save.
+
+Ordinary playing does not write flash. Held notes, wheels, sustain, velocities,
+unfinished previews and partial calibration are not restored.
+Missing/corrupt custom saves initialize defaults; compatible firmware updates
+retain valid saves. See [storage design](docs/DEVICE_CONFIG_STORAGE.md).
 
 ## 11. Reset custom settings
 
-> **Reset deletes the saved custom calibration. It is not a factory-firmware
-> restore, and the deletion cannot be undone on the device.** Save any wanted
-> threshold/MIDI profile first; that JSON file is not a calibration backup.
+**Reset deletes custom settings and calibration; it does not restore factory firmware.**
 
-1. Hold **Fn+R** to preview `RESET`.
-2. Release the combo. The keyboard shows `RESET?`, with **Y green** and
-   **N red**, both at full brightness.
-3. Release every key once before answering.
-4. Press **Y** to confirm, or **N** to cancel. Pressing Y and N together
-   cancels. A Y already held when confirmation opened cannot confirm.
-5. Release all keys to resume. After successful confirmation, calibration is
-   cleared and thresholds, mappings, mode, octave, and brightness return to
-   defaults. Recalibrate if needed.
+1. Hold Fn+R to preview RESET, then release to open RESET?.
+2. Release all keys. Y is green, N red.
+3. Press Y to confirm or N to cancel. Pre-held Y cannot confirm; Y+N cancels.
+4. Release all keys to apply defaults and save them.
 
-Confirmation has no automatic timeout. Simply opening or cancelling it
-does not erase anything. Reset touches only the two reserved custom pages,
-not the bootloader, factory serial-number storage, application firmware, or
-optical-controller firmware. Unknown page contents or storage errors stop
-the operation; inspect the GUI/CDC status rather than repeatedly resetting.
+Opening/cancelling the page does not erase. Reset writes only the two reserved
+custom tail pages, never the Razer serial/settings area or bootloader.
+Controller/verification failures stop and report an error. Deleted calibration
+requires recalibration or a private backup.
 
 ## 12. Inspect sensor readings
 
-These optional Linux tools use the same CDC serial port as the GUI. Use
-**one reader at a time**, wait for calibration to finish, and do not confuse
-a serial display mode with keyboard/MIDI performance mode.
+Only one tool may own CDC. Close the GUI before using these commands.
 
 ### Whole-keyboard display
 
-With the whole-keyboard stream selected:
-
 ```sh
-python3 -u tools/decode_scan_stream.py --bars /dev/ttyACM0
-# Or fixed-width decimal rows:
-python3 -u tools/decode_scan_stream.py --live /dev/ttyACM0
+python3 tools/decode_scan_stream.py /dev/ttyACM0 --bars
+python3 tools/decode_scan_stream.py /dev/ttyACM0 --live
 ```
 
-These displays do not select their stream automatically. If the GUI, a dump,
-or a compact capture selected another stream, use a serial command client
-to send `stream on` followed by a newline, close that client, then run the
-decoder. The scanner itself does not need restarting.
-
-The block view has one caption row and one current-value row, with each key
-occupying a single-character label plus a space. It is in **sensor order,
-not physical keyboard order**. Letters/digits label themselves. Special
-labels: `e` Esc, `t` Tab, `b` Backspace, `c` Caps, `r` Enter, `_` Space,
-`m` Menu, `f` Fn, `^` Ctrl, `s` Shift, `a` Alt, `g` Windows. Left/right
-modifiers share a symbol; their sensor positions distinguish them.
-
-```text
-RAW VALUE, not pressed depth:
-low raw  ▁ blue  ── cyan / green / yellow ── red █  high raw
-         deeper press                              nearer rest
-```
-
-The colors are a raw-value scale, **not the physical LED color guide**.
-Invalid values appear as magenta `!`. Use a UTF-8/ANSI terminal; a full ANSI
-view needs about 139 columns. On a narrow terminal, use `--start 40` to view
-a later sensor window. The live display intentionally skips intervening
-frames to show the latest received reading instead of scrolling a backlog.
-Ctrl+C exits and restores the terminal.
+Bars use a caption and one updating row; each column is a character plus space.
+The display drops old frames to show the latest observation. Raw readbacks are
+16-bit containers with valid values 1…4096. Lower means deeper.
+[Whole-scan options](docs/SCAN_STREAM.md)
 
 ### Capture a strike
 
 ```sh
 python3 -u tools/decode_scan_stream.py /dev/ttyACM0 --last-key --threshold 3600
-# Keep capturing: release above the threshold, then press again.
 python3 -u tools/decode_scan_stream.py /dev/ttyACM0 --last-key --threshold 3600 --repeat
 ```
 
-This mode selects its device stream automatically. It prints **Capture
-Armed** with diagnostics, identifies the triggering key, prints the next
-20 decimal readings one per line, then reports velocity from the bottom-out window.
-The triggering sample is excluded. The banner means the host is waiting;
-it is not by itself confirmation that the device has replied.
-
-The capture threshold is separate from the keyboard's 3500 press default;
-`--threshold 3600` does not change typing settings. Triggering requires
-raw **below** that value. Repeat mode rearms after the captured key rises
-strictly **above** it; equality does not rearm. Release before starting
-if you want a fresh strike rather than selecting an already held key.
-
-Unlike the live display, capture fails on detected loss/overflow instead of
-silently skipping samples. A key change prints a warning and starts a new
-capture; do not treat the interrupted partial set as complete. Check the
-exit status when saving results. Ctrl+C ends repeat mode. Its velocity is
-raw counts/s using the same 8 kHz assumption and filter as the firmware,
-before firmware normalization to 0–1.
-
-After capture, reopen the GUI for GUI telemetry or select `stream on` for
-whole-keyboard viewing. `stream off` stops serial streaming, not scanning.
+The CLI prints Capture Armed, the triggering key, the **next 20 values
+excluding the trigger**, and its velocity estimate. Repeat waits for that
+key above threshold and rearms until Ctrl+C. Mixed-key input warns and restarts;
+sequence loss, overflow and corruption fail rather than skip data.
+[Capture options and exit behavior](docs/LAST_KEY_STREAM.md)
 
 ### Private calibration backup
 
-Advanced users can make a read-only backup of the two custom calibration
-pages, using a new filename for each backup:
+The [read-only flash dumper](docs/FLASH_DUMP.md) can back up custom slots:
 
 ```sh
-python3 -u tools/dump_flash.py --device /dev/ttyACM0 \
-  --start 0x78000 --length 0x400 \
-  --output device-dumps/calibration-backup.device-dump.bin
+python3 tools/dump_flash.py --start 0x78000 --length 0x400 \
+  --output device-dumps/settings.device-dump.bin
 ```
 
-Keep its metadata companion with it and check the tool's success result.
-Backups are private and Git-ignored; never publish or force-add device dumps.
-This is a raw backup, not a GUI-importable profile or an automatic restore
-mechanism. Do not write it to flash with a generic programmer.
+Keep the binary and error-map JSON private. A dump containing unreadable words
+is not a restoration image; the tool does not provide an automatic restore.
 
 ## 13. Troubleshooting
 
-| Symptom | Check first |
+| Symptom | Check |
 | --- | --- |
-| Keys do not type | Is Enter blue? Switch out of MIDI mode. Exit any editor/confirmation/calibration, enable output in the GUI, then release every key. |
-| Nothing works after changing thresholds | Inspect idle readings. Every sensor must exceed its release threshold to rearm; lower an unreachable release value in the GUI. |
-| Right Alt/Ctrl/Shift no longer act as modifiers | Intentional keyboard-mode arrow mapping. Use left-side modifiers. |
-| Fn shortcut types its base letter | Hold Fn before pressing it. A key held before Fn is not reinterpreted. Confirm keyboard mode and enabled, armed input. |
-| Holding a settings combo does nothing | The word is a preview. Release either key to execute, then release all keys. Brightness changes only one step per release. |
-| Cannot choose another setting after brightness taps | Release Fn and every other key to end the brightness session. |
-| A MIDI key is dark/silent | Check root/scale, Fn+Left Shift lower-row mute, mapping, octave, and output enable state. Select T in the Fn+S menu to remove scale filtering. |
-| MIDI arrives but there is no sound | Route channel 1 to an instrument and enable monitoring. The keyboard is not an audio synthesizer. |
-| Aftertouch has no audible effect | Use an instrument/patch that responds to polyphonic key pressure and configure what it controls. |
-| Pitch is shifted or bent | Check the GUI octave value and flashing Right Alt/Ctrl. Release Left Ctrl/Alt; their wheels use fixed endpoints, not calibration. |
-| Velocity stays fixed while holding a key | Expected: it is the last strike estimate. Aftertouch, not velocity, follows continued travel. |
-| Calibration key never turns green | Fully bottom out, hold steady for one second, and inspect its rest/candidate reading. Movement restarts only that key's timer. |
-| Calibration turns red | Inactivity, cancellation, scan/USB fault, or save failure. Read the GUI reason; a partial run is not saved. |
-| GUI cannot connect / shows stale values | Check device path and permissions, close every other CDC reader, and reconnect. Demo mode never connects. |
-| Terminal is blank or shows binary garbage | CDC streams are binary. Use the matching decoder or GUI; send `stream off` before text status commands. |
-| Live/bar decoder shows nothing after another tool | Select `stream on` with a serial command client, close it, and reopen the decoder. |
-| Capture never triggers | Raw must fall below its capture threshold; check the actual readings and release before retrying. Keyboard thresholds do not set capture thresholds. |
-| Settings disappeared after restart | Only completed calibration persists on-device; every Fn-menu choice and every host edit is RAM-only, so a power cycle returns them to their defaults. Reload a saved host JSON profile for thresholds and mappings, and repeat Fn+V or the Fn+Tab step for the menu choices. |
-| Lights are off | Raise brightness with Fn+L. Check MIDI mappings, diagnostic `light off`, and scan/light error status in the GUI. |
+| No typing after a change | Release all keys; check enable state and idle values above release thresholds |
+| GUI cannot connect | Close other CDC tools, check permissions/port and use matching host tools |
+| MIDI is silent | Blue Enter, instrument monitoring, channel 1, mapping, row/scale filter and octave range |
+| No aftertouch/sustain effect | Receiver must implement the message; check instrument routing |
+| Settings vanish after restart | Wait for saved, not just ACK; inspect storage errors and pending/open menus |
+| Calibration turns red | Read timeout/cancel/scan/storage reason; previous calibration is retained |
+| Capture stops with an error | Resolve overflow/disconnect/framing cause; do not splice across missing samples |
+| LEDs fail but USB works | Read light status; a latched bus fault is not fixed by repeated reset commands |
 
-Do not use repeated resets, reflashes, or forced bootloader entry as routine
-troubleshooting. First inspect GUI connection, arming, thresholds, mode,
-calibration state, and scan/light/MIDI errors. Avoid interrupting a save or
-firmware update. If a physical key is stuck, a fresh neutral frame cannot be
-achieved until that condition is resolved.
+Do not erase Razer data or force bootloader recovery as a routine diagnostic.
+[Validation limits](docs/VALIDATION.md) distinguish tested behavior from assumptions.
 
 ## 14. Firmware maintenance
 
-The complete Huntsman build preset is **`huntsman`**; `keyboard-fn-menu`
-is a supported alias producing the same artifact. The
-`firmware` preset is USB-only and does not provide the features in this manual.
-The current USB device provides NKRO keyboard, MIDI, CDC diagnostics, and
-the compatible updater interface. The configuration GUI is not a flasher.
-`tools/flash_application.py` flashes and then performs the cold boot: it sends
-`cfg clean` over CDC so the new build starts from defaults instead of
-inheriting the previous build's stored calibration
-(`--keep-calibration` skips that).
+Follow [Building](docs/BUILDING.md) for dependencies, presets and tests.
+Use the complete `huntsman` application, not the USB-only `firmware` preset.
 
-For users building from source, prerequisites are Arm GNU bare-metal tools
-(`arm-none-eabi-gcc`, tested 14.2.1), CMake 3.21+, Ninja, a native C compiler,
-and Python 3.10+. Official NXP SDK sources are pinned and included in the
-repository; the original firmware/updater EXE is not needed to compile.
+Flash with the GUI or [custom flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
+using **application only** and leaving secondary firmware disabled.
+Normal updates preserve compatible settings. `--reset-settings` explicitly
+clears custom settings/calibration. Keep USB connected until completion.
 
-```sh
-cmake --preset host-tests
-cmake --build --preset host-tests
-ctest --preset host-tests
-cmake --preset huntsman
-cmake --build --preset huntsman
-```
-
-The application binary is `build-keyboard-fn-menu/huntsman_firmware.bin`,
-exactly 131072 bytes. Building/testing does not flash or reset the keyboard.
-The latest build's tested scope and hardware-validation limits are recorded in
-[validation status](docs/CALIBRATION.md#validation-status).
-
-For installation, use the [custom firmware flashing tool](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)'s
-**application-only** workflow. Its GUI accepts the raw application `.bin`;
-leave **Flash secondary firmware** unchecked. Close CDC tools, finish any
-calibration, confirm the target device/image, and keep USB connected until
-the update completes and the application returns. Prefer computer-initiated
-bootloader entry. Do not program address zero or infer a flash address from
-the application's RAM execution address.
-
-An application-only update preserves the reserved calibration pages, but a
-return to stock firmware may reuse that space. Neither Fn+R nor the
-configuration GUI installs factory firmware. Bootloader, serial-number and
-factory storage, and secondary optical-controller firmware are outside this
-application's write scope. Do not overwrite them to solve a configuration issue.
+The binary is 131072 bytes; its RAM execution address is not a flash-programming
+address. Do not program address zero. Stock firmware may reclaim custom tail
+space; neither Fn+R nor this configuration GUI installs stock firmware.
 
 ## Quick reference
 
 ```text
-TYPE       RAlt = Left   Menu = Down   RCtrl = Right   RShift = Up
-FN KEYS    Esc = `   1…0/-/= = F1…F12   Backspace = Delete
-           Y = Insert   P = Print Screen   H = Home   J = Page Up
-           N = End      M = Page Down
-
-SETTINGS   Fn+Enter = mode   Fn+C = calibrate   Fn+Tab = trigger
-           Fn+K/L = dim/brighten   Fn+R = reset confirmation
-           Hold to preview; release to act. Then release all keys.
-
-MIDI       Channel 1   C4 = 60   RAlt/RCtrl = octave down/up
-           LCtrl/LAlt = bend down/up   LWin = modulation   Space = sustain
-           Fn+Left Shift = mute/restore Caps and Shift rows (release to apply)
-           Fn+E = root menu   Fn+S = scale menu   Escape = cancel selection
-           Scales: J major, I minor, D Dorian, H Phrygian, Y Lydian,
-                   M Mixolydian, L Locrian, P/O pentatonics, T chromatic
-
-CALIBRATE  Purple: release 0.5 s → blue: choose → amber: hold 1 s
-           Green: registered. All keys complete → saved to device.
-           Multiple holds allowed. No progress for 5 s → discard.
-
-REMEMBER   Lower raw = deeper press. Defaults: press <3500, release >3600.
-           Calibration saves on-device; thresholds/MIDI maps need host JSON.
+Fn+Enter  keyboard / MIDI     Fn+C       calibration (keyboard)
+Fn+Tab    trigger editor      Fn+K/L     brightness −/+
+Fn+R      confirmed reset     Fn+J       Jankó (MIDI)
+Fn+E/S    root / scale        Fn+V       velocity start (MIDI)
+Fn+LShift lower-row mute      RAlt/RCtrl octave −/+ (MIDI)
+LCtrl/Alt pitch −/+           LWin       modulation (MIDI)
+Space     sustain (MIDI)
 ```

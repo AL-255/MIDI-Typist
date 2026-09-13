@@ -54,6 +54,7 @@ peripherals. It does not execute the bootloader or model electrical reconnect.
 
 The latest complete image passes computer-initiated updater entry, application-only
 flashing, high-speed USB return and live CDC telemetry. Full application
-readback matches the binary, and both calibration pages remain unchanged.
-See [validation status](CALIBRATION.md#validation-status).
+readback matches the binary. Custom tail pages hold settings; the separate
+Razer settings/serial region remains unchanged.
+See [validation status](VALIDATION.md).
 These checks are not USB certification or proof of all MIDI/DAW behavior.

@@ -61,27 +61,11 @@ in-flight batch too; sequence gaps expose missing observations.
 
 ## Wire format
 
-Each record is exactly 160 bytes. All multi-byte values are little-endian.
-
-| Offset | Type | Meaning |
-| --- | --- | --- |
-| 0 | 4 bytes | ASCII `HKS1` (format/version magic) |
-| 4 | uint16 | Record size, 160 |
-| 6 | uint8 | Sensor count, 61/62/65 |
-| 7 | uint8 | ASIC layout, 1/2/3 |
-| 8 | uint32 | Stream observation sequence; advances even on queue drops |
-| 12 | uint32 | CTIMER2 tick when main observes the readback, nominal 125 µs/tick |
-| 16 | uint32 | Cumulative enqueue/discard drop count |
-| 20 | uint16 | Bit 0: one or more raw values outside production-valid 1–4096 |
-| 22 | uint16 | Reserved, zero |
-| 24 | uint16[count] | Every sensor's unmodified 16-bit ADC readback |
-| after samples through 155 | bytes | Zero padding, not extra sensors |
-| 156 | uint32 | Sum of the 78 little-endian uint16 words in bytes 0–155 |
-
-The checksum detects framing/capture errors; it is not a CRC or authentication.
-Ticks timestamp observation, not an independently measured ADC acquisition
-instant. Invalid ADC values are retained and flagged, not silently clamped.
-Non-A0 markers and the two production startup-discard frames are not samples.
+[Telemetry](TELEMETRY.md#whole-scan-stream-stream-on) defines the 160-byte
+little-endian HKS1 record, checksum, tick and drop fields. Values remain in
+sensor order; invalid readbacks are retained and flagged, not clamped.
+Ticks mark observation, not an independently measured ADC acquisition instant.
+Startup-discard frames and non-A0 markers are not samples.
 
 ## Decode and inspect
 
@@ -108,24 +92,9 @@ USB/read chunk boundaries and skips malformed records/text. Terminal rendering
 
 ## Build/validation
 
-```sh
-cmake --preset huntsman
-cmake --build --preset huntsman
-cmake --build --preset huntsman --target audit-keyboard
-```
-
-The audit uses the optional Python dependencies in `tools/requirements-audit.txt`
-and the read-only production image as described in KEYBOARD_RECOVERY.md.
-Current output is `build-keyboard-fn-menu/huntsman_firmware.bin`.
-
-Offline checks execute actual ARM CDC/USB code with a synthetic source of
-8,000 full records and four records per modeled 500 µs host-service interval.
-They check all 16 sample bits, checksums, multi-packet assembly, bounded
-backpressure, whole-record loss counters, immutable in-flight data, text
-arbitration, reset recovery, and synthetic ASIC-to-CDC integration. This
-validates software framing/data flow, **not real elapsed throughput or ASIC
-rate**. The model consumes double-buffered USB packets in EPINUSE order.
-Full USB and keyboard regression audits run with the same model.
+Use the complete `huntsman` preset; see [Building](BUILDING.md) and
+[Validation](VALIDATION.md). Decoder/ARM tests check framing, checksum,
+queue overflow, FS/HS transfers and buffer immutability without a device.
 
 ## Latest-only live display
 

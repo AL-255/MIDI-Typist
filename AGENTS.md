@@ -11,6 +11,12 @@
 - Keep useful design rationale, original-firmware reference facts and supported
   compatibility behavior only where they explain the current implementation.
 - Check relative documentation links after moving or deleting a document.
+- Build documentation with `python tools/build_docs.py` using the pinned
+  `docs/requirements.txt` environment. Sphinx warnings are errors; add every
+  public page to `docs/index.rst`. Keep generated HTML and private data out of Git.
+- Use one authoritative guide per topic: manual for operation, BUILDING for
+  commands, TELEMETRY for wire fields, DEVICE_CONFIG_STORAGE for persistence,
+  and VALIDATION for evidence limits. Prefer links over duplicated tables.
 - Keep [`docs/TELEMETRY.md`](docs/TELEMETRY.md) complete: update it whenever a
   stream, magic, field, rate, checksum or text reply changes, and keep the
   per-stream documents it links to in step.

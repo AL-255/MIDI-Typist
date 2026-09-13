@@ -357,25 +357,35 @@ callbacks own physical pages, checksums, rollback, identity and power-failure
 handling. They must not modify unrelated bootloader, serial, security or
 factory data. No callback means unavailable storage; calibration must report
 failure instead of claiming a persistent save. The simulator saves only in
-its process RAM. Huntsman's writer and HKC1 journal are examples for that board,
+its process RAM. Huntsman's writer and MTP1 whole-profile journal are examples for that board,
 not a universal flash layout.
 
 | `keyboard_app_ops_t` callback | Board responsibility |
 | --- | --- |
 | `load_calibration(profile, count, lo, hi)` | Validate identity, complete bounds and integrity before changing arrays; false means no valid load |
 | `save_calibration(cal)` | Persist all staged endpoints and verify them before returning true |
-| `clear_profile()` | Clear only owned custom records after menu confirmation; false means clearing was not verified |
+| `clear_profile()` | Clear only owned custom records after an explicit Fn-menu confirmation or accepted CDC `cfg clean`; false means clearing was not verified |
 | `reset_sensors(profile)` | Rebuild board-owned fallback state without an unrelated USB reboot or destructive peripheral restart |
 | `log(message)` | Optional bounded diagnostics, not a blocking serial write |
+
+`keyboard_app_reset_profile` releases outputs and cancels unfinished MIDI
+strikes, then defers defaults until a fresh neutral scan. This also works when
+keyboard output is disabled: do not use output arming as the reset-completion
+condition. The shared CDC parser requires a valid scan younger than 100 ms for
+`cfg clean`; its ACK confirms the erase, not that held keys have been released.
 
 Callbacks are synchronous with no context argument; the board supplies its
 single-owner storage context. Loading is attempted once after a valid layout
 frame, not continuously. The board owns storage generation/error telemetry. The shared application
 exposes the chosen Fn-menu levels and flags through `keyboard_menu_t`,
-`keyboard_midi_t` and `keyboard_raw_t`; they are RAM-only, so a port that wants
-them to survive a power cycle has to store them itself. Huntsman stores only
-its calibration record and treats a record from another build as the cold-boot
-condition. Host `cfg` edits to thresholds and mappings remain RAM-only.
+`keyboard_midi_t` and `keyboard_raw_t`; the board owns their persistence.
+Huntsman's `device_store` loads whole-profile snapshots through the calibration
+callback, applies settings immediately after `keyboard_app_frame` and before
+output service, then checks committed changes every 20 ms. Saving waits for
+250 ms stability and neutral input with no editor/preview/calibration active.
+Every snapshot preserves calibration. Report pending/saved/error separately
+from RAM command ACKs. Restore outputs as neutral, never as sounding notes.
+A new port must choose its own schema, geometry and safe write scheduling.
 
 Prove page ownership, execution/interrupt safety during erase, watchdog
 behavior, timeouts and power-loss recovery on the actual MCU. FF bytes alone
@@ -384,7 +394,7 @@ safe by implication for an MCU executing from the bank being erased.
 
 USB normally exposes NKRO HID, USB-MIDI and CDC through the platform's stack.
 Feed newline-stripped configuration commands to `keyboard_app_command`;
-it implements get/set/all/enable/MIDI/calibrate/cancel validation and ACK
+it implements get/set/all/enable/MIDI/velocity/clean/calibrate/cancel validation and ACK
 semantics. Board diagnostics, telemetry serialization and the MCU's firmware
 update path remain in the port. Never copy the Huntsman reset cookie or flash
 addresses to an unrelated bootloader.
@@ -443,7 +453,7 @@ power behavior, optical timing or real USB signal integrity.
 - [ ] A board user guide lists controls, supported features and test limits.
 
 Keep native tests, register models and physical evidence distinct. Huntsman's
-[validation status](CALIBRATION.md#validation-status) is not evidence for a
+[validation status](VALIDATION.md) is not evidence for a
 different board. The synthetic port has no physical USB, flash or power circuit.
 
 ## Troubleshooting a new port

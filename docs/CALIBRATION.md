@@ -42,19 +42,18 @@ The routine stages separate endpoint arrays, a nine-byte completion bitmap,
 and 65 independent hold registers. This 1324-byte state lives in a dedicated
 writable section inside the existing application RAM image (0x20000000 region),
 initialized explicitly at startup. It does not consume peripheral SRAMX or USB
-RAM, share velocity buffers, or change the flash calibration record format.
+RAM or share velocity buffers. The separate board journal stores complete profiles.
 It does not change active bounds until a complete save passes readback.
 New bounds drive linear travel lighting and MIDI aftertouch. Schmitt thresholds
 remain raw ADC values; calibration does not silently change press/release
-settings or velocity scaling. Host threshold and MIDI-mapping edits are still
-RAM-only with host JSON import/export. Calibration endpoints persist on-device in those two pages
-([device storage](DEVICE_CONFIG_STORAGE.md)); every Fn-menu choice is RAM-only
-and returns to its default at the next power cycle.
+settings or velocity scaling. Host threshold/mapping edits and committed
+Fn-menu choices persist alongside calibration in whole-profile snapshots
+([device storage](DEVICE_CONFIG_STORAGE.md)).
 
 ## Persistence
 
 Only physical pages **0x78000 and 0x78200** are writable, and they carry the
-calibration record. Both were independently verified as FF inside an original
+whole-profile record. Both were independently verified as FF inside an original
 free allocator block. The primary settings, serial number, bootloader and
 application image are untouched by calibration.
 See [record format, original-driver evidence and power-failure behavior](DEVICE_CONFIG_STORAGE.md).
@@ -78,7 +77,8 @@ Telemetry packets are 1152 bytes, with the following calibration status fields:
 | 1130, 1132 | selected candidate upper/lower uint16 endpoints; zero if absent |
 | 1134 | reserved uint16 zero |
 | 1136, 1140 | uint32 saved generation, storage error |
-| 1144 | reserved uint32 zero |
+| 1144, 1145 | uint8 storage flags (valid=1, pending=2, fault=4), slot (0/1/255) |
+| 1146 | uint16 low bits of complete-profile generation |
 | 1148 | unchanged uint32 checksum of preceding uint16 words |
 
 Telemetry additionally uses bit 3 (value 8) of each per-key state byte at 967+i
@@ -96,65 +96,6 @@ acquisition consumes hardware scans, not GUI frames.
 
 ## Validation status
 
-The latest complete application is `huntsman` (alias `keyboard-fn-menu`). Native tests cover
-independent parallel holds, timing, aborts, record validation and simulated
-power-cut boundaries. Compiled ARM tests cover Fn+C/GUI entry, output isolation,
-parallel completion, two-page save/reload and original-controller register
-differentials. The Fn-menu audit also checks that trigger/brightness edits
-and calibration cancellation issue no writes and preserve a loaded record.
-
-Build artifact: `build-keyboard-fn-menu/huntsman_firmware.bin`, 131072 bytes,
-SHA256 `7aad237327434f5484800affd232b2cc175b694bd45f8ff7ea1f384136a082bc`.
-Application load is 78056 bytes, SRAMX 24328/24576 and USB RAM 15488/16384;
-the separate 8 KiB stack is retained. Twelve native suites, original lighting-channel
-comparisons, and compiled USB/MIDI/lighting checks pass, including inverse
-brightness, live MIDI mapping masks, right-side octave controls and fixed-range
-modulation/pitch wheels. Enter and the MIDI controls use full channel intensity;
-native tests cover all 20 global brightness levels and compiled I2C checks
-compare their scaled output with ordinary note keys. These are software/register-model results.
-Startup/RESET pairs are press 3500 / release 3600. Native and compiled tests
-check exact crossing/equality behavior, independent of explicit test or GUI pairs.
-The keyboard override tests cover four arrow usages without right modifier bits,
-all twenty Fn shortcuts, both release orders, Fn-held repeated taps and green
-hint channels. MIDI behavior and original trigger-editor differential tests pass.
-Fn+Left Shift tests exercise physical Caps/Shift-row MIDI filtering across all layouts,
-custom mappings, release-only toggles, pending-note cleanup, dark note LEDs,
-mode persistence and unchanged keyboard/wheel behavior. Compiled checks
-exercise the MIDI-only white Left Shift hint, actual USB note packets, mapping retention,
-top-row output and LED channel masks with synthetic input.
-Root/scale tests cover all 120 combinations and 128-note interval predicates,
-modal selection/cancellation, physical selector tables, custom mappings,
-filtered USB packets and matching LED output. The GUI/Tk tests confirm the
-3500/3600 defaults and Space's reserved sustain control. Sustain tests cover
-all layouts, exact Schmitt boundaries, blue lighting, CC64/note ordering,
-queued pedal edges under backpressure, Fn/cleanup rearming and overflow pedal-off.
-These checks do not represent physical root/scale or sustain keypresses.
-
-The supplied updater has installed this application through computer-initiated
-bootloader entry. Full 131072-byte readback at physical `0x8000` matches the
-build SHA256 above with no flash-controller/ECC read errors. Both calibration
-tail pages are byte-for-byte unchanged. After reboot, live GUI telemetry
-advances with 61 valid sensors, enabled/armed output, calibration generation 0
-(no saved calibration) and zero scan, lighting, MIDI or calibration errors.
-Live readback confirms press 3500 / release 3600 on every sensor. The device
-returns at USB high speed with keyboard, MIDI and CDC interfaces.
-Builds and offline tests themselves do not access the device.
-The SDK-free simulator additionally validates the shared lifecycle with 104
-sensors, a different scan rate and ADC polarity, a wider HID report, layout
-changes and independent parallel calibration.
-
-Fn+R RESET requires a fresh Y confirmation after all keys are released; N or
-simultaneous Y/N cancels. Tests cover pre-held Y rejection, full-brightness
-confirmation colors and repeated brightness taps with Fn held. RESET storage
-is validated in native and compiled flash models, including both
-occupied slots, ownership/error guards and interrupted-erasure cases. It is
-not executed against the user's saved calibration during hardware validation.
-
-Physical key-combination presses, wheel travel/response in a synthesizer,
-text-animation appearance and release latency, acquisition cadence,
-saved-record cold boot, endurance and power-cut recovery remain unverified on
-this build. On the development unit the two storage pages at 0x78000/0x78200
-currently answer reads with controller status 116, so a save or Fn+R clear is
-refused there (the store never erases a page it cannot read); this is a
-property of that device's flash state, not of the verified write path. A modeled acquisition is not a physical key-holding test. Private
-endpoint exports and flash backups remain excluded from Git.
+See [Validation and limitations](VALIDATION.md) for native, compiled ARM and
+physical evidence. Calibration tests cover independent holds, parallel
+completion, cancellation, save failure and boot restoration.

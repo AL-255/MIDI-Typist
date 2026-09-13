@@ -1,150 +1,127 @@
-# Huntsman device calibration storage
+# Huntsman device settings storage
 
-Calibration uses **only two whole 512-byte pages at physical addresses
-0x78000 and 0x78200**. The beginning of configuration storage, including the
-serial number and primary settings at 0x49000..0x49400, is not an erase target.
-The HKC1 serializer and controller adapter belong to the
-[Huntsman board](../firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c).
-Shared calibration requests storage through `keyboard_app_ops_t`; these
-addresses and this 65-sensor format must not be copied to another platform.
-See [the storage port contract](PORTING.md#5-add-lighting-storage-and-host-integration).
+The complete application persists settings and calibration in two reserved
+**512-byte tail pages: 0x78000 and 0x78200**. The Razer primary settings and
+serial-number region at **0x49000..0x49400** is never a write target.
+Bootloader, application image, factory/security/PFR and secondary ASIC storage
+are also outside this writer.
 
-## Evidence and ownership
+## What is saved
 
-Two independent controller reads of 0x49400..0x7d800 matched,
-without read errors. The selected pages, 0x78000 and 0x78200, read as exactly
-512 FF bytes, and pages sampled across the rest of the free payload read the
-same way.
-The original allocator's block chain at 0x54400 identifies five allocated
-0x580-byte blocks followed by a free block starting at 0x55f80 with size
-0x29480 (ending at 0x7f400). The selected pages are inside its free payload,
-not its header or footer. The final footer lies outside the conservative
-read boundary and was not read; it is not claimed verified.
+Each complete snapshot includes keyboard/MIDI mode, Jankó, lower-row mute,
+brightness, velocity start, root, scale, octave, output enable, committed
+trigger/rapid levels, and every sensor's thresholds, MIDI mapping and completed
+calibration bounds. Held keys, sounding notes, wheels, sustain, velocities,
+editor previews and incomplete calibration are not saved.
 
-Tail and primary-settings backups and their checksums belong in private,
-Git-ignored device-dump metadata. No serial-number bytes are published.
+Settings are checked every 20 ms. Saving waits for 250 ms without further
+changes, all keys above release thresholds, and no editor, preview or
+calibration. Release all keys and wait for **settings saved** in the GUI before
+unplugging. A command ACK means applied in RAM, not durable yet. Unplugging
+while pending can restore the previous snapshot. No unchanged settings are
+rewritten; ordinary notes do not wear flash. Repeated K/L taps coalesce while
+Fn remains held.
 
-The FF tail inside the primary settings' second page is deliberately **not**
-used: erasing it would also erase existing settings in that same page.
-The independent application does not use the original allocator. Returning to
-stock firmware may reclaim or clear the free block and lose our calibration.
-The two pages keep the same 512-byte geometry, alignment and slot roles
-wherever they sit in that free payload; only their addresses are Huntsman
-board data.
-We do not alter allocator boundary tags or promise that stock preserves our data.
+## Boot and recovery
 
-## Record and recovery
+Loading happens once after layout discovery, before first keyboard/MIDI output.
+The newest CRC/range/schema/layout-valid snapshot is restored; generation
+ordering handles wraparound. Output then waits for neutral.
 
-Each HKC1 page uses this little-endian layout:
+First installation or two invalid/incompatible snapshots initializes defaults
+and automatically erases/programs/verifies a fresh snapshot in the owned tail
+area. One valid snapshot is sufficient for recovery; a bad peer never causes
+the good snapshot to be erased. Compatible application updates retain settings.
+Valid calibration-only HKC1 data migrates through the opposite slot while
+preserving endpoint generation. Compatibility uses schema and layout, not
+build timestamps.
+
+ECC failures invalidate nonblank data. Other controller faults, geometry
+errors and timeouts inhibit automatic writes rather than trigger erasure.
+Save failures latch for the session, avoiding infinite retries and wear.
+
+## Complete snapshot format
+
+One little-endian MTP1 record occupies one page.
 
 | Offset | Field |
 | --- | --- |
-| 0 | Four-byte `HKC1` magic |
-| 4, 5, 6, 7 | uint8 version 1, layout, sensor count, reserved zero |
-| 8 | uint32 generation |
-| 12 | uint32 ownership marker `0x314c4143` |
-| 16 | 65 uint16 lower bounds |
-| 146 | 65 uint16 upper bounds |
-| 276..507 | Reserved FF padding |
-| 508 | IEEE CRC32 over bytes 0..507 |
+| 0 | Magic MTP1 |
+| 4 | Format 1 |
+| 5, 6 | Optical profile, sensor count |
+| 7 | Calibration present, 0/1 |
+| 8 | u32 whole-profile generation |
+| 12 | u32 schema identity 0x3150544d |
+| 16–28 | Thirteen global bytes (below) |
+| 29 | u32 calibration generation |
+| 33 | Up to 65 seven-byte sensor entries |
+| After last sensor through 507 | FF padding |
+| 508 | CRC-32 of bytes 0…507 |
 
-Unused sensors are zero. Bounds must have at least 512 counts of range and
-lie within the valid ADC domain. Layout identity must match.
+Globals: performance mode, Jankó, lower mute, brightness (0…19), velocity start
+(1…10), root (0…11), scale ID, signed octave (−10…10), output enable, saved
+actuation, saved rapid, rapid enable and lock.
 
-Boot reads both pages and selects the newest valid matching generation,
-including uint32 rollover. No boot-time erase/program occurs. Without a valid
-record, existing factory-derived endpoint behavior remains in use.
+Sensor entries: two packed 12-bit thresholds in three bytes, two packed 12-bit
+calibration endpoints in three bytes, then a MIDI mapping byte (0…127 or 255).
+Samples 1…4096 encode as value minus one; first/second values occupy bits
+0…11/12…23 of a little-endian 24-bit pair. Thresholds satisfy press < release
+< 4096; calibration lower/upper have at least 512 counts of separation.
+Absent calibration uses three zero bytes. Reserved MIDI controls are unmapped.
 
-A complete calibration writes only the inactive page, leaving the prior
-record untouched. Before erase, the target must read successfully and be
-entirely FF or carry our recognizable HKC1 ownership header. Unknown contents
-or ECC errors cause a save failure, not an erase. A recognizable torn record
-may be replaced. An unreadable page after an interrupted erase is not
-automatically reclaimed; the previous readable record can still load.
+## Atomic replacement and controller safety
 
-The full page is erased, programmed, read back and compared byte for byte,
-including CRC, before RAM endpoints and the active generation are updated.
-Power failure during the first save can leave no valid record, in which case
-factory-derived endpoints are used. After an existing valid save, interrupted
-inactive-page writes leave the older valid record available. This is a
-software-level recovery design, not a claim that power-cut silicon testing
-has been performed.
+Erase, blank-verify, program and byte-for-byte readback (including CRC) target
+only the inactive page. It becomes active only on success. Never overwrite the
+sole good snapshot as a fallback after failure. Interrupted writes recover the
+old or complete new snapshot, not mixed settings/calibration. An interrupted
+first save can leave no valid record and reinitialize defaults.
 
-## Controller boundary
+The adapter uses official NXP SDK registers/status codes and the original
+working application's CMD4 erase, 32 CMD8 buffer loads and CMD12 program
+sequence. Code/stack execute from RAM; IRQ state is preserved, cache flushed,
+watchdog serviced and all polls bounded. Slot index, geometry, clock and
+record validation precede erase; caller-supplied write addresses are impossible.
 
-The application uses NXP SDK register definitions/status codes and the
-controller sequence established by the original working application:
-command 4 erases one page, 32 command-8 loads populate its buffer, and command
-12 programs it. Status polling is bounded; a controller timeout latches out
-further commands. Interrupt state is preserved, cache is flushed, and the
-existing watchdog is serviced before/after operations. Code and stack execute
-from RAM. SDK ROM-wrapper calls are excluded; the controller adapter is
-checked against original ARM register transactions.
+**CMD5 verifies erased pages.** Ordinary CMD3 reads of erased LPC55 flash can
+produce ECC error 116 because valid parity is absent. CMD5 checks data and
+parity with ECC disabled. The storage API returns logical FF only after
+confirmed blank-check success; the diagnostic dumper still reports real
+per-word errors. See [NXP's explanation](https://community.nxp.com/t5/LPC-Microcontrollers-Knowledge/LPC55xx-Erased-Memory-State-0-or-1/ta-p/1135084).
 
-The adapter accepts a slot number, never an arbitrary write address, and
-validates the page it is given with the same predicate the store uses. Invalid
-slot, geometry, clock or record rejects before erase.
+The application-image 1 KiB reservation stays FF and unused.
 
-**Write bounds.** Every erase and program in the whole application lives in
-this adapter and derives its address from one of two constants, `CAL_SLOT_A`
-and `CAL_SLOT_B`; the shared application contains no flash write path at all
-(`keyboard_config.c` keeps its production commit RAM-only for exactly that
-reason), and no ROM/IAP API is linked. `config_allowed` additionally requires
-`slot<2`, the board clock and a flash size large enough to contain both pages
-plus the reserved tail. The application image occupies 0x0..0x20000, and the
-primary settings with the serial number sit at 0x49000..0x49400; neither is
-reachable from the adapter. The offline flash model enforces the same rule: it
-rejects any controller command whose page is not one of the two authorized
-pages and any command inside the application or primary-settings ranges, so an
-ARM test fails rather than silently corrupting them. That test also reports the
-address set the save and reboot flows touched, which is exactly `0x78000` and
-`0x78200`.
+## Reset, flashing and telemetry
 
-The read path retries a failed word read twice before reporting an error. The
-reference driver read each word once; retrying keeps one flaky controller
-response from failing a boot load or a save's read-back, while a controller
-that stops signalling DONE still latches out further commands. CDC exposes no
-raw erase/program command: only completing every key in calibration, or the
-Fn+R/`cfg clean` clear, can write.
-Fn+R previews `RESET`; release opens `RESET?` with full-brightness green Y/red N.
-After all keys are released, a fresh Y press invokes the bounded clear operation;
-N cancels without erasing. Pre-held Y cannot confirm and simultaneous Y/N cancels.
-Both pages must be blank or recognizable HKC1 records before any erase; the
-older slot is cleared first and each erase is read back. Unknown contents or
-controller errors stop clearing. Empty pages are skipped. Successful clearing
-removes saved calibration and restores application defaults on neutral input;
-it does not erase factory/serial data or reboot USB. See [RESET](FN_MENU.md#reset-and-flash-boundaries).
+Fn+R previews RESET and opens RESET?; after neutral, Y confirms and N cancels.
+Both owned pages are erased and CMD5-verified, older first. Corrupt contents
+can be reset within those slots; controller errors stop the operation.
+Defaults apply after release and save automatically. Two-page reset is not
+atomic: interruption may retain the newest record or leave defaults, but
+older-first erasure prevents stale-record resurrection.
 
-The original 1 KiB reservation at image offsets 0x1fc00/0x1fe00 remains FF.
-Although readback establishes physical application base 0x8000, we do not
-modify its image/checksum bytes for persistence. Bootloader, factory/security,
-secondary ASIC and the serial-number pages remain outside write scope.
+Explicit CDC `cfg clean` performs the same destructive custom reset and needs
+a fresh valid scan. Its ACK confirms erase, not the neutral gate. Neither
+path touches Razer data. Recover deleted calibration by recalibrating or using
+a private backup.
+
+GUI offsets 1144…1147 report valid/pending/fault flags, slot and low 16 bits of
+whole-profile generation; 1136/1140 retain calibration generation/error.
+See [telemetry](TELEMETRY.md). GUI/CLI flashing preserves compatible records
+by default; CLI `--reset-settings` explicitly clears them. Stock firmware may
+reclaim this custom tail space.
 
 ## Validation
 
-```sh
-cmake --preset host-tests
-cmake --build --preset host-tests
-ctest --preset host-tests
-cmake --preset huntsman
-cmake --build --preset huntsman
-# Optional offline ARM dependencies and original reference required:
-python3 -B tools/test_calibration_arm.py \
-  build-keyboard-fn-menu/huntsman_firmware.elf --reference /path/to/original.bin
-```
+Native tests cover all layouts, packed fields, unchanged-state wear,
+neutral debounce, settings/calibration preservation, corruption, controller
+faults and all 512 byte-cut points in an inactive-page write.
+Compiled ARM tests drive Fn+Enter/Fn+J, CDC thresholds/velocity, reboot,
+blank-ECC initialization, corrupt-page recovery and HKC1 migration.
+The controller model rejects commands outside the tail pages and compares
+erase/program transactions against executed original code, separately
+checking the added CMD5 verification.
 
-Native tests cover simultaneous 61/62/65-key holds at 8 kHz, independent
-movement/release, timing, layouts, rollover, noise, cancellation, CRC damage,
-unexpected page contents, error handling and all 512 byte-cut points in an
-interrupted inactive-page write. ARM tests compare exact register writes with
-executed original erase/program instructions, then exercise compiled Fn+C,
-CDC commands, complete sequential and parallel simulated 61-key acquisition,
-save and reboot loading.
-These tests never access the real keyboard. See [calibration operation](CALIBRATION.md)
-for physical validation status and limitations.
-
-No Fn action changes this record format or write boundary: every Fn-menu choice
-(brightness, trigger points, MIDI layout, velocity start or mode) is RAM-only
-and returns to its default at the next power cycle. Calibration is the only
-device state that outlives a power cycle, and a trigger commit uses the loaded
-calibration bounds without changing the stored record.
+Run `python3 tools/run_tests.py` with the documented offline dependencies and
+reference fixture. Modeled interruption tests are not physical endurance or
+power-cut qualification; see [validation limits](VALIDATION.md).

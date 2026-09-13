@@ -31,7 +31,8 @@ upstream exactly. The ROM wrapper source is **not compiled**.
 The controller-based dumper uses the SDK's flash
 register definitions and status constants, with a board-owned bounded
 read-command adapter checked against the original register transactions.
-Calibration uses an independent two-tail-page erase/program adapter, also
-compared with executed original instructions. No SDK ROM-call erase/program
+Settings and calibration share an independent two-tail-page erase/program
+adapter, compared with executed original instructions and supplemented with
+CMD5 erased-page verification. No SDK ROM-call erase/program
 or FFR-write routine is linked. Upstream changelogs and license Markdown remain
 unchanged snapshots of these pinned revisions, not project status documents.

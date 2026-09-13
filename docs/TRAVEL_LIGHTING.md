@@ -2,7 +2,7 @@
 
 Travel lighting is included in the `huntsman`
 application. The recovered controller/mapping details below remain applicable;
-see [current validation](CALIBRATION.md#validation-status).
+see [current validation](VALIDATION.md).
 User calibration supplies independently saved per-key endpoints, but
 optical counts are not a validated linear millimeter or force measurement.
 Travel normalization and effect composition live in `firmware/app`.
@@ -55,7 +55,7 @@ linear millimeter measurement or perceived-brightness curve.** The existing
 scanner attempts the original ASIC endpoint calibration. If rejected, it keeps
 production defaults 2240/3360 from `0x20016464`. Using defaults may leave
 dark/saturated portions of the physical stroke. Saved user calibration overrides these endpoints
-after startup settling; see [validation limits](CALIBRATION.md#validation-status).
+after startup settling; see [validation limits](VALIDATION.md).
 
 Production additionally reads CRC-checked persistent calibration blocks
 (`0x2001ad30`: flash offsets `0x49000`, `0x49600`, `0x49c00`) and applies
@@ -192,25 +192,8 @@ As before, text replies are suppressed while the binary stream owns CDC.
 
 ## Validation
 
-- 262,144 raw uint16/PWM comparisons: monotonic linear rounding, saturation,
-  endpoints and invalid values. No hidden binary key threshold.
-- 188 single-sensor dark isolations and 36 mixed frames: the application's entire
-  204-byte LED output equals the executed production ARM renderer for all
-  three layouts, including patched FN/right-Alt and JIS secondary channels.
-- Actual compiled SDK I2C interrupt transfers compared byte-for-byte with
-  executed production init/maintenance programs. Synthetic optical DMA runs
-  concurrently through the real keyboard engine and SDK USB callbacks.
-- Automatic startup, 400 kbit/s divider/pins, JIS-only secondary, continuous
-  white scaling, off/on, invalid/stale/stop blanking and neutral host reports.
-- Held transfers retain their original payload while newer scans arrive;
-  the next upload uses the newest frame.
-- NACK and stalled-transfer injection: one latched fault, no retry/GPIO cycle,
-  continued optical scans and responsive CDC, no reset intent.
-- Compiled MIDI checks verify the default note-lighting mask, live remapping,
-  unchanged attack velocity/aftertouch and octave-control overlays.
-- USB startup/PHY/alignment/updater checks pass. Additional NKRO/editor and
-  raw-stream regression targets are listed in [building](BUILDING.md).
-
-The tests above are software/register-model results, not measurements of
-electrical timing, keycap illumination, physical travel, power draw or
-interrupt latency on the connected board.
+[Reference and ARM tests](BUILDING.md) compare sensor/channel maps, init and
+maintenance transactions, scaled/inverse frames and SDK I2C uploads.
+Fault injection checks stalled/NACK transfers, immutable pending data and
+continued USB/scanning. These are register models, not measurements of light,
+travel or power; see [Validation](VALIDATION.md).

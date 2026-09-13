@@ -11,11 +11,10 @@ events separated from millisecond service time.
 
 ## Why the Huntsman does not require FreeRTOS
 
-The complete Huntsman link uses 24328 of 24576 SRAMX bytes, leaving **248**.
-USB has its own 16384-byte region with 15488 used, and the interrupt/main
-stack has a separate 8192-byte reservation. Calibration state is explicitly
-placed in writable application-image RAM. These are distinct memory budgets;
-unused image space is not automatically an available RTOS heap.
+SRAMX is limited to 24 KiB; USB has a separate 16 KiB region and the stack
+an 8 KiB reservation. Calibration and persistence state use explicitly
+initialized application-image RAM. Check the linker's current usage report:
+unused image space is not automatically an RTOS heap.
 
 FreeRTOS would require task control blocks and separate task stacks, including
 its idle task. Static allocation removes the heap requirement, not those

@@ -5,7 +5,7 @@ physical key positions, memory figures and USB/GUI framing here describe the
 Huntsman board. New platforms use the same engine through the [porting API](PORTING.md).
 
 Current Huntsman application: `huntsman` (alias `keyboard-fn-menu`). See
-[current validation](CALIBRATION.md#validation-status) and
+[current validation](VALIDATION.md) and
 [filter design](MIDI_FILTER.md).
 This is application behavior, not a claim that the stock firmware implements
 MIDI. Existing production-derived sensor/LED maps and board initialization remain
@@ -39,11 +39,10 @@ main loop → queued note/pedal events first → latest wheels → changed press
 
 The Huntsman MIDI state is 1540 bytes, with fixed capacities and no dynamic allocation.
 Other boards select their sensor, light-frame and HID capacities at build time.
-The current application uses 24328/24576 bytes SRAMX,
-15488/16384 bytes USB SRAM, and a separate 8192-byte stack. The reserved final
-1024 application-image bytes remain unused. Calibration state uses 1324 bytes
-of writable application-image RAM, separate from velocity/MIDI state. The
-firmware binary remains 128 KiB.
+The board has separate 24 KiB SRAMX, 16 KiB USB SRAM and 8 KiB stack budgets;
+the linker reports current usage. Calibration and persistence state use
+explicitly initialized application-image RAM. The final 1 KiB image reservation
+stays unused; the firmware binary is 128 KiB.
 
 ## Mode and key routing
 
@@ -63,8 +62,8 @@ performance-mode field, distinct from its Fn editor-mode field.
 Fn, Left Ctrl/Windows/Alt and Right Alt/Ctrl are reserved MIDI controls.
 Right Alt/Ctrl decrement or increment a signed octave offset once per down
 edge, limited to −10…+10; Fn suppresses these edges.
-Simultaneous opposite edges cancel. The offset survives mode switches but resets
-on reboot. Transposition is applied when a strike starts. A held or pending
+Simultaneous opposite edges cancel. The offset survives mode switches and reboot
+after automatic save. Transposition is applied when a strike starts. A held or pending
 strike keeps its latched note even if the octave changes later. Out-of-range
 transposed notes are silent, not wrapped or clamped to another pitch.
 
@@ -139,8 +138,8 @@ of `(level-1) * 127 / 9` and scale the remaining range:
 measured dynamics at the low end while guaranteeing a minimum attack for
 quiet or partially-travelled presses. Fn+V opens the ten-step editor; the
 value applies to every note key (including Jankó mode), is reported by
-`menu status` as `velocity_start=1..10`, and is RAM-only like the rest of the
-Fn menu, so a power cycle returns it to level 1.
+`menu status` as `velocity_start=1..10`, and persists automatically with the
+other committed Fn-menu settings.
 
 Fn+J toggles the built-in **Jankó layout**, a replacement note
 mapping for the letter, number and punctuation rows: two whole-tone rows
@@ -161,7 +160,7 @@ mapping is not modified; leaving the layout restores it exactly. The
 root/scale filter still applies to Jankó notes, and **Fn+Left Shift is
 ineffective while the layout is active**: the lower rows always play.
 
-Fn+Left Shift toggles a `lower_muted` flag via the shared preview/release menu; the flag is RAM-only like the rest of the Fn menu.
+Fn+Left Shift toggles a `lower_muted` flag via the shared preview/release menu; the flag persists with the other committed Fn-menu settings.
 The layout setup caches the Caps/Shift rows in a sensor bitmap through the
 board's `keyboard_lower_group` query. Huntsman uses nine bytes and physical
 IDs 0x1e..0x39, including ISO/JIS extras; the application does not assume those
@@ -198,18 +197,23 @@ does not normalize velocity. A Note On with velocity zero has Note Off semantics
 so the smallest strike is encoded as velocity 1. Release velocity is fixed at
 zero; no release-slope measurement is claimed.
 
-Each sensor has five pending-note slots indexed by a shared modulo-five scan
-phase, matching the raw engine's five-frame completion pipeline. A strike latches
-its transposed note into that phase slot. Five actual scan frames later, the
-matching raw velocity result completes and the MIDI Note On is queued. This is
-0.625 ms only if the hardware actually returns 8000 frames/s.
+Each sensor has five pending-note slots allocated on press edges. A strike
+latches its transposed note into the first free slot. Notes are queued when
+that sensor's velocity window closes: at ten samples or on the bottom-out
+condition, not after a fixed delay. The 8000 Hz velocity assumption is not a
+measurement of acquisition cadence.
 
 A per-key pointer and release-bit mask retain releases that occur before the
 velocity fit completes. Such a short tap emits an ordered Note On followed by
 Note Off at completion; it is not silently discarded. Its synthesized sound may
 be very short or inaudible. A release and repress before the older fit completes
-use separate phase slots. Fits never borrow samples or velocities from another
-sensor. Invalid samples/config edits cancel all unfinished strikes.
+use separate slots; the newest press restarts the fit, and superseded taps use
+that same sensor's completed fit when the window closes. Fits never borrow
+samples or velocities from another sensor. A sixth overlapping strike cannot
+be stored: it increments the MIDI error counter, cancels pending voices and
+starts the cleanup sweep, then requires neutral input to re-arm. This uses the
+same fail-safe as event-queue overflow rather than silently dropping a strike.
+Invalid samples/config edits cancel all unfinished strikes.
 
 ## Polyphonic aftertouch
 
@@ -313,31 +317,15 @@ initialization. Existing `light off`, invalid/stale frame blanking and transfer
 ownership still take precedence.
 
 Per-key note edits are acknowledged over CDC and invalidate held output, just
-like threshold edits. They are **RAM-only**. Version-2 host JSON includes note
-mappings alongside threshold pairs; it does not save transient mode/octave.
-Primary stock settings and serial-number data remain untouched. Calibration
-endpoints, unlike mappings, persist in two verified unused tail pages. The
+like threshold edits. Both persist in complete device snapshots after neutral
+and 250 ms without changes. Version-2 host JSON also exports mappings and
+threshold pairs, but not mode/octave. Primary stock settings and serial-number
+data remain untouched. Calibration is included in every tail-page snapshot. The
 calibration overlay takes priority while collecting keys, with independent
 amber holds and green completion. See [storage](DEVICE_CONFIG_STORAGE.md).
 
 ## Validation boundaries
 
-Native tests cover all defaults, threshold equality, exact velocity conversion,
-short/overlapping taps, many independent voices across three layouts, duplicate
-notes, transposition, out-of-range muting, reserved controls, busy USB, queue
-overflow, mode switching during cleanup and invalidation. Existing raw tests
-also cover bottom-out window normalization/clamps and newest-press window ownership.
-
-Linked-ARM tests execute optical DMA, actual USB-MIDI packet submission and
-completion, mode toggling/hold suppression, Note On velocity 23 for a known
-sample slope, poly pressure, latched Note Off, mapping ACK/rejection, USB-reset
-cleanup, HID isolation/recovery and CDC transport at both modeled speeds.
-Tk/PTY tests exercise actual GUI actions against a simulated serial peer.
-
-These do not establish physical sampling frequency, scan execution-time margin,
-LED appearance, audible behavior or host DAW compatibility. Physical application
-readback and calibration/save verification do not establish comprehensive
-DAW compatibility.
-
-MIDI semantics reference: the MIDI Association's
-[zero-velocity Note On discussion](https://midi.org/community/midi-specifications/zero-velocity-note-on).
+See [Validation](VALIDATION.md) and [Building](BUILDING.md). Native and compiled
+tests cover shared pitches, short/overlapping strikes, packet ordering,
+controls, backpressure, overflow cleanup, mappings and lighting.

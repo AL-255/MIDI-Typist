@@ -16,8 +16,8 @@ stream is active, so a host selects `stream off` before reading them.
 | Stream | Magic | Record | Rate | Selected by | Consumed by |
 | --- | --- | --- | --- | --- | --- |
 | GUI snapshot | `HKG` + NUL | 1152 bytes, latest-only | ≤ 1 per 33 ms | `stream gui` | `tools/keyboard_gui.py` |
-| Per-key samples | `HKL1` | 20 bytes, lossless | 8 ksps while a key is active | `stream key N [SESSION [SENSOR]]` | `tools/last_key_stream.py`, GUI hold mode |
-| Whole-scan frames | `HKS1` | 160 bytes | one per scan frame (~8 kHz) | `stream on` | `tools/decode_scan_stream.py` |
+| Per-key samples | `HKL1` | 20 bytes, loss-detecting | one per hardware scan | `stream key N [SESSION [SENSOR]]` | `tools/last_key_stream.py`, GUI hold mode |
+| Whole-scan frames | `HKS1` | 160 bytes | one per scan frame before host-rate drops | `stream on` | `tools/decode_scan_stream.py` |
 | Flash dump | `HBD1` | 128 bytes | one per `dump read` request | `dump read ID ADDRESS` | `tools/dump_flash.py` |
 | Text replies | — | newline-terminated ASCII | on request | `version`, `menu status`, `status`, `light status`, `help` | operators, ARM audits |
 
@@ -57,27 +57,39 @@ only the newest state matters. 1152 bytes, little-endian, no faster than one per
 | 1035 | u8 | MIDI cleanup pending, 0 or 1 |
 | 1036 | 65 × u8 | base note per sensor; 255 = unmapped |
 | 1101 | 3 bytes | zero padding |
-| 1104 | u32 | MIDI queue-overflow count |
+| 1104 | u32 | MIDI event-queue or pending-strike overflow count |
 | 1108 | u32 | performance-mode change count |
-| 1112 | 36 bytes | [calibration state, completion bitmap, generation/error and reserved bytes](CALIBRATION.md#gui-protocol) |
+| 1112 | 32 bytes | [calibration state, completion bitmap and generation/error](CALIBRATION.md#gui-protocol) |
+| 1144 | u8 flags | whole-profile storage: valid snapshot=1, save pending=2, fault=4 |
+| 1145 | u8 | active storage slot 0/1; 255 means none |
+| 1146 | u16 | low 16 bits of complete-profile generation (wraps) |
 | 1148 | u32 | checksum: sum of the preceding 574 little-endian u16 words |
 
 Unused sensor slots are zero, including MIDI mapping padding; **active** unmapped
 slots are 255. Frames carry no version number: the constant magic and size
 identify the layout, and the build identity below records which application
 produced them. The decoder validates magic, size, checksum, reserved bytes,
-value ranges and padding, and resynchronizes by dropping bytes until the next
-magic.
+value ranges and padding. It skips pre-session bytes until the first magic;
+framing or checksum errors after acquisition fail the connection.
 
 `cfg` commands are acknowledged **in this stream**, not as text: the snapshot
 carries the request ID in field 20 and accepted/rejected in field 10, and only
 the latest acknowledgment is retained. A host therefore needs `stream gui`
 active to observe a command result, and must serialize commands.
+`cfg clean` requires a valid scan younger than 100 ms; acceptance confirms only
+the bounded, CMD5-verified erase. Settings ACKs otherwise mean applied in RAM;
+wait for storage valid with neither pending nor fault before unplugging.
+Automatic saving needs neutral input and 250 ms without settings changes.
+Outputs are released immediately on reset and defaults wait for a
+new all-keys-released frame. The host finishes configuration ACK/readback before
+switching to a capture stream.
 
 ## Per-key stream (`stream key`)
 
-Lossless 20-byte records at the scan rate (8 ksps) for one selected sensor, used
+Loss-detecting 20-byte records at the hardware scan rate for one selected sensor, used
 for keystroke capture and to reproduce the firmware's velocity fit on the host.
+The velocity calculation assumes 8000 Hz; actual acquisition cadence must be
+measured and is not specified by the packet format.
 
 | Offset | Encoding | Meaning |
 | --- | --- | --- |
@@ -86,13 +98,15 @@ for keystroke capture and to reproduce the firmware's velocity fit on the host.
 | 8 | u32 | record sequence, starting at 0 |
 | 12 | u16 | raw sample of the selected sensor |
 | 14 | u8 | selected sensor index |
-| 15 | u8 flags | bit 0: first record of the session; bit 2: invalid sample or profile change |
+| 15 | u8 flags | bit 0: first record; bit 1: stream overflow/transport fault; bit 2: invalid sample or profile change |
 | 16 | u16 | trigger threshold from the command |
 | 18 | u16 | checksum: sum of the preceding 9 little-endian u16 words |
 
 Records are never dropped silently: a full ring, an unready CDC endpoint or a
 USB reset stops the session and sets the fault flag rather than losing samples.
 See [the per-key stream](LAST_KEY_STREAM.md).
+The GUI's 16384-sample host buffer likewise fails on overflow, rather than
+silently deleting samples used for a velocity waveform.
 
 ## Whole-scan stream (`stream on`)
 
@@ -114,7 +128,9 @@ behind.
 
 ## Flash dump (`dump read`)
 
-Read-only window on the application's flash, one 64-byte chunk per request. It
+Read-only main-flash window (including bootloader, application and stock user
+storage), one 64-byte chunk per request. Addresses are bounded below both
+`0x7f400` and the detected flash size minus 10 KiB. It
 issues only the controller's read command and can never erase or program.
 
 | Offset | Encoding | Meaning |
@@ -126,7 +142,7 @@ issues only the controller's read command and can never erase or program.
 | 32 | 4 × u32 | per-word read status; non-zero marks that 16-byte block invalid |
 | 48 | 64 bytes | data, zero-filled for a failed block |
 | 112, 116 | u32 each | part ID, die ID |
-| 124 | u32 | checksum of bytes 0…123 |
+| 124 | u32 | reflected CRC-32 of bytes 0…123 (polynomial 0xEDB88320, initial/final XOR 0xFFFFFFFF) |
 
 ## Text replies
 
@@ -138,8 +154,8 @@ Newline-terminated ASCII, available only while no binary stream is active.
 | `menu status` | Fn/menu state: `fn`, legacy editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `build`, `key`, `scale_name` |
 | `status`, `scan status` | `SCAN phase`, `profile`, `count`, `transfers`, `frames`, `markers`, `errors`, `settled`, `valid`, `calibrated`, `stream_dropped`, optional `fault` |
 | `light status` | `LIGHT phase`, `on`, `profile`, `transfers`, `frames`, `errors`, `calibrated`, `count`, optional `fault` |
-| keyboard/config changes | `KEYS host`, `fn`, `mode`, `act`, `rapid`, `enabled`, `saved`, `revision`, then `RAW enabled`, `armed`, `valid`, `revision` |
-| `help` | Command summary, including `stream ...`, `cfg ...`, `dump read`, `menu status` |
+| keyboard/config changes | `KEYS host`, `fn`, `mode`, `act`, `rapid`, `enabled`, `saved`, `revision`, then `RAW enabled`, `armed`, `valid`, `revision`; raw status notes automatic save after neutral |
+| `help` | Command summary, including `stream ...`, `cfg ...`, `dump read`, `menu status`; RAlt/RCtrl are octave −/+ |
 
 `menu status` and `version` are the record of what the keyboard currently holds,
 so hosts and audits read them instead of guessing from the binary streams.
@@ -150,9 +166,10 @@ so hosts and audits read them instead of guessing from the binary streams.
   a session, the scan stream a sequence and an optical tick; none is wall time.
 - Historical samples. The GUI stream is latest-only and the scan stream is
   rate-limited by the host's consumption.
-- Serial numbers, primary settings, calibration-flash dumps or any factory data.
-  `dump read` is bounded to the application's window and never returns the
-  protected tail of flash.
+- Private flash contents in ordinary scan/GUI telemetry. Explicit `dump read`
+  requests can return bootloader and user-storage contents, including calibration
+  slots and serial data; treat dumps as private. Security/PFR, ROM, MMIO and
+  secondary-ASIC storage are outside its read boundary.
 - Host-side interpretation: velocity is computed on the keyboard, and the host
   reproduces the same window from the per-key stream instead of rescaling it.
 

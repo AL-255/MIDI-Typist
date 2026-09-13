@@ -86,7 +86,7 @@ endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.
 
 The complete application builds without the updater, extraction or private
-device data. All twelve native suites pass. See [validation status](CALIBRATION.md#validation-status)
+device data. The 14 native suites pass. See [validation status](VALIDATION.md)
 for the hardware boundary. Newlib may emit linker warnings about unimplemented
 `_close`, `_lseek`, `_read` and `_write`; those functions are absent from the
 final linked image after garbage collection. CDC debug output uses the
@@ -94,11 +94,11 @@ application's USB transport, not libc file I/O.
 
 ## Tests that need no original firmware or device
 
-The twelve CTest suites cover application portability and architecture boundaries,
+The 14 CTest suites run in parallel and cover application portability and architecture boundaries,
 core logic, raw keyboard/velocity, MIDI state and
 interruptible text lighting,
 Fn menu/threshold conversion, parallel calibration/storage, GUI model/PTY transport, image reservation,
-scan display, compact captures and flash-dump framing.
+scan display, compact captures, offline flasher validation and flash-dump framing.
 Neither the updater EXE nor proprietary extracted firmware is needed for
 these tests or the application build.
 
@@ -128,6 +128,26 @@ The GUI runtime itself has no PySerial, Pillow or other pip dependency.
 
 ## Optional reference-backed audits
 
+For the complete offline suite, install the optional Python dependencies above
+plus Tk and Xvfb, then run:
+
+```sh
+python3 tools/run_tests.py
+```
+
+This configures/builds the native and complete `huntsman` targets, then runs
+19 independent audit jobs (including all 14 native CTest suites) with up to
+eight workers. It includes original-reference comparisons, linked ARM USB,
+optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated PTYs.
+The total deadline, including builds, is **300 seconds**; failures, missing
+dependencies and timeouts fail the command, never silently skip coverage.
+Use `--jobs N` to control parallelism or `--group usb` for a focused run.
+Per-job output is in the ignored `build-test-logs/` directory.
+
+Each audit owns its emulator or PTY. Native tests include the synthetic port;
+the simulator preset is a separate runnable example, not additional hardware
+coverage. See [Validation](VALIDATION.md) for what the suite establishes.
+
 The original primary application is not distributed. If you already have a
 lawfully obtained extraction, keep it read-only. The default reference is the
 sibling path `../extracted_firmware/raw/Talia_T1_60%_7203_App_FW_v2.1.0_E888780F.bin`.
@@ -145,7 +165,8 @@ cmake --build --preset huntsman --target audit-menu
 These execute compiled ARM scan/MIDI/LED paths using synthetic optical replies
 and recovered reference tables, and check selected production-derived mappings.
 Some tools pin the production hash; do not substitute another image silently.
-The lighting target includes the keyboard audit. Running those targets without
+Each alias runs only its named audit; lighting does not rerun keyboard or USB.
+Use the complete runner above to cover all of them once. Running reference-backed targets without
 the separate reference is expected to fail; it is not a build dependency.
 
 ## GUI access and troubleshooting
@@ -174,13 +195,12 @@ and from `tools/flash_application.py`; both build on `tools/firmware_flasher.py`
 
 No build/test target flashes or resets hardware. Use only the supplied updater's
 reviewed application-only path after explicit authorization and record the exact
-binary hash. The updater is a separate sibling project, not bundled here.
+binary hash. The updater is pinned as the submodule described above.
 Do not overwrite bootloader, factory/security data, primary stock settings or
-secondary-controller regions. Calibration writes only the two documented tail
-pages. `tools/flash_application.py` follows the
-flash with the cold boot: it sends `cfg clean` over CDC so the new build starts
-from its defaults instead of inheriting the previous build's stored state; pass
-`--keep-calibration` to keep the stored calibration deliberately. Do not use manual forced bootloader recovery as a
+secondary-controller regions. Settings/calibration write only the two documented tail
+pages. Flashing preserves compatible records by default; firmware initializes
+missing/corrupt saves. Use `--reset-settings` only to explicitly clear custom
+settings and calibration. Do not use manual forced bootloader recovery as a
 routine test. Application updates are authorized for this device; that does
 not authorize writes outside the application and documented calibration slots.
 Build validation does not establish comprehensive MIDI/DAW compatibility.

@@ -92,7 +92,7 @@ before submission. Board code must not apply that global scale a second time.
 [keyboard_app.h](../firmware/app/include/keyboard_app.h) defines the lifecycle
 and storage hooks. Storage callbacks own erase sizes, slot addresses, record
 formats, device identity and bounds validation. The shared application requests
-load/save/clear operations; it cannot erase a flash address. Huntsman's HKC1
+load/save/clear operations; it cannot erase a flash address. Huntsman's MTP1 whole-profile
 serializer and two-page journal remain entirely inside its board directory.
 
 ## Scheduling and outputs

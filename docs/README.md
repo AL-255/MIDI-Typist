@@ -30,10 +30,10 @@ Shared application contracts are documented separately from those wire formats.
 - [Device telemetry](TELEMETRY.md): every stream, field, rate and text reply the
   application reports, and how hosts consume them.
 - [Root/scale selection](MIDI_SCALES.md): portable interval tables, selectors,
-  shared note/LED filtering, modal safety and RAM-only selection state.
+  shared note/LED filtering, modal safety and automatically persisted selection state.
 - [Parallel calibration](CALIBRATION.md): operation, state machine, telemetry fields
   and validation limits.
-- [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, calibration
+- [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, whole-profile
   record layout and write bounds, cold boot, validation, recovery limits and
   serial-number protection.
 - [Flash acquisition](FLASH_DUMP.md): read-only dump commands and private backups.
@@ -54,12 +54,8 @@ remove obsolete claims in place; do not append development snapshots. Keep
 unverified behavior explicit. This is enforced as a contributor rule in
 [AGENTS.md](../AGENTS.md). Vendored SDK documentation retains its upstream content.
 
-## Current evidence boundary
+## Validation and documentation builds
 
-The latest build is validated by native tests and compiled ARM/register models,
-including comparison with original editor instructions and number-row colors.
-The application passes computer-initiated flashing, matching full-image
-readback, live CDC/scan health and unchanged calibration-page comparison.
-See [validation limits](CALIBRATION.md#validation-status).
-Tests do not establish physical LED appearance, 8 kHz acquisition, calibrated
-force/distance or comprehensive USB/DAW compliance, and do not flash hardware.
+[Validation](VALIDATION.md) distinguishes automated coverage from physical
+checks. [Documentation builds](DOCUMENTATION.md) explains strict Sphinx checks
+and GitHub Pages deployment.

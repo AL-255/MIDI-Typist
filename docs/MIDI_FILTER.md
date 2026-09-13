@@ -7,7 +7,7 @@ No device access or reset is needed for the offline checks here.
 
 ## Mapping
 
-The [README](../README.md#use-the-keyboard) contains the default 43-key map. The upper
+The [user manual](../USER_MANUAL.md#default-notes-two-overlapping-playing-ranges) contains the default 43-key map. The upper
 row spans Tab=C5 (72) through backslash=B6 (95); the lower row spans Left
 Shift=C4 (60) through apostrophe=F#5 (78). These ranges intentionally overlap:
 for example, Tab and M both send C5. Existing duplicate-note ownership rules
@@ -32,7 +32,8 @@ press threshold) and grows until one of:
 - ten readbacks are collected, or
 - a readback crosses below the shared **bottom-out threshold** of 1500; that
   sample closes the window and is excluded, so very fast presses fit on as
-  few as two readbacks.
+  few as two readbacks. If only the trigger has been retained, include the
+  next readback even when below 1500, ensuring one interval.
 
 Decreasing ADC values indicate increasing press depth, so positive differences
 mean positive press velocity. Intervals use `1 / layout.sample_hz` seconds;
@@ -42,7 +43,7 @@ raw differences is equivalent to filtering their counts/second rates.
 The speed is the total drop divided by the interval count — `d(x)/count` —
 multiplied by the declared scan rate. Windows longer than five samples
 additionally apply the median interval filter: sort the differences, define
-their median as the midpoint of the two middle values, and discard exactly one
+their median as the middle value (or mean of the two middle values), and discard exactly one
 interval with the largest absolute distance from that median (earliest wins
 ties). Shorter windows skip the filter entirely, so their estimate is exactly
 the unfiltered mean. This deterministic rule applies even when no strong
@@ -105,22 +106,6 @@ All channels come from the recovered per-profile LED map.
 
 ## Build and verification
 
-```
-cmake --preset host-tests
-cmake --build --preset host-tests
-ctest --preset host-tests
-cmake --preset huntsman
-cmake --build --preset huntsman
-# Requires the separate read-only production reference and audit dependencies:
-cmake --build --preset huntsman --target audit-keyboard
-```
-
-Tests cover all 43 defaults, Left Shift's two roles, an actual USB-MIDI Note On
-with filtered attack velocity, high/low interval outliers at every position,
-deterministic ties, fractional means and normalization limits. Full-history
-randomized tests retain 16640 per-key scan frames and validate concurrent and
-overlapping window completion. Octave LED tests cover both signs and all ten
-magnitudes across ANSI, ISO and JIS, both phases and zero/keyboard mode. Text
-tests cover mode-name priority and release cancellation. Hardware visibility
-and filtered playing response are player checks,
-not conclusions from these models. See [hardware validation limits](CALIBRATION.md#validation-status).
+See [Building](BUILDING.md) and [Validation](VALIDATION.md). Coverage includes
+all default mappings, simultaneous notes, short/long windows, outliers, tie
+ordering, fractional means and both octave-indicator phases across layouts.

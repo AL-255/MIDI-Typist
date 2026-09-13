@@ -106,6 +106,10 @@ device disconnect, output stall or report timeout—still exit nonzero. EOF in
 repeat replay is also an error, not a successful end of the ongoing capture.
 Sequence/checksum validation continues through the unprinted held/released
 reports; no intermediate reports are dropped or skipped by the receiver.
+The GUI's pinned-sensor capture also checks sequence/checksum continuity; its
+separate 16384-sample host buffer fails the connection on overflow. It does not
+silently delete samples to keep a waveform running. See
+[GUI hold mode](KEYBOARD_GUI.md#keystroke-hold-mode).
 
 Key labels default to the ANSI layout verified on this board. Use `--layout
 iso` or `--layout jis` for other physical layouts; HKL1 does not carry layout
@@ -163,42 +167,14 @@ unobserved internal ASIC conversions.
 
 ## HKL1 wire format
 
-All integers are little-endian. Every report is 20 bytes.
-
-| Offset | Size | Meaning |
-| --- | --- | --- |
-| 0 | 4 | ASCII `HKL1` |
-| 4 | 4 | Host-selected session nonce; manual command default 0 |
-| 8 | 4 | Sequence, starts at 0; wraps modulo 2^32 |
-| 12 | 2 | Selected raw value, or 0 before selection |
-| 14 | 1 | Raw sensor index 0..64, or 255 before selection |
-| 15 | 1 | Flags: bit 0 START, bit 1 OVERFLOW/data loss, bit 2 invalid scan/layout |
-| 16 | 2 | Accepted threshold |
-| 18 | 2 | Sum of preceding nine uint16 words, modulo 65536 |
+[Telemetry](TELEMETRY.md#per-key-stream-stream-key) defines the 20-byte
+little-endian record and checksum. Sequence starts at zero and wraps at 2^32.
+Before selection the sensor is 255 and raw value zero. Session defaults to
+zero for manual commands; host tools supply a nonce.
 
 ## Build and validation
 
-```sh
-cmake --preset host-tests
-cmake --build --preset host-tests
-cmake --preset huntsman
-cmake --build --preset huntsman
-ctest --preset host-tests
-cmake --build --preset huntsman --target audit-keyboard audit-lighting
-```
-
-Current host tests cover the startup banner being flushed before any input,
-key identification, exactly 20 readings after the trigger, early EOF and
-key-switch warning/restarts with fresh velocity windows, and exit without waiting for the input to close. They
-also cover velocity-window sign/scaling, flat/noisy inputs, exclusion of
-the trigger and later samples, repeat release boundaries, independent repeated
-velocity windows, two complete captures in a still-running process terminated
-only by SIGINT, loss detection between captures, fragmentation,
-session nonce negotiation over a pseudo-tty, tty restoration, sequence wrap,
-corruption/gaps/truncation, report timeout and fatal overflow with stdout
-deliberately blocked. Compiled ARM/SDK tests cover threshold crossings,
-simultaneous presses, release tracking, every synthetic sample at FS/HS,
-mode switches with an immutable old USB packet, device queue overflow and
-USB reset fail-stop behavior, and actual CDC command parsing through the
-optical scan path. Existing whole-keyboard, USB, FN and lighting regressions
-remain part of the audit. None of these tests opens or flashes the keyboard.
+Use the complete `huntsman` preset and matching host tools. See
+[Building](BUILDING.md) and [Validation](VALIDATION.md). PTY and ARM tests cover
+session negotiation, trigger/rearm, mixed-key restart, velocity windows,
+sequence loss, overflow, timeouts and GUI stream switching.
