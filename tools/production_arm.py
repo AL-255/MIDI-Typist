@@ -28,7 +28,7 @@ class ProductionArm:
         self.cpu.mem_write(0x20000000, image)
         self.stubs = {}
         self.trace = deque(maxlen=16)
-        self.cpu.hook_add(UC_HOOK_CODE, self.code)
+        self.hooked_stubs = set()
         # Execute the actual scatter-load table/decompressor, not inferred
         # layouts or tables from a previous reconstruction.
         for offset in range(0x1e584, 0x1e5c4, 16):
@@ -54,6 +54,11 @@ class ProductionArm:
             cpu.reg_write(UC_ARM_REG_PC, cpu.reg_read(UC_ARM_REG_LR))
 
     def call(self, entry, *args):
+        # Callers install boundary stubs after construction. Hook those
+        # addresses only; ordinary production instructions execute natively.
+        for address in self.stubs.keys() - self.hooked_stubs:
+            self.cpu.hook_add(UC_HOOK_CODE, self.code, begin=address, end=address)
+            self.hooked_stubs.add(address)
         self.trace.clear()
         self.cpu.reg_write(UC_ARM_REG_SP, 0x04007f00)
         self.cpu.reg_write(UC_ARM_REG_LR, RETURN | 1)

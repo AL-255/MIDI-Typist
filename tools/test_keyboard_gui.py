@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Offline GUI model and real POSIX PTY transport tests (no keyboard access)."""
+"""Offline GUI model and bidirectional SysEx transport tests (no keyboard access)."""
 import copy
 import os
-import pty
+import queue
+from unittest.mock import patch
+import midi_sysex as sx
 import select
 import shutil
 import struct
@@ -11,7 +13,7 @@ import threading
 import time
 import unittest
 from keyboard_gui_model import MAGIC, parse_build, SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
-from keyboard_gui_transport import Connection, find_cdc_device
+from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
 
 
 def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
@@ -38,9 +40,12 @@ def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, veloc
 
 
 class Device(threading.Thread):
-    def __init__(self,fd,reject=False,mismatch=False,silent=False,key_rate=.000125):
+    def __init__(self,fd=None,reject=False,mismatch=False,silent=False,key_rate=.000125):
         super().__init__(daemon=True)
         self.fd,self.reject,self.mismatch,self.silent = fd,reject,mismatch,silent
+        self.inbox = queue.Queue()
+        self.outbox = queue.Queue()
+        self.session = None
         self.stop_event = threading.Event()
         self.commands = []   # configuration commands (cfg ...)
         self.queries = []    # console queries such as `version`
@@ -49,7 +54,7 @@ class Device(threading.Thread):
         self.flags,self.ack,self.result,self.sequence = 7,0,0,0
         self.error = None
         self.calibration_state = 0
-        self.build = 'v0.1.0-RZ03-0499'  # console build identity
+        self.build = 'v0.1.0-RZ03-0499 git='+'a'*40+' state=dirty'
         self.raw = None  # optional 61-value override for the next snapshots
         self.velocity_start = 1
         self.performance_mode = 0
@@ -60,45 +65,55 @@ class Device(threading.Thread):
         self.key_raw = 3900            # raw value for the pinned sensor
         self.key_cb = None             # optional callable(seq) -> raw override
 
+    def send(self, data): self.inbox.put(data)
+    def receive(self, timeout):
+        try: return self.outbox.get(timeout=timeout)
+        except queue.Empty: return None
+    def close(self): pass
+    def emit(self, kind, payload=b'', sequence=0):
+        self.outbox.put(sx.encode(kind, self.session, sequence, payload))
+
     def run(self):
-        buffer = bytearray(); streaming = False; last = 0
+        streaming = False; last = 0
         try:
             while not self.stop_event.is_set():
-                if select.select([self.fd],[],[],.01)[0]:
-                    buffer.extend(os.read(self.fd,4096))
-                    while b'\n' in buffer:
-                        line,_,buffer = buffer.partition(b'\n')
-                        fields = line.decode().split()
+                try: wire = self.inbox.get(timeout=.001)
+                except queue.Empty: wire = None
+                if wire:
+                    kind, self.session, sequence, payload = sx.decode(wire)
+                    if kind == sx.HELLO:
+                        self.queries.append(['hello'])
+                        if not self.silent: self.emit(sx.READY, b'build='+self.build.encode())
+                    elif kind == sx.CLOSE: streaming = False
+                    elif kind == sx.COMMAND:
+                        fields = payload.decode().split()
                         if fields == ['stream','gui']:
                             streaming = True; self.stream_mode = 'gui'
                         elif fields[:2] == ['stream','key']:
                             streaming = True; self.stream_mode = 'key'
-                            self.key_mode = (int(fields[3]),int(fields[2]),int(fields[4]) if len(fields) > 4 else 255)
+                            self.key_mode = (int(fields[3]),int(fields[2]),int(fields[4]))
                             self.key_seq = 0; self.key_first = True
-                        if fields == ['version']:
-                            self.queries.append(fields)
-                            if not self.silent:
-                                os.write(self.fd,b'build='+self.build.encode()+b'\r\n')
-                            continue
-                        if not fields or fields[0] != 'cfg': continue
-                        self.commands.append(fields)
-                        self.ack = int(fields[2]); self.result = 1
-                        if fields[1] == 'set':
-                            index,press,release = map(int,fields[3:])
-                            if self.reject: self.result = 2
-                            elif not self.mismatch: self.press[index],self.release[index] = press,release
-                        elif fields[1] == 'enable': self.flags = (self.flags & ~3) | int(fields[3])
-                        elif fields[1] == 'all':
-                            if self.reject: self.result = 2
-                            elif not self.mismatch:
-                                self.press = [int(fields[3])]*61; self.release = [int(fields[4])]*61
-                        elif fields[1] == 'midi':
-                            if self.reject: self.result = 2
-                            elif not self.mismatch: self.mapping[int(fields[3])] = int(fields[4])
-                        elif fields[1] == 'velocity':
-                            if not self.mismatch: self.velocity_start = int(fields[3])
-                        elif fields[1] == 'calibrate': self.calibration_state=3
-                        elif fields[1] == 'calcancel': self.calibration_state=7
+                        if fields and fields[0] == 'cfg':
+                            self.commands.append(fields)
+                            self.ack = int(fields[2]); self.result = 1
+                            if fields[1] == 'set':
+                                index,press,release = map(int,fields[3:])
+                                if self.reject: self.result = 2
+                                elif not self.mismatch: self.press[index],self.release[index] = press,release
+                            elif fields[1] == 'enable': self.flags = (self.flags & ~3) | int(fields[3])
+                            elif fields[1] == 'all':
+                                if self.reject: self.result = 2
+                                elif not self.mismatch:
+                                    self.press = [int(fields[3])]*61; self.release = [int(fields[4])]*61
+                            elif fields[1] == 'midi':
+                                if self.reject: self.result = 2
+                                elif not self.mismatch: self.mapping[int(fields[3])] = int(fields[4])
+                            elif fields[1] == 'velocity':
+                                if not self.mismatch: self.velocity_start = int(fields[3])
+                            elif fields[1] == 'calibrate': self.calibration_state=3
+                            elif fields[1] == 'calcancel': self.calibration_state=7
+
+                        if not self.silent: self.emit(sx.ACK, sequence=sequence)
                 if streaming and not self.silent:
                     if self.stream_mode == 'key' and time.monotonic()-last > self.key_rate:
                         session,threshold,sensor = self.key_mode
@@ -107,10 +122,10 @@ class Device(threading.Thread):
                         struct.pack_into('<4sIIHBBH',frame,0,b'HKL1',session,self.key_seq,raw,sensor,
                                          1 if self.key_first else 0,threshold)
                         frame[18:20] = struct.pack('<H',sum(struct.unpack('<9H',frame[:18])) & 0xffff)
-                        os.write(self.fd,frame)
+                        self.emit(sx.SAMPLES,frame)
                         self.key_seq += 1; self.key_first = False; last = time.monotonic()
                     elif self.stream_mode == 'gui' and time.monotonic()-last > .03:
-                        os.write(self.fd,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,
+                        self.emit(sx.SNAPSHOT,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,
                                                calibration_state=self.calibration_state,raw=self.raw,
                                                velocity_start=self.velocity_start,performance_mode=self.performance_mode,
                                                states=[9,9]+[1]*59 if self.calibration_state==3 else None))
@@ -127,6 +142,37 @@ def until(predicate,seconds=3):
 
 
 class Tests(unittest.TestCase):
+    def test_capture_buffer_integrity(self):
+        connection = Connection('/unused')
+        connection.key_sensor = 32
+        for i in range(SAMPLE_CAPACITY): connection.push_sample(i)
+        self.assertEqual(connection.drain_samples(sensor=31), [])
+        self.assertEqual(len(connection.samples), SAMPLE_CAPACITY)
+        with self.assertRaisesRegex(BufferError, 'overflow'):
+            connection.push_sample(1)
+        self.assertEqual(connection.drain_samples(), [])
+        connection.push_sample(3900)
+        self.assertEqual(connection.drain_samples(sensor=32), [3900])
+
+    def test_capture_waits_for_configuration(self):
+        resources = self.transport(); _,_,device,connection = resources
+        try:
+            until(lambda:connection.connected)
+            connection.submit('set',32,2800,3200)
+            connection.submit('enable',1)
+            connection.stream_key(2800,32)
+            until(lambda:connection.stream_mode == 'key')
+            self.assertEqual(connection.snapshot()[1].press[32],2800)
+            self.assertEqual(device.commands[-1][1],'enable')
+            messages = []
+            while not connection.events.empty(): messages.append(connection.events.get_nowait())
+            self.assertTrue(any(message.startswith('Confirmed set') for message in messages))
+            self.assertTrue(any(message.startswith('Confirmed enable') for message in messages))
+            connection.submit('velocity',5)
+            connection.stream_gui()
+            until(lambda:connection.snapshot()[1].velocity_start == 5)
+        finally: self.cleanup(*resources)
+
     def test_calibration_model(self):
         s=decode(packet())
         self.assertEqual((s.calibration_state,s.calibration_flags,s.calibration_selected),(0,4,255))
@@ -138,7 +184,7 @@ class Tests(unittest.TestCase):
             struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
             return data
         s=decode(checksum(b)); self.assertTrue(s.calibration_done[0]); self.assertEqual(s.calibration_hold,500)
-        for offset,value in ((1112,9),(1113,2),(1114,61),(1115,4),(1128,128),(1129,5),(1134,1),(1144,1)):
+        for offset,value in ((1112,9),(1113,2),(1114,61),(1115,4),(1128,128),(1129,5),(1134,1),(1144,8),(1145,2)):
             bad=bytearray(b); bad[offset]=value
             with self.assertRaises(ValueError): decode(checksum(bad))
         parallel=bytearray(packet(calibration_state=3,states=[8,8]+[0]*59))
@@ -160,6 +206,7 @@ class Tests(unittest.TestCase):
         p=profile_from_snapshot(s)
         self.assertEqual(p['version'],2)
         validate_profile(p)
+        with self.assertRaisesRegex(ValueError,'version 2'): validate_profile({**p,'version':1})
         for key in p['keys']:
             if key['label'] in ('Fn','LCt','LGu','LAl','RAl','RCt','Spc'):
                 key['midi']=60
@@ -200,44 +247,14 @@ class Tests(unittest.TestCase):
             self.assertEqual(sum(k.width for k in values),15)
             for left,right in zip(values,values[1:]): self.assertEqual(left.x+left.width,right.x)
 
-    def fake_sysfs(self,ports):
-        """Minimal sysfs tree: tty entries -> interface dirs -> USB devices + dev nodes."""
-        base = tempfile.mkdtemp(prefix='gui-sysfs-')
-        self.addCleanup(shutil.rmtree,base,ignore_errors=True)
-        os.makedirs(os.path.join(base,'class','tty'))
-        os.makedirs(os.path.join(base,'dev'))
-        for name,vendor,product in ports:
-            device_dir = os.path.join(base,'devices','usb','dev-'+name)
-            interface_dir = os.path.join(device_dir,'iface')
-            tty_dir = os.path.join(interface_dir,'tty',name)
-            os.makedirs(tty_dir)
-            if vendor is not None:
-                with open(os.path.join(device_dir,'idVendor'),'w') as stream: stream.write(str(vendor)+'\n')
-            if product is not None:
-                with open(os.path.join(device_dir,'idProduct'),'w') as stream: stream.write(str(product)+'\n')
-            os.symlink(interface_dir,os.path.join(tty_dir,'device'))
-            os.symlink(tty_dir,os.path.join(base,'class','tty',name))
-            with open(os.path.join(base,'dev',name),'w') as stream: stream.write('')
-        return base
-
     def test_device_detection(self):
-        dev = lambda base: os.path.join(base,'dev')
-        base = self.fake_sysfs([('ttyACM1','1532','02b0'),('ttyACM0','1d6b','0003')])
-        self.assertEqual(find_cdc_device(sysfs=base,dev=dev(base)),dev(base)+'/ttyACM1')  # name order; only 1532:02b0 matches
-        self.assertEqual(find_cdc_device(0x1d6b,0x0003,sysfs=base,dev=dev(base)),dev(base)+'/ttyACM0')
-        self.assertEqual(find_cdc_device(0x1532,0x02b0,sysfs=base,dev=dev(base)),dev(base)+'/ttyACM1')  # explicit IDs
-        base = self.fake_sysfs([('ttyACM0','1532','0200')])
-        self.assertIsNone(find_cdc_device(sysfs=base,dev=dev(base)))  # wrong product
-        base = self.fake_sysfs([('ttyACM0','zzzz','02b0')])
-        self.assertIsNone(find_cdc_device(sysfs=base,dev=dev(base)))  # unreadable identity, no crash
-        base = self.fake_sysfs([('ttyACM0',None,None)])
-        self.assertIsNone(find_cdc_device(sysfs=base,dev=dev(base)))  # no USB identity on the chain
-        base = self.fake_sysfs([('ttyUSB0','1532','02b0')])
-        self.assertIsNone(find_cdc_device(sysfs=base,dev=dev(base)))  # non-ACM port ignored
-        base = self.fake_sysfs([('ttyACM0','1532','02b0')])
-        os.remove(dev(base)+'/ttyACM0')
-        self.assertIsNone(find_cdc_device(sysfs=base,dev=dev(base)))  # matching port without a device node
-        self.assertIsNone(find_cdc_device(sysfs='/nonexistent'))
+        from midi_backend import find_midi_device, is_control_port
+        self.assertTrue(is_control_port('Huntsman V3 Pro Mini MIDI:Huntsman V3 Pro Mini MIDI MIDI- 28:1'))
+        self.assertTrue(is_control_port('MIDI-Typist Control'))
+        self.assertFalse(is_control_port('Huntsman V3 Pro Mini MIDI:Huntsman V3 Pro Mini MIDI MIDI  28:0'))
+        for ports, expected in (([], None), (['Control'], 'Control'), (['Control1','Control2'], None)):
+            with patch('midi_backend.control_ports', return_value=ports):
+                self.assertEqual(find_midi_device(), expected)
 
     def test_keystroke_capture(self):
         self.assertEqual(CAPTURE_POINTS,20)
@@ -265,7 +282,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(c.points,[2500])
         c = KeystrokeCapture()
         c.feed(3900,False)  # released baseline before the trigger
-        self.assertTrue(c.feed(3400,True))  # captures0 is None on legacy firmware
+        self.assertTrue(c.feed(3400,True))  # raw-only capture has no device fit counter
         self.assertTrue(c.feed(3200,True,captures=1,velocity=0.5,fit_valid=True))
         self.assertIsNone(c.fit)  # no trigger-frame counter to compare against
         c = KeystrokeCapture()
@@ -306,7 +323,7 @@ class Tests(unittest.TestCase):
     def test_decoder(self):
         data = packet()
         d = Decoder(); results = []
-        for byte in b'old CDC text\n'+data+data: results.extend(d.feed(bytes([byte])))
+        for byte in data+data: results.extend(d.feed(bytes([byte])))
         self.assertEqual(len(results),2)
         self.assertEqual(results[0].raw,(3900,)*61)
         for index in (5,9,20,70,425,470,479):
@@ -358,6 +375,11 @@ class Tests(unittest.TestCase):
             time.sleep(2.2)
             self.assertTrue(connection.is_alive() and connection.connected)
             self.assertEqual(connection.stream_mode,'key')
+            previous_session = connection.key_session
+            connection.stream_key(3400,32)
+            until(lambda:connection.key_session != previous_session and connection.key_sensor == 32)
+            until(lambda:bool(connection.drain_samples(32)))
+            self.assertTrue(connection.is_alive() and connection.connected)
             connection.stream_gui()
             until(lambda:connection.stream_mode == 'gui')
             until(lambda:connection.snapshot() and time.monotonic()-connection.snapshot()[0] < 1)
@@ -365,15 +387,14 @@ class Tests(unittest.TestCase):
         finally: self.cleanup(*resources)
 
     def transport(self,**options):
-        master,slave = pty.openpty()
-        device = Device(master,**options); connection = Connection(os.ttyname(slave))
+        master = slave = None
+        device = Device(**options); connection = Connection('fake', backend_factory=lambda _:device)
         device.start(); connection.start()
         return master,slave,device,connection
 
     def cleanup(self,master,slave,device,connection):
         connection.stop(); connection.join(1)
         device.stop_event.set(); device.join(1)
-        os.close(master); os.close(slave)
         self.assertFalse(connection.is_alive()); self.assertIsNone(device.error)
 
     def test_transport_ack_and_profile_batch(self):
@@ -411,9 +432,14 @@ class Tests(unittest.TestCase):
         resources = self.transport(); _,_,device,connection = resources
         try:
             until(lambda:connection.connected)
-            self.assertEqual(device.queries,[['version']])
-            self.assertEqual((connection.build,connection.build_target),('v0.1.0-RZ03-0499','RZ03-0499'))
-            self.assertEqual(parse_build(b'\nbuild=v0.1.0-RZ03-0499\r\n'),('v0.1.0-RZ03-0499','0.1.0','RZ03-0499'))
+            self.assertEqual(device.queries,[['hello']])
+            self.assertEqual((connection.build,connection.build_target),(device.build,'RZ03-0499'))
+            self.assertEqual(parse_build('build='+device.build+'\r\n'),(device.build,'0.1.0','RZ03-0499'))
+            self.assertIsNone(parse_build('build=v0.1.0-RZ03-0499\n'))
+            self.assertIsNone(parse_build('build=v0.1.0-RZ03-0499 git=unknown state=clean\n'))
+            for state in ('clean','dirty'):
+                text='v0.1.0-RZ03-0499 git='+'b'*64+' state='+state
+                self.assertEqual(parse_build('build='+text+'\n')[0],text)
             self.assertIsNone(parse_build(b'build=v0.1.0-RZ03-'))  # partial read stays unresolved
             self.assertEqual(connection.snapshot()[1].velocity_start,1)
             connection.submit('velocity',7)
@@ -434,7 +460,7 @@ class Tests(unittest.TestCase):
         resources = self.transport(silent=True); _,_,device,connection = resources
         try:
             until(lambda:not connection.is_alive(),4)
-            self.assertEqual(len(device.commands),1)
+            self.assertEqual(len(device.commands),0)
             self.assertFalse(connection.connected)
         finally: self.cleanup(*resources)
 

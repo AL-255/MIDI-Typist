@@ -28,6 +28,8 @@ jobs:
           cache-dependency-path: docs/requirements.txt
       - name: Install documentation dependencies
         run: python -m pip install -r docs/requirements.txt
+      - name: Enforce current-only repository rules
+        run: python tools/test_latest_only.py
       - name: Build and validate documentation
         run: |
           python tools/build_docs.py

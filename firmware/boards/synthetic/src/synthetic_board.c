@@ -2,13 +2,14 @@
  * linear RGB framebuffer, 2 kHz acquisition and a different lower group.
  * Includes only the public application headers, no vendor SDK or board data. */
 #include "synthetic_board.h"
+#include "defaults.h"
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
 #include <stddef.h>
 #include <string.h>
 
 static keyboard_action_t actions[SYN_COUNT][2];
-static const uint16_t levels[11]={0,2048,4096,8192,12288,16384,24576,32768,40960,49152,57344};
+static const uint16_t levels[11]=SYNTHETIC_ACTUATION_LEVELS;
 static keyboard_layout_t layout;
 static keyboard_layout_t small_layout;
 static uint8_t key_id(unsigned sensor) { return (sensor*73u+19u)%251u+1u; }
@@ -64,7 +65,7 @@ void keyboard_actuation_pair(const keyboard_config_t *c,uint8_t key,uint8_t *pre
 {
     (void)key;
     *press=levels[c->saved_actuation]/256u;
-    *release=*press>8?*press-8:1;
+    *release=*press>SYNTHETIC_RELEASE_GAP_LEVEL?*press-SYNTHETIC_RELEASE_GAP_LEVEL:1;
 }
 uint8_t keyboard_travel_level(uint16_t lo,uint16_t hi,uint16_t raw)
 {

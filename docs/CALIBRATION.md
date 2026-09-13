@@ -87,8 +87,7 @@ This bit is clear for completed keys and outside collection. The GUI colors
 every active hold amber and displays their count. The selected-sensor/elapsed
 fields show one representative hold (lowest sensor index), not a shared timer.
 
-States: 0 idle, 1 release, 2 settle, 3 collect, 4 legacy wait key release (not
-emitted by parallel calibration), 5 save,
+States: 0 idle, 1 release, 2 settle, 3 collect, 4 reserved (rejected), 5 save,
 6 complete, 7 discarded, 8 storage failure. Flags: bit0 active, bit1 a valid
 saved record loaded/written, bit2 firmware supports calibration. Pending values
 are not active calibration. GUI telemetry remains latest-frame, about 30 Hz;

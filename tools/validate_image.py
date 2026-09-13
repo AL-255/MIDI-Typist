@@ -75,7 +75,7 @@ def validate_usb_descriptors(symbols: dict[str, bytes]) -> None:
     updater_report = symbols.get("s_updater_report_descriptor", b"")
     if len(device) != 18 or struct.unpack_from("<HH", device, 8) != (0x1532, 0x02B0):
         raise SystemExit("USB device descriptor does not expose 1532:02b0")
-    if len(config) < 9 or struct.unpack_from("<H", config, 2)[0] != len(config) or config[4] != 6:
+    if len(config) < 9 or struct.unpack_from("<H", config, 2)[0] != len(config) or config[4] != 4:
         raise SystemExit("USB configuration descriptor length/interface count is invalid")
 
     interfaces: dict[int, tuple[int, int]] = {}
@@ -94,15 +94,13 @@ def validate_usb_descriptors(symbols: dict[str, bytes]) -> None:
         elif descriptor_type == 5:
             endpoints.setdefault(current_interface, []).append(config[offset + 2])
         offset += length
-    if sorted(interfaces) != list(range(6)):
-        raise SystemExit(f"USB interfaces are {sorted(interfaces)}, expected 0..5")
+    if sorted(interfaces) != list(range(4)):
+        raise SystemExit(f"USB interfaces are {sorted(interfaces)}, expected 0..3")
     expected = {
         0: (0x03, [0x81]),
         1: (0x01, []),
         2: (0x01, [0x02, 0x82]),
         3: (0x03, []),
-        4: (0x02, [0x83]),
-        5: (0x0A, [0x04, 0x84]),
     }
     for interface, (class_code, addresses) in expected.items():
         if interfaces[interface][0] != class_code or endpoints[interface] != addresses:

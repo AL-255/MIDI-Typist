@@ -3,7 +3,6 @@
 
 #include "keyboard_layout.h"
 #include <stddef.h>
-uint8_t keyboard_usage_for_sensor(size_t sensor_index); /* ANSI legacy diagnostic */
 
 #define KEYBOARD_GRID_SIZE 72u
 #define KEYBOARD_ACTION_COUNT 135u

@@ -3,7 +3,7 @@
 Start with the illustrated [user manual](../USER_MANUAL.md) for everyday operation,
 the [project README](../README.md) for a project overview, and the
 [build guide](BUILDING.md) for a clean checkout. The current complete preset is
-`huntsman` (alias `keyboard-fn-menu`), emitting GUI telemetry.
+`huntsman`, emitting GUI telemetry.
 
 ## Choose a reading path
 
@@ -15,7 +15,7 @@ the [project README](../README.md) for a project overview, and the
 | Choose an owner loop or RTOS task | [Scheduling](SCHEDULING.md) |
 | Integrate host tools | [Protocol](MIDI_PROTOCOL.md) and [GUI limits](KEYBOARD_GUI.md) |
 
-Physical layout, flash addresses, USB identities and HKG/HKS/HKL/HBD formats
+Physical layout, flash addresses, USB identities and HKG/HKL/HBD formats
 in feature guides describe Huntsman unless explicitly stated otherwise.
 Shared application contracts are documented separately from those wire formats.
 
@@ -24,6 +24,8 @@ Shared application contracts are documented separately from those wire formats.
 - [Fn menu](FN_MENU.md): supported hints, trigger-point editor and brightness.
 - [Keyboard GUI](KEYBOARD_GUI.md): layout, Schmitt thresholds, MIDI mappings,
   profiles, calibration controls, application flashing and connection handling.
+- [Device flashing](DEVICE_FLASHING.md): model selection, device identity,
+  conversion, stock-application restoration and custom reflash.
 - [Per-key velocity](KEY_VELOCITY.md), [normalization](NORMALIZED_VELOCITY.md)
   and [interval pop filter](MIDI_FILTER.md): independent capture and encoding.
 - [MIDI design](MIDI_DESIGN.md) and [USB/GUI protocol](MIDI_PROTOCOL.md).
@@ -36,7 +38,7 @@ Shared application contracts are documented separately from those wire formats.
 - [Device storage](DEVICE_CONFIG_STORAGE.md): two-page ownership, whole-profile
   record layout and write bounds, cold boot, validation, recovery limits and
   serial-number protection.
-- [Flash acquisition](FLASH_DUMP.md): read-only dump commands and private backups.
+- [Flash read protocol](FLASH_DUMP.md): bounded diagnostic reads and privacy limits.
 - [Whole scan display](SCAN_STREAM.md), [20-sample capture](LAST_KEY_STREAM.md)
   and [travel lighting](TRAVEL_LIGHTING.md): operation and protocol details.
 - [USB integration](USB_DESIGN.md) and [optical/Fn design](KEYBOARD_RECOVERY.md).

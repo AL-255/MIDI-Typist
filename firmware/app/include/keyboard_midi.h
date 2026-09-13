@@ -3,7 +3,6 @@
 #include "keyboard_raw.h"
 #include "midi_music.h"
 #define MIDI_UNMAPPED 255u
-#define MIDI_QUEUE 128u
 #define MIDI_CLEANUP_EVENTS 133u
 typedef bool (*midi_send_fn)(uint8_t, uint8_t, uint8_t, uint8_t);
 typedef struct {

@@ -3,10 +3,9 @@
 #include <string.h>
 
 #include "usb_composite.h"
+#include "midi_control.h"
 #include "fsl_common.h"
-#ifdef HUNTSMAN_KEYBOARD_DIAGNOSTICS
 #include "scan_stream.h"
-#endif
 
 #define DEBUG_RING_SIZE 1024u
 #define DEBUG_USB_CHUNK   128u
@@ -14,19 +13,14 @@
 static uint8_t s_ring[DEBUG_RING_SIZE];
 static uint16_t s_head;
 static uint16_t s_tail;
-static volatile bool s_sending;
 
 void debug_init(void)
 {
     s_head = s_tail = 0u;
-    s_sending = false;
 }
 
 void debug_write_bytes(const uint8_t *data, size_t length)
 {
-#ifdef HUNTSMAN_KEYBOARD_DIAGNOSTICS
-    if (scan_stream_enabled()) return;
-#endif
     for (size_t i = 0; i < length; ++i)
     {
         const uint16_t next = (uint16_t)((s_head + 1u) % DEBUG_RING_SIZE);
@@ -64,45 +58,17 @@ void debug_write_hex16(const char *label, uint16_t value)
     debug_write_bytes(line, length);
 }
 
-void debug_usb_configured(void)
-{
-    s_sending = false;
-}
+void debug_usb_configured(void) { s_tail=s_head; }
 
 void debug_service(void)
 {
-#ifdef HUNTSMAN_KEYBOARD_DIAGNOSTICS
-    if (scan_stream_enabled()) s_tail = s_head;
-    if (scan_stream_service()) return;
-#endif
-    static uint8_t packet[DEBUG_USB_CHUNK];
-    const uint32_t irq = DisableGlobalIRQ();
-    if (s_sending || !usb_cdc_ready() || (s_head == s_tail))
-    {
-        EnableGlobalIRQ(irq);
-        return;
+    midi_control_service();
+    if(!midi_control_ready()) { s_tail=s_head;return; }
+    if(scan_stream_service())return;
+    uint8_t packet[DEBUG_USB_CHUNK];
+    unsigned length=0,tail=s_tail;
+    while(tail!=s_head && length<sizeof(packet)) {
+        packet[length++]=s_ring[tail];tail=(tail+1u)%DEBUG_RING_SIZE;
     }
-    uint32_t length = 0u;
-    while ((s_tail != s_head) && (length < sizeof(packet)))
-    {
-        packet[length++] = s_ring[s_tail];
-        s_tail = (uint16_t)((s_tail + 1u) % DEBUG_RING_SIZE);
-    }
-    s_sending = true;
-    if (!usb_cdc_write(packet, length))
-    {
-        s_sending = false;
-        /* Keep the ring consistent on a transient busy return. */
-        s_tail = (uint16_t)((s_tail + DEBUG_RING_SIZE - length) % DEBUG_RING_SIZE);
-    }
-    EnableGlobalIRQ(irq);
-}
-
-/* Called by the USB CDC send-complete path. */
-void debug_cdc_send_complete(void)
-{
-    s_sending = false;
-#ifdef HUNTSMAN_KEYBOARD_DIAGNOSTICS
-    scan_stream_complete();
-#endif
+    if(length && midi_control_publish(MT_LOG,packet,length))s_tail=tail;
 }

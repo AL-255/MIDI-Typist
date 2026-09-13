@@ -1,29 +1,24 @@
 #include "board.h"
 #include "debug.h"
-#include "debug_rx.h"
-#include "keyboard_console.h"
+#include "midi_control.h"
 #include "keyboard_live.h"
 #include "usb_composite.h"
 
-/* Diagnostic presets require explicit CDC 'scan start'. The travel-lighting
- * preset starts scanning after USB configuration. Host keys always require
- * separate 'keys on'. TEST commands remain isolated from physical events. */
-static keyboard_console_t s_console;
+/* The complete application starts scanning after USB configuration and arms
+ * output after neutral samples. SysEx control is independent of performance. */
 
 int main(void)
 {
     board_init();
     board_watchdog_refresh();
     debug_init();
-    keyboard_console_init(&s_console, debug_write);
     keyboard_live_init();
-    s_console.command = keyboard_live_command;
     usb_composite_init();
-    debug_write("OpenHuntsman keyboard diagnostics; type help\r\n");
+    midi_control_command_handler(keyboard_live_command);
+    debug_write("MIDI-Typist SysEx control ready\r\n");
     for (;;)
     {
         usb_composite_service();
-        debug_rx_service(&s_console);
         keyboard_live_service();
         debug_service();
         board_watchdog_refresh();

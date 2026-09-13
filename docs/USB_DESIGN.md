@@ -1,6 +1,6 @@
 # Huntsman USB integration
 
-The complete `huntsman` application exposes NKRO HID, USB-MIDI 1.0, CDC ACM and the
+The complete `huntsman` application exposes NKRO HID, two-cable USB-MIDI 1.0 and the
 updater control HID at VID:PID `1532:02b0`. It uses unmodified NXP USB
 classes, DCI/IP3511 and peripheral drivers; integration wrappers are
 project-owned platform code in [nxp_lpc55](../firmware/platform/nxp_lpc55).
@@ -14,7 +14,10 @@ New MCUs provide their own stack and descriptors; see [porting](PORTING.md).
 | 0 | Report-only NKRO keyboard HID |
 | 1, 2 | MIDI audio control and streaming |
 | 3 | Control-only updater HID, 90-byte reports |
-| 4, 5 | CDC control and data |
+
+Cable 0 is performance MIDI; cable 1 is GUI control. An audio IAD groups
+interfaces 1 and 2. The configuration is 184 bytes with two embedded jack
+associations per endpoint. See [SysEx framing](TELEMETRY.md#sysex-envelope).
 
 ## Memory and control-transfer safety
 
@@ -26,7 +29,7 @@ Compiler flags alone cannot change prebuilt libc assembly.
 Send-busy flags are set before submission. Interrupt masking spans state
 checks, buffer preparation and submission; pending USB buffers remain
 immutable until completion. Standard configuration/interface queries support
-all six alternate-zero interfaces. The keyboard advertises report-only HID,
+all four alternate-zero interfaces. The keyboard advertises report-only HID,
 not an unimplemented boot-keyboard protocol.
 
 Updater boot-entry reset is deferred until the accepted command's EP0 IN
@@ -52,9 +55,9 @@ Cortex-M33 startup, vector dispatch, clocks, descriptors, full/high-speed
 control and endpoint paths, reset deferral and aligned copies with modeled
 peripherals. It does not execute the bootloader or model electrical reconnect.
 
-The latest complete image passes computer-initiated updater entry, application-only
-flashing, high-speed USB return and live CDC telemetry. Full application
-readback matches the binary. Custom tail pages hold settings; the separate
-Razer settings/serial region remains unchanged.
+The complete image passes application-only flashing, high-speed enumeration,
+61-key SysEx snapshots, acknowledged edits/readback and loss-detecting capture
+on Linux. Updater HID remains interface 3. Custom writes remain restricted to
+the two tail pages.
 See [validation status](VALIDATION.md).
 These checks are not USB certification or proof of all MIDI/DAW behavior.

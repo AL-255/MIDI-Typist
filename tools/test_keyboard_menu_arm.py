@@ -3,7 +3,7 @@
 import argparse
 from test_calibration_arm import Live, record, SLOTS
 from test_keyboard_mode_arm import snapshot
-from scan_bars import sensor_labels
+from keyboard_labels import sensor_labels
 from lighting_reference_tables import recover
 from production_arm import ProductionArm
 
@@ -115,8 +115,9 @@ def main():
     assert snapshot(dev).performance_mode==0
     assert color(draw(),'Y')!=(0,77,0)
     keys(Fn=4000,Ent=4000)
-    # No Fn action writes flash: the menu is RAM-only. Take the pages as the
-    # write-boundary baseline for the rest of the section.
+    # Committed menu settings persist after neutral debounce. Previews and
+    # cancelled calibration/reset must not create further snapshots.
+    dev.service(300)
     initial_pages={a:bytes(p) for a,p in dev.flash.pages.items()}
     reads=len(dev.flash.commands)
     snapshot(dev,'stream gui')
@@ -127,7 +128,7 @@ def main():
     assert snapshot(dev,'cfg calcancel 704').result==1
     assert {a:bytes(p) for a,p in dev.flash.pages.items()}==initial_pages
     # Calibration entry and cancel only read the pages.
-    assert all(cmd==3 for cmd,_ in dev.flash.commands[reads:]),dev.flash.commands[reads:]
+    assert all(cmd in (3,5) for cmd,_ in dev.flash.commands[reads:]),dev.flash.commands[reads:]
     assert not dev.reset_requests
     assert ref.read(0x2001b49c,20)==bytes(dev.cpu.mem_read(dev.symbols['brightness_steps'],20))
     keys(C=4000); dev.service(1600)
@@ -145,14 +146,14 @@ def main():
     assert {a:bytes(p) for a,p in dev.flash.pages.items()}==initial_pages # preheld Y rejected
     keys(Y=4000); keys(Y=500)
     assert all(all(v==255 for v in p) for p in dev.flash.pages.values())
-    assert [(cmd,addr) for cmd,addr in dev.flash.commands if cmd!=3][-2:]==[(4,SLOTS[1]),(4,SLOTS[0])]
+    assert {addr for cmd,addr in dev.flash.commands[-10:] if cmd==4}==set(SLOTS)
     keys(Y=4000); dev.service(300)
     s=snapshot(dev)
     assert s.calibration_generation==0 and s.calibration_flags==4 and not s.calibration_error
     assert s.press==(3500,)*61 and s.release==(3600,)*61 and s.performance_mode==0 and s.octave==0
     assert color(draw(),'Ent')==(0,255,0)
     assert not dev.reset_requests
-    print('PASS ARM Fn menu: colored text, release-only actions, repeated brightness taps, original editor colors, MIDI suppression, calibration entry, Y/N confirmed tail-only RESET and defaults; no Fn action writes flash')
+    print('PASS ARM Fn menu: colored text, release-only actions, repeated brightness taps, original editor colors, MIDI suppression, calibration entry, previews/cancel do not save, Y/N confirmed tail-only RESET and defaults')
 
 
 if __name__=='__main__': main()

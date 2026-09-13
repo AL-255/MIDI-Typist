@@ -1,11 +1,12 @@
+#include "defaults.h"
 #include "keyboard_menu.h"
 #include "keyboard_layout.h"
 #include <string.h>
 
 /* Brightness steps observed at original 0x2001b49c, not a gamma guess. */
-static const uint8_t brightness_steps[20] = {
-    0,3,6,10,15,21,27,36,45,56,68,81,96,112,128,144,172,194,224,255
-};
+static const uint8_t brightness_steps[] = DEFAULT_BRIGHTNESS_STEPS;
+#define BRIGHTNESS_LEVELS (sizeof(brightness_steps) / sizeof(brightness_steps[0]))
+_Static_assert(DEFAULT_BRIGHTNESS_LEVEL < BRIGHTNESS_LEVELS, "invalid default brightness");
 
 enum { OPTION_KEYBOARD=1, OPTION_MIDI=2, OPTION_BOTH=3 };
 typedef struct { uint8_t usage, modifier, modes; const char *word; } menu_option_t;
@@ -30,7 +31,7 @@ _Static_assert(MENU_OPTION_COUNT<=16,"menu edge bitmap too small");
 void keyboard_menu_init(keyboard_menu_t *s)
 {
     memset(s,0,sizeof(*s));
-    s->brightness=19;
+    s->brightness=DEFAULT_BRIGHTNESS_LEVEL;
     s->fn=s->tab=s->c=s->enter=s->k=s->l=s->caps=s->r=s->y=s->n=s->s=s->e=s->shift=255;
     memset(s->option_sensors,255,sizeof(s->option_sensors));
     s->choice_sensor=255;
@@ -59,7 +60,7 @@ uint8_t keyboard_menu_control(uint8_t profile, uint8_t key)
 
 uint8_t keyboard_menu_brightness(const keyboard_menu_t *s)
 {
-    return brightness_steps[s->brightness < 20u ? s->brightness : 19u];
+    return brightness_steps[s->brightness < BRIGHTNESS_LEVELS ? s->brightness : DEFAULT_BRIGHTNESS_LEVEL];
 }
 
 static void layout(keyboard_menu_t *s, const keyboard_raw_t *raw)
@@ -106,7 +107,7 @@ bool keyboard_menu_thresholds(keyboard_raw_t *raw, const uint16_t *lower,
 {
     if (!raw->count) return false;
     for (unsigned i=0; i<raw->count; ++i)
-        if (!lower[i] || upper[i]>4096u || upper[i]<lower[i]+512u) return false;
+        if (!lower[i] || upper[i]>4096u || upper[i]<lower[i]+CALIBRATION_MIN_SPAN_RAW) return false;
     keyboard_config_t config=raw->engine.config;
     config.mode=KEY_CONFIG_NORMAL; /* committed, not editor-preview exclusions */
     for (unsigned i=0; i<raw->count; ++i) {
@@ -311,17 +312,17 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
         if(action==MENU_VELOCITY) {
             s->velocity_page=true;
             s->choice_ready=false;
-            s->selection=velocity_start ? velocity_start : 1u; /* 1..10 */
+            s->selection=velocity_start ? velocity_start : DEFAULT_MIDI_VELOCITY_START; /* 1..10 */
             return MENU_NONE;
         }
         if(action==MENU_KEY || action==MENU_SCALE) {
             s->music_page=action;
             s->selection=music ? (action==MENU_KEY?music->root:music->scale) :
-                action==MENU_KEY?0:MIDI_SCALE_CHROMATIC;
+                action==MENU_KEY?DEFAULT_MIDI_ROOT:DEFAULT_MIDI_SCALE;
             return MENU_NONE;
         }
         if (action==MENU_LIGHT_DOWN && s->brightness) --s->brightness;
-        if (action==MENU_LIGHT_UP && s->brightness<19) ++s->brightness;
+        if (action==MENU_LIGHT_UP && s->brightness+1u<BRIGHTNESS_LEVELS) ++s->brightness;
         if (action==MENU_TRIGGER || action==MENU_RAPID) {
             raw->engine.config.fn=1;
             keyboard_config_event(&raw->engine.config,
@@ -342,7 +343,11 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     const char *name=action==MENU_MODE ? (raw->midi_mode ? "KEYBOARD" : "MIDI") :
         action==MENU_LOWER ? (lower_muted ? "LOWER-ON" : "LOWER-OFF") : options[index].word;
     keyboard_text_start(&s->text,raw->profile,name,now);
-    if (action==MENU_MODE) keyboard_text_color(&s->text,0,raw->midi_mode?255:0,raw->midi_mode?0:255);
+    if (action==MENU_MODE) {
+        static const uint8_t colors[][3]={{COLOR_CONFIRM},{COLOR_MIDI}};
+        const uint8_t *rgb=colors[!raw->midi_mode];
+        keyboard_text_color(&s->text,rgb[0],rgb[1],rgb[2]);
+    }
     s->pending=action; s->pending_sensor=sensors[index];
     s->pending_revision=raw->revision;
     keyboard_raw_invalidate(raw);
@@ -364,11 +369,11 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
     if (calibration) return; /* calibration feedback stays visible at brightness zero */
     if (keyboard_text_render(&s->text,frame,now)) {
         if (s->reset_confirmation) {
-            color(s->profile,s->y,frame,0,255,0);
-            color(s->profile,s->n,frame,255,0,0);
+            color(s->profile,s->y,frame,COLOR_CONFIRM);
+            color(s->profile,s->n,frame,COLOR_CANCEL);
         }
         if(s->music_page) for(unsigned i=0;i<raw->count;++i)
-            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,255,0,0);
+            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,COLOR_CANCEL);
         return;
     }
     if(s->press_page || s->velocity_page) {
@@ -376,11 +381,11 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
         for(unsigned i=0;i<raw->count;++i) {
             const uint8_t digit=keyboard_editor_digit(s->profile,s->keys[i]);
             if(digit) {
-                const uint8_t v=digit<=s->selection?255u:25u;
+                const uint8_t v=digit<=s->selection?255u:MENU_DIM_PWM;
                 color(s->profile,i,frame,v,v,v);
-                if(digit==s->selection) color(s->profile,i,frame,0,255,0);
+                if(digit==s->selection) color(s->profile,i,frame,COLOR_CONFIRM);
             }
-            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,255,0,0);
+            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,COLOR_CANCEL);
         }
         return;
     }
@@ -389,10 +394,10 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
         for(unsigned i=0;i<raw->count;++i) {
             int choice=music_choice(s,i);
             if(choice>=0) {
-                if(choice==s->selection) color(s->profile,i,frame,0,255,0);
-                else color(s->profile,i,frame,77,77,77);
+                if(choice==s->selection) color(s->profile,i,frame,COLOR_CONFIRM);
+                else color(s->profile,i,frame,TEXT_BACKGROUND_PWM,TEXT_BACKGROUND_PWM,TEXT_BACKGROUND_PWM);
             }
-            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,255,0,0);
+            if(s->keys[i]==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,COLOR_CANCEL);
         }
         return;
     }
@@ -411,7 +416,7 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
         unsigned target=0;
         const uint16_t *levels=cfg->mode==KEY_CONFIG_ACTUATION ? keyboard_layout(s->profile)->actuation_levels : keyboard_layout(s->profile)->rapid_levels;
         for (unsigned i=1; i<=10; ++i) if ((levels[i]>>8u)<peak) target=i;
-        if ((uint32_t)(now-s->bar_at)>=20u) {
+        if ((uint32_t)(now-s->bar_at)>=MENU_BAR_STEP_MS) {
             if (s->bar<target) ++s->bar;
             if (s->bar>target) --s->bar;
             s->bar_at=now;
@@ -421,15 +426,15 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
             uint8_t key=s->keys[i];
             const uint8_t digit=keyboard_editor_digit(s->profile,key);
             if (digit) {
-                uint8_t v=digit<=s->bar?255u:25u;
+                uint8_t v=digit<=s->bar?255u:MENU_DIM_PWM;
                 color(s->profile,i,frame,v,v,v);
                 unsigned selected=cfg->mode==KEY_CONFIG_ACTUATION?cfg->actuation:cfg->rapid;
-                if (digit==selected) color(s->profile,i,frame,
-                    cfg->mode==KEY_CONFIG_ACTUATION?0u:253u,
-                    cfg->mode==KEY_CONFIG_ACTUATION?255u:134u,
-                    cfg->mode==KEY_CONFIG_ACTUATION?0u:17u);
+                if (digit==selected) {
+                    if (cfg->mode==KEY_CONFIG_ACTUATION) color(s->profile,i,frame,COLOR_CONFIRM);
+                    else color(s->profile,i,frame,COLOR_RAPID);
+                }
             }
-            if (key==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,255,0,0);
+            if (key==keyboard_layout(s->profile)->escape) color(s->profile,i,frame,COLOR_CANCEL);
         }
         return; /* original editor hints override ordinary brightness */
     }
@@ -440,16 +445,18 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
         memset(frame,0,LIGHTING_FRAME_SIZE);
         if (!midi) {
             for (unsigned i=0;i<raw->count;++i)
-                if (keyboard_shortcut_usage(s->profile,s->keys[i])) color(s->profile,i,frame,0,255,0);
+                if (keyboard_shortcut_usage(s->profile,s->keys[i])) color(s->profile,i,frame,COLOR_CONFIRM);
         }
         for(unsigned i=0;i<MENU_OPTION_COUNT;++i)
             if(options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) {
-                /* The active Jankó layout keeps its hint green, not white. */
+                /* The active Jankó layout uses a yellow hint. */
                 const bool active = (i+1u)==MENU_JANKO && janko;
-                color(s->profile,s->option_sensors[i],frame,255,255,active?0:255);
+                if(active) color(s->profile,s->option_sensors[i],frame,COLOR_JANKO);
+                else color(s->profile,s->option_sensors[i],frame,COLOR_WHITE);
             }
-        color(s->profile,s->enter,frame,0,midi?255:0,midi?0:255);
-        if (brightness<25u) brightness=25u; /* keep brightness-up discoverable */
+        if(midi) color(s->profile,s->enter,frame,COLOR_CONFIRM);
+        else color(s->profile,s->enter,frame,COLOR_MIDI);
+        if (brightness<MENU_DIM_PWM) brightness=MENU_DIM_PWM; /* keep brightness-up discoverable */
     }
     if (brightness!=255u)
         for (unsigned i=0; i<LIGHTING_FRAME_SIZE; ++i)

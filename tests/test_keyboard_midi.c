@@ -1069,10 +1069,27 @@ static void sustain_pedal(void)
     puts("PASS sustain: all layouts, reserved Space/blue hint, Schmitt boundaries, ordered CC64/note release, backpressure edges, fault/overflow pedal-off, keyboard Space unaffected");
 }
 
+static void pending_strike_overflow(void)
+{
+    init(); toggle();
+    unsigned key=sensor(0x2b,0);
+    for(unsigned i=0;i<6;++i) {
+        values[key]=3000; step(); /* each edge restarts the ten-sample fit */
+        if(i==5) break;
+        assert(!midi.errors && raw.armed);
+        values[key]=3900; step();
+    }
+    assert(midi.errors==1 && midi.panic==MIDI_CLEANUP_EVENTS && !raw.armed);
+    for(unsigned i=0;i<128;++i) assert(!midi.refs[i]);
+    for(unsigned i=0;i<5;++i) assert(midi.pending[key][i]==MIDI_UNMAPPED);
+    drain(); assert(events(0x80,72));
+    values[key]=3900; step(); assert(raw.armed);
+}
+
 int main(void)
 {
     default_mapping(); velocity_pressure_and_modes(); short_taps_and_overlap(); janko_mode();
-    velocity_start_mode(); midi_trigger_page();
+    velocity_start_mode(); midi_trigger_page(); pending_strike_overflow();
     octave_and_duplicates(); faults_and_backpressure(); polyphony(); shift_and_filtered_strike(); octave_lights();
     text_display(); inverse_lighting(); menu_input_isolation(); wheels(); lower_rows(); music_data(); music_menus(); music_output(); sustain_pedal();
     printf("MIDI tests passed; controller state %zu bytes\n",sizeof(keyboard_midi_t));

@@ -7,7 +7,7 @@ their own transport/host adapter; see [porting](PORTING.md).
 
 ## USB-MIDI 1.0
 
-The existing composite descriptors are unchanged: Audio Control interface 1,
+The composite exposes two virtual MIDI cables: Audio Control interface 1,
 MIDI Streaming interface 2, bulk OUT `0x02`, bulk IN `0x82`. The firmware emits
 four-byte USB-MIDI event packets on cable 0, MIDI channel 1:
 
@@ -29,15 +29,14 @@ and [sustain ordering](MIDI_DESIGN.md#sustain-pedal).
 
 This is MIDI 1.0, not MIDI 2.0 UMP, MPE, channel pressure or raw UART MIDI.
 Note names are a GUI convention: C0=12, middle C/C4=60. Flat spellings are
-accepted; the GUI displays sharps to match the default mapping. Inbound MIDI packets are received
-and the existing OUT endpoint is rearmed, but they do not control this
-application's synth, mapping or lights. There is no built-in synthesizer.
+accepted; the GUI displays sharps to match the default mapping. Inbound performance-cable packets are ignored. Cable 1 carries the GUI's
+bidirectional SysEx commands and replies. There is no built-in synthesizer.
 
-## CDC commands
+## MIDI SysEx commands
 
-Use raw serial I/O and serialize commands, because snapshots acknowledge only
-the latest command ID. IDs must be nonzero decimal uint32 values. Commands
-are newline-delimited ASCII and do not require a meaningful UART baud rate.
+The GUI sends each command as a versioned SysEx COMMAND payload, without a
+newline. See [the envelope, sessions and acknowledgments](TELEMETRY.md#sysex-envelope).
+Serialize commands: snapshots retain only the latest nonzero decimal uint32 request ID.
 
 ```
 version
@@ -53,21 +52,15 @@ cfg calibrate ID
 cfg calcancel ID
 ```
 
-`version` is a console query, not a `cfg` command: it answers
-`build=v0.1.0-RZ03-0499`, the project version plus the build target of the
-running application. It is answered before any other parsing and also works
-while calibrating; `menu status` repeats the same string. Text replies are only
-available while no binary stream is active, so hosts stop any stream left
-running by a previous owner (`stream off`), query the identity, and only then
-select `stream gui`.
+The READY handshake supplies the build identity before streaming. Optional
+`version` and `menu status` replies use separate LOG messages.
 
 `cfg clean` explicitly resets custom settings and calibration, exactly like
 Fn+R. It erases both authorized pages and answers result 1 only after CMD5
 blank verification. Compatible firmware updates do not send it by default. It requires a valid scan less than
 100 ms old, releases active outputs and cancels unfinished strikes. Defaults
 apply only after a fresh all-keys-released frame; the erase ACK alone does not
-mean that step has completed. `tools/flash_application.py --reset-settings`
-requests this explicitly; normal flashing retains compatible custom saves.
+mean that step has completed. Use Fn+R for an explicit reset; normal GUI flashing retains compatible custom saves.
 
 `cfg velocity` sets the transmitted-velocity start of
 [the Fn+V editor](MIDI_DESIGN.md#transmitted-velocity-start): `LEVEL` is 1…10,
@@ -95,7 +88,7 @@ edits are rejected; `cfg get` remains available. See [calibration](CALIBRATION.m
 
 The GUI allows one outstanding command, with a 3 s ACK timeout and no automatic
 retry. Rejection, mismatched readback, malformed telemetry or stale/disconnected
-CDC stops the worker and cancels unsent queued changes. Bulk profile import is
+MIDI SysEx stops the worker and cancels unsent queued changes. Bulk profile import is
 not atomic across all commands: already acknowledged changes remain if a later
 command fails, and output may remain disabled. Reconnect and inspect the device
 before deciding whether to apply again.
@@ -104,7 +97,7 @@ before deciding whether to apply again.
 
 The application emits one 1152-byte telemetry layout, including MIDI fields,
 calibration status and per-key parallel-hold bits. Frames carry no version
-number: a constant magic and the fixed size identify them, while the console
+number: a constant magic and the fixed size identify them, while the SysEx READY
 build identity records which application produced them. The complete field
 table, the other streams and the text replies are documented in
 [device telemetry](TELEMETRY.md); the calibration fields additionally appear in
@@ -113,7 +106,7 @@ table, the other streams and the text replies are documented in
 `cfg` commands are acknowledged inside this stream - request ID and
 accepted/rejected in the snapshot - so a host needs `stream gui` active to
 observe a result and must serialize commands. Rejection, mismatched readback,
-malformed telemetry or stale/disconnected CDC stops the GUI's worker and
+malformed telemetry or stale/disconnected MIDI SysEx stops the GUI's worker and
 cancels unsent queued changes.
 
 ## Host JSON
@@ -129,6 +122,5 @@ The surrounding object has `version: 2`, `layout: "ansi"`, and `keys` containing
 all 61 unique, correctly labelled sensors. Notes are 0…127 or 255; reserved
 control keys must use 255. Invalid pairs, boolean numeric fields, duplicates,
 wrong labels, missing entries and invalid MIDI values are rejected before
-commands are queued. Importing a version-1 file leaves MIDI mappings unchanged.
-The current firmware supports version-2 JSON. Mode, octave and calibration
+commands are queued. The GUI accepts only version-2 JSON. Mode, octave and calibration
 persist in the complete device snapshot but are not included in host JSON.

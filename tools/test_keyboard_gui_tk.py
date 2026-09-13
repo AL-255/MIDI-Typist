@@ -2,12 +2,13 @@
 """Optional real Tk UI smoke test under a private Xvfb display, no device access."""
 import argparse
 import os
-import pty
+from keyboard_gui_transport import Connection
 import select
 import subprocess
 import time
 import tkinter as tk
 from unittest.mock import patch
+from types import SimpleNamespace
 from keyboard_gui import App, AXIS_W, TRIGGER_LEVELS, VELOCITY_STARTS, TRIGGER_FLOOR
 from keyboard_gui_model import CAPTURE_POINTS
 from test_keyboard_gui import Device
@@ -25,10 +26,39 @@ def main():
     try:
         if not select.select([read_fd],[],[],5)[0]: raise RuntimeError('Xvfb did not start')
         display = os.read(read_fd,32).decode().strip()
-        if not display.isdecimal(): raise RuntimeError('Xvfb startup failed')
+        if not display.isdecimal(): raise RuntimeError('Xvfb startup failed: '+server.stderr.read().decode())
         os.environ['DISPLAY'] = ':'+display
         root = tk.Tk(); app = App(root,demo=True)
         root.update()
+        # The flashing tab is isolated from the configuration canvas. Demo
+        # construction and selection never discover or open a real device.
+        from flash_models import ConnectedDevice, FirmwareImage
+        tab=app.flash_tab
+        assert len(app.notebook.tabs())==2
+        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3']
+        with patch.object(tab.adapter,'discover',side_effect=AssertionError('demo accessed USB')):
+            app.notebook.select(tab);root.update()
+        assert str(tab.flash_button['state'])=='disabled'
+        app.demo=False
+        device=ConnectedDevice(tab.adapter.id,'1-2','confirmed-token','custom','Test keyboard',
+                               'TEST-SERIAL','v0.1.0','1532:02b0','480 Mb/s')
+        tab.show_device(device);tab.set_options()
+        assert [w['text'] for w in tab.action_widgets]==['Reflash MIDI-Typist','Restore Razer firmware']
+        assert tab.identity['Serial number'].get()=='TEST-SERIAL'
+        tab.image=FirmwareImage('unused.bin',bytes(131072),'a'*64,'custom','Test image')
+        tab.confirm_model.set(True);tab.sync()
+        with patch('keyboard_flash_tab.messagebox.askyesno',return_value=True),patch.object(tab,'launch_worker') as launch:
+            tab.flash()
+            assert launch.call_args.args[0]=='flash'
+            assert launch.call_args.args[1].digest=='a'*64
+            assert launch.call_args.args[2].id=='reflash'
+        tab.action.set('restore');tab.choose_action()
+        assert tab.image is None and not tab.confirm_model.get() and tab.path.get()==''
+        for mode in ('bootloader','razer'):
+            from dataclasses import replace
+            tab.show_device(replace(device,mode=mode));tab.set_options()
+            assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
+        app.demo=True;app.notebook.select(0);root.update()
         assert len(app.items) == 61 and len(app.canvas.find_all()) == 244
         assert app.usable() is False
         assert str(app.apply_button['state']) == 'disabled'
@@ -52,10 +82,10 @@ def main():
         root.update()
         assert app.selected == key.sensor and app.press.get() == '3500'
         app.select(32); root.update()
-        with patch('keyboard_gui.find_cdc_device',return_value='/dev/fake'):
+        with patch('keyboard_gui.find_midi_device',return_value='/dev/fake'):
             app.detect()
         assert app.device.get() == '/dev/fake' and 'Detected' in app.message.get()
-        with patch('keyboard_gui.find_cdc_device',return_value=None):
+        with patch('keyboard_gui.find_midi_device',return_value=None):
             app.detect()
         assert app.device.get() == '' and 'No USB 1532:02b0' in app.message.get()
         app.hold_button.invoke()
@@ -73,10 +103,11 @@ def main():
         assert app.footer.winfo_rooty()+app.footer.winfo_height() < root.winfo_height()
         app.close(); root = None
         print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, resize')
-        master,slave = pty.openpty()
-        device = Device(master); device.start()
+        device = Device(); device.start()
+        transport_patch = patch('keyboard_gui.Connection', side_effect=lambda name: Connection(name, backend_factory=lambda _:device))
+        transport_patch.start()
         try:
-            root = tk.Tk(); app = App(root,device=os.ttyname(slave))
+            root = tk.Tk(); app = App(root,device='Fake Control')
             app.toggle_connection()
             def pump_until(predicate,seconds=3):
                 deadline = time.monotonic()+seconds
@@ -192,17 +223,17 @@ def main():
             pump_until(lambda:not app.connection.is_alive())
             assert not app.usable()
             app.device.set('auto')  # auto-detection resolves before connecting
-            with patch('keyboard_gui.find_cdc_device',return_value=os.ttyname(slave)):
+            with patch('keyboard_gui.find_midi_device',return_value='Fake Control'):
                 app.connect_button.invoke()
             pump_until(app.usable)
-            assert app.device.get() == os.ttyname(slave)
+            assert app.device.get() == 'Fake Control'
             app.toggle_connection()
             pump_until(lambda:not app.connection.is_alive())
             app.close(); root = None
-            print('PASS Tk+PTY: calibration arm/status/disabled edits/cancel, select A, apply pair/all/MIDI, MIDI trigger point, velocity start, 8 ksps keystroke hold mode, device auto-detect, disable, disconnect')
+            print('PASS Tk+SysEx: calibration arm/status/disabled edits/cancel, select A, apply pair/all/MIDI, MIDI trigger point, velocity start, 8 ksps keystroke hold mode, device auto-detect, disable, disconnect')
         finally:
             device.stop_event.set(); device.join(1)
-            os.close(master); os.close(slave)
+            transport_patch.stop()
     finally:
         if root: root.destroy()
         os.close(read_fd)

@@ -7,19 +7,25 @@ an application. ISO/JIS editing is rejected rather than mislabelling keys.
 
 ## Build and run
 
-Install Python 3.10+ and Tk; no pip packages are needed for the GUI itself.
-Build/install firmware using [Building](BUILDING.md), then run:
+Install Python 3.10+, Tk and the pinned MIDI dependency:
 
 ```sh
-python3 tools/keyboard_gui.py
-python3 tools/keyboard_gui.py --device /dev/ttyACM0
-python3 tools/keyboard_gui.py --demo
+python3 -m venv build-gui-venv
+build-gui-venv/bin/pip install -r tools/requirements-gui.txt
+build-gui-venv/bin/python tools/keyboard_gui.py
+build-gui-venv/bin/python tools/keyboard_gui.py --demo
 ```
 
-Auto-detection chooses the first CDC port under USB `1532:02b0`. Use an
-explicit path when several boards are connected. Your user needs serial-device
-access. Close other readers: one owner controls the CDC stream.
-Normal configuration does not need root; confirmed flashing may use PolicyKit.
+The GUI is the only supported PC application. Select the paired MIDI control
+port; auto-detection works when exactly one board matches. The dropdown lists
+multiple boards. `--device "PORT NAME"` also selects one explicitly. Linux
+ALSA truncates long port names; the GUI recognizes the Huntsman's second
+cable. Use the first, performance cable in the DAW. No serial node is exposed.
+
+Only one GUI owner is supported; a fresh handshake replaces the previous
+session. MIDI access does not normally need root on a desktop session.
+Confirmed flashing uses raw USB and may request PolicyKit authorization.
+Linux is hardware-tested; other RtMidi backends are not validated.
 
 Connect and select a key. The drawing uses recovered sensor identities and
 60% key geometry, with Fn immediately right of Space and Right Alt next.
@@ -62,10 +68,11 @@ staged data. Ordinary edits are disabled while collecting. See [calibration](CAL
 
 ## Flashing from the GUI
 
-**Flash application** stops the connection, validates a 131072-byte image,
-shows its SHA-256 and asks for confirmation. It then calls the bundled
-application-only updater through `tools/firmware_flasher.py`. Validation,
-digest and upload use one immutable copy; a changed image is rejected.
+Open the **Device flashing** tab to identify the connected keyboard, choose
+MIDI-Typist or a supplied Razer application, validate the image and review the
+confirmation. It supports application and bootloader states, including custom
+reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
+protected regions, permission requirements and restoration limits.
 
 Initialize the updater submodule first:
 
@@ -76,7 +83,7 @@ git submodule update --init third_party/huntsman_updater
 Raw USB requires root or suitable permissions. The GUI uses `pkexec` when
 available; otherwise follow its access instructions. Nothing flashes without
 confirmation, and tests/builds never flash. Compatible settings/calibration are
-retained; firmware initializes missing/corrupt saves. Reconnect after completion.
+retained; firmware initializes missing/corrupt saves. The tab refreshes device identity after completion; reconnect configuration separately.
 Razer primary settings/serial, bootloader, factory/security and ASIC firmware
 are outside the application write path.
 
@@ -97,13 +104,13 @@ Fn+Caps editor compatibility does not enable raw rapid-trigger operation.
 
 ## Keystroke hold mode
 
-**Hold first 20 pts of keystroke** switches CDC from GUI snapshots to a
+**Hold first 20 pts of keystroke** switches control telemetry from GUI snapshots to a
 pinned-sensor HKL1 stream: every acquired value of the selected sensor.
 Keyboard/MIDI performance continues, but telemetry and editing pause.
 Stream switching waits for queued configuration ACK/readbacks first.
 
 A crossing below threshold becomes sample zero; the view holds twenty points
-**including that trigger**, unlike the CLI's next twenty. A new trigger replaces
+**including that trigger**. A new trigger replaces
 the previous capture; changing sensor clears it. An early release does not
 truncate the capture. The plot shows raw ticks, threshold lines, trigger and
 the velocity fit.
@@ -132,12 +139,18 @@ Host JSON exports thresholds and mappings, not calibration or all menu settings.
 Import validates the entire file before sending commands, temporarily disables
 output and checks each edit. The batch is not atomic: a failure can leave
 already-confirmed changes and disabled output. Inspect and retry deliberately.
-Version-1 imports leave MIDI mappings unchanged; version 2 includes them.
+Only version-2 profiles containing thresholds and MIDI mappings are accepted.
 
-## CDC protocol
+## MIDI SysEx protocol
 
-The GUI first stops any old stream and queries `version`, then selects
-`stream gui`. Text replies cannot interleave with binary output.
+The configuration status and flashing tab display the firmware's build-time Git
+commit and clean/dirty state, alongside its project version and board target.
+They come from the connected device, not the GUI checkout. See
+[provenance commands](TELEMETRY.md#text-replies) for the read-only `git` query.
+
+The GUI establishes a fresh session with HELLO/READY, receives the build
+identity, then selects `stream gui`. Text and binary payloads have separate
+SysEx message types and can coexist without corrupting one another.
 Commands have one outstanding nonzero decimal ID; snapshots carry the latest
 ACK/result. Malformed IDs receive no ACK. See [commands and JSON](MIDI_PROTOCOL.md).
 
@@ -149,7 +162,7 @@ requires continuity; stream changes discard the previous unsent session.
 
 ## Validation
 
-[Building](BUILDING.md) documents native, PTY and real-Tk tests. They cover
+[Building](BUILDING.md) documents native, MIDI mock and real-Tk tests. They cover
 geometry, atomic edits, readback/ACK, profile failures, capture isolation,
 overflow, timeouts and flash confirmation without opening hardware.
 See [physical evidence and limitations](VALIDATION.md).

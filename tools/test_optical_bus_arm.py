@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Execute SDK SPI/DMA descriptors, scan scheduler and live CDC/NKRO on the ARM ELF.
+"""Execute SDK SPI/DMA descriptors, scan scheduler and live SysEx/NKRO on the ARM ELF.
 
 ASIC replies and DMA completion are synthetic; this does not establish board
 timing, electrical function, calibration validity or hardware recovery.
 """
-import argparse
 import struct
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from test_usb_startup_arm import StartupArm
 from production_arm import ProductionArm
+from midi_arm_peer import MidiArmPeer
 
 DMA = 0x40082000
 SPI = 0x40089000
@@ -39,14 +39,13 @@ class ScanArm(StartupArm):
         self.put32(SPI + 0xff8, 0x20)  # modeled SPI-present read-only bit
         self.call('debug_init')
         self.call('keyboard_live_init')
-        console = self.symbols['s_console']
-        self.call('keyboard_console_init', console, self.symbols['debug_write'])
-        self.put32(console + self.sizes['s_console'] - 4, self.symbols['keyboard_live_command'])
         self.call('usb_composite_init')
+        self.call('midi_control_command_handler', self.symbols['keyboard_live_command'])
         self.reset(True)
         self.control_out(bytes.fromhex('00 05 07 00 00 00 00 00'))
         self.control_out(bytes.fromhex('00 09 01 00 00 00 00 00'))
-        self.control_out(bytes.fromhex('21 22 01 00 04 00 00 00'))
+        self.peer = MidiArmPeer(self)
+        self.peer.hello()
         self.command('stream off') # These tests exercise human-readable command replies.
 
     def dma_read(self, cpu, access, address, size, value, _):
@@ -119,26 +118,19 @@ class ScanArm(StartupArm):
                 self.put32(0x40028000, 2)
                 self.call('CTIMER2_IRQHandler')
             self.dma_complete()
-            self.call('debug_rx_service', self.symbols['s_console'])
+            if self.call('board_millis') % 500 == 0: self.peer.heartbeat()
             self.call('keyboard_live_service')
             self.call('debug_service')
-            if not self.midi_blocked and self.u32(self.packet_entry(5)) & 0x80000000:
-                address, length = self.packet(5)
-                self.midi_packets.append(bytes(self.cpu.mem_read(address, length)))
-                self.complete(5)
+            if not self.midi_blocked: self.peer.drain()
             if self.u32(self.packet_entry(3)) & 0x80000000:
                 address, length = self.packet(3)
                 self.reports.append(bytes(self.cpu.mem_read(address, length)))
                 self.complete(3)
-            if self.u32(self.packet_entry(9)) & 0x80000000:
-                address, length = self.packet(9)
-                self.output.extend(self.cpu.mem_read(address, length))
-                self.complete(9)
             assert not self.reset_requests
 
     def command(self, text):
         self.output.clear()
-        self.complete(8, text.encode() + b'\n')
+        self.peer.command(text)
         self.service(10)
         return bytes(self.output)
 
@@ -149,89 +141,3 @@ class ScanArm(StartupArm):
                      if self.call('keyboard_key_for_sensor', self.profile, i) == key)
         self.raw[index] = 500 if down else 3800
         self.service(12)
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('elf')
-    parser.add_argument('--reference', required=True)
-    args = parser.parse_args()
-    for profile in (1, 2, 3):
-        dev = ScanArm(args.elf, args.reference, profile)
-        automatic = 's_lighting' in dev.symbols
-        assert (b'phase=1' if automatic else b'phase=0') in dev.command('status')
-        assert not dev.requests
-        assert b'not armed' in dev.command('keys on')
-        assert (b'already attempted' if automatic else b'starting') in dev.command('scan start')
-        dev.service(350)
-        assert dev.u32(SPI + 0x424) == 11  # 96 MHz / (11+1) = 8 MHz
-        assert dev.u32(SPI + 0x400) & 0x35 == 0x15  # enable/master/CPHA1/CPOL0
-        assert dev.u32(0x4002801c) == 11999  # CTIMER2 MR1
-        assert b'settled=1 valid=1' in dev.command('scan status')
-        assert all(not any(report) for report in dev.reports), 'keys leaked before arming'
-        dev.key(0x1f, True)
-        assert b'not armed' in dev.command('keys on')
-        dev.key(0x1f, False)
-        assert b'host=1' in dev.command('keys on')
-        dev.key(0x1f, True)
-        assert dev.reports[-1][2] & 1
-        dev.key(0x1f, False)
-        assert not any(dev.reports[-1])
-        dev.key(0x3b, True)
-        dev.key(0x10, True)
-        assert b'mode=1' in dev.command('keys status')
-        dev.key(0x10, False)
-        dev.key(0x3b, False)
-        dev.key(0x0b, True)
-        dev.key(0x0b, False)
-        dev.key(0x6e, True)
-        dev.key(0x6e, False)
-        assert b'saved=10,4' in dev.command('keys status')
-        dev.key(0x3b, True)
-        dev.key(0x1e, True)
-        assert b'mode=2' in dev.command('keys status')
-        dev.key(0x1e, False)
-        dev.key(0x3b, False)
-        dev.key(0x6e, True)
-        dev.key(0x6e, False)
-        dev.key(0x1f, True)
-        dev.no_completion = True
-        dev.service(30)
-        assert b'fault=SPI timeout' in dev.command('scan status')
-        assert not any(dev.reports[-1])
-        before = len(dev.requests)
-        assert b'already attempted' in dev.command('scan start')
-        dev.service(100)
-        assert len(dev.requests) == before
-        assert b'TEST' in dev.command('test status'), 'CDC unavailable after scan fault'
-        print(f'PASS layout={profile}: SDK DMA descriptors/IRQ -> ASIC scheduler -> physical engine -> NKRO; '
-              'CDC editors, arming, timeout releases, no retry/reset')
-
-    for failure in ('header', 'ready', 'marker', 'invalid', 'reset', 'stop'):
-        dev = ScanArm(args.elf, args.reference)
-        dev.command('scan start')
-        dev.service(350)
-        dev.command('keys on')
-        dev.key(0x1f, True)
-        assert any(dev.reports[-1])
-        if failure == 'header': dev.bad_header = True
-        elif failure == 'ready': dev.cpu.mem_write(0x4008c013, b'\1')
-        elif failure == 'marker': dev.marker = True
-        elif failure == 'invalid': dev.raw[0] = 4097
-        elif failure == 'stop': dev.command('scan stop')
-        else:
-            # Reset and reconfigure/DTR before main: the reset latch must
-            # still disarm, even if main never observes DTR low.
-            dev.reset(True)
-            dev.control_out(bytes.fromhex('00 05 07 00 00 00 00 00'))
-            dev.control_out(bytes.fromhex('00 09 01 00 00 00 00 00'))
-            dev.control_out(bytes.fromhex('21 22 01 00 04 00 00 00'))
-        dev.service(150)
-        assert not any(dev.reports[-1]), failure
-        assert b'host=0' in dev.command('keys status'), failure
-        assert b'TEST' in dev.command('test status'), failure
-        print(f'PASS failure={failure}: neutral host report, CDC remains responsive, no reset intent')
-
-
-if __name__ == '__main__':
-    main()

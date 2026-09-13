@@ -28,7 +28,7 @@ firmware/
       board.cmake                native build without NXP or extraction
       include/ + src/            104-key/7-key reference port and CLI simulator
   platform/
-    nxp_lpc55/                   NXP USB/CDC integration and silicon workarounds
+    nxp_lpc55/                   NXP USB/MIDI SysEx integration and silicon workarounds
 third_party/nxp/                 unmodified pinned official SDK components
 tools/                          host tools and offline hardware audits
 tests/                          native behavior and portability tests
@@ -65,6 +65,11 @@ other state remains in SRAMX, without device-specific section attributes in
 shared code. There is no heap allocation in the application.
 
 ## Board contracts
+
+[defaults.h](../firmware/app/include/defaults.h) owns factory settings and
+behavioral tuning shared by firmware and host tools. Saved profiles take
+precedence; hardware/protocol constants remain with their owning modules.
+See [changing defaults](BUILDING.md#changing-defaults) for editing and validation.
 
 [keyboard_layout.h](../firmware/app/include/keyboard_layout.h) describes an
 immutable layout: key count, opaque key IDs, Fn/editor keys, scan frequency,
@@ -125,7 +130,7 @@ See [scheduling and FreeRTOS](SCHEDULING.md).
 ## Compatibility boundary
 
 The Huntsman port retains the 16-byte NKRO report, MIDI channel/packet encoding,
-GUI telemetry, HKS1/HKL1/HBD1 streams, CDC commands, updater entry, calibration
+GUI telemetry, HKG/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
 record format and flash limits. Its existing host tools remain board-specific:
 the GUI's physical drawing is ANSI Huntsman, not an inferred layout for an
 unknown keyboard. A port's diagnostic/telemetry framing is part of its host

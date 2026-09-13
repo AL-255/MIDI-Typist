@@ -12,12 +12,10 @@ see [lighting ports](PORTING.md#5-add-lighting-storage-and-host-integration).
 
 ## Behavior and limits
 
-The `travel-lighting` preset brings up USB first, automatically starts one
-optical scan attempt after USB configuration, then initializes lighting once
-ASIC layout discovery succeeds. It does not require CDC to be opened or a
-`scan start` command. The current complete preset also enables standalone NKRO
-after neutral arming; the lighting-only preset requires `keys on`.
-Diagnostic/USB-only presets retain their own startup policy.
+The complete `huntsman` application brings up USB first, starts one optical
+scan attempt after USB configuration, and initializes lighting after ASIC
+layout discovery. No GUI connection or start command is required. NKRO/MIDI
+output arms after neutral samples.
 
 Each key is white with inverse endpoint-normalized travel: fully lit at rest,
 dimming toward black as it is pressed. It does not use binary pressed/released state, the FN editor, actuation
@@ -152,7 +150,7 @@ calls `DMA_Init`, so it cannot reset the scanner's shared DMA controller.
 
 An I2C error or 20 ms transfer timeout latches one fault and disables LED I2C
 interrupts; the driver handle and payload remain allocated. There is no bus
-abort spin, retry, GPIO cycle, MCU reset, or reinitialization. USB/CDC and optical
+abort spin, retry, GPIO cycle, MCU reset, or reinitialization. USB/MIDI SysEx and optical
 scanning remain serviced. On a bus fault, the last already-applied LED values
 may remain visible: blacking them cannot be guaranteed over a failed bus.
 `light on` does not clear a latched fault or restart hardware.
@@ -170,9 +168,9 @@ cmake --build --preset huntsman --target audit-lighting
 
 The audit targets require the Python dependencies in `tools/requirements-audit.txt`.
 They neither open nor flash a device. Current output is in
-`build-keyboard-fn-menu`; the binary is 131072 bytes.
+`build-huntsman`; the binary is 131072 bytes.
 
-Runtime diagnostics are:
+Internal SysEx diagnostics, exercised by offline audits, are:
 
 ```text
 stream off
@@ -181,14 +179,15 @@ scan status
 scan sample 20
 light off
 light on
-stream on
+stream gui
 ```
 
 `light status` reports phase, requested state, layout, transfers, complete frames,
 errors and accepted calibration count. Phases: 0 off/not started, 1 low wait,
 2 high wait, 3 primary init, 4 secondary init, 5 running, 6 maintenance, 7 fault.
 `light off/on` changes the desired effect without hardware reinitialization.
-As before, text replies are suppressed while the binary stream owns CDC.
+Diagnostic text is independently framed as LOG messages. The GUI is the only
+supported PC application; logs are best effort and never acknowledgments.
 
 ## Validation
 

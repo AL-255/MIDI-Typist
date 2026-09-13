@@ -13,21 +13,30 @@ from test_flash_dump_arm import DumpArm
 from test_lighting_arm import LightingArm
 from test_usb_startup_arm import StartupArm
 from test_keyboard_mode_arm import snapshot
-from scan_bars import sensor_labels
+from keyboard_labels import sensor_labels
 
 SLOTS=(0x78000,0x78200)
 # Regions the application must never erase or program. The flash model rejects
 # any controller command outside the two authorized pages, so a stray address
 # into the application image, the primary settings or the serial-number pages
 # fails the test instead of silently corrupting the device.
-PROTECTED=((0x00000,0x20000,'application image'),
+PROTECTED=((0x00000,0x8000,'bootloader'), (0x8000,0x28000,'application image'),
            (0x49000,0x49400,'primary settings and serial number'))
 
 def record(gen=1):
+    """Current whole-profile fixture with calibrated endpoints."""
+    from firmware_defaults import DEFAULTS as D
     p=bytearray(b'\xff'*512)
-    struct.pack_into('<4s4BII',p,0,b'HKC1',1,1,61,0,gen,0x314c4143)
-    struct.pack_into('<65H',p,16,*([1000]*61+[0]*4))
-    struct.pack_into('<65H',p,146,*([4000]*61+[0]*4))
+    struct.pack_into('<4s4BII',p,0,b'MTP1',1,1,61,1,gen,0x3150544d)
+    p[16:29]=bytes((0,0,0,D['DEFAULT_BRIGHTNESS_LEVEL'],D['DEFAULT_MIDI_VELOCITY_START'],
+                   D['DEFAULT_MIDI_ROOT'],D['DEFAULT_MIDI_SCALE'],0,1,
+                   D['DEFAULT_ACTUATION_LEVEL'],D['DEFAULT_RAPID_LEVEL'],
+                   D['DEFAULT_RAPID_ENABLED'],D['DEFAULT_PROFILE_LOCKED']))
+    struct.pack_into('<I',p,29,1)
+    def pair(a,b):return ((a-1)|((b-1)<<12)).to_bytes(3,'little')
+    for sensor in range(61):
+        offset=33+sensor*7
+        p[offset:offset+7]=pair(D['RAW_DEFAULT_PRESS'],D['RAW_DEFAULT_RELEASE'])+pair(1000,4000)+b'\xff'
     struct.pack_into('<I',p,508,zlib.crc32(p[:508]))
     return bytes(p)
 
@@ -50,11 +59,15 @@ class FlashModel:
         for start,end,what in PROTECTED:
             assert not start <= address < end, ('flash command inside '+what,hex(address))
         if v in (4,12): self.touched.add(base)
-        assert v in (3,4,8,12),v
+        assert v in (3,4,5,8,12),v
         status=5 if self.fail==v else 4
         if status==4:
             if v==3:
-                cpu.mem_write(0x40034080,bytes(self.pages[base][address-base:address-base+16]))
+                if self.pages[base]==b'\xff'*512: status=12 # erased ECC, NOT a readable FF page
+                else: cpu.mem_write(0x40034080,bytes(self.pages[base][address-base:address-base+16]))
+            elif v==5:
+                assert address==base and self.u32(0x40034014)*16==base
+                status=4 if self.pages[base]==b'\xff'*512 else 5
             elif v==4:
                 assert address==base and self.u32(0x40034014)*16==base
                 self.pages[base][:]=b'\xff'*512; self.buffer.clear()
@@ -77,7 +90,7 @@ class Live(LightingArm):
         StartupArm.peripheral_write(self,cpu,access,address,size,value,user)
     def __init__(self,elf,reference,pages=None):
         super().__init__(elf,reference)
-        self.flash=FlashModel(self.cpu); self.put32(0x40000fe0,2)
+        self.put32(0x40000fe0,2)  # reuse LightingArm's single flash model
         # Seed (or replace) individual pages; unlisted slots stay blank.
         if pages:
             for address,page in pages.items(): self.flash.pages[address]=bytearray(page)
@@ -121,15 +134,22 @@ def low_tests(args):
     assert ref.call(0x2000ee18,SLOTS[0],0x2003d000,512)==0
     dev=Low(args.elf); dev.cpu.mem_write(0x2003d000,record())
     assert dev.call('flash_calibration_write',0,0x2003d000)==0
-    assert dev.flash.trace==model.trace, (dev.flash.trace[:10],model.trace[:10])
+    # The proven erase/program trace is unchanged; the additional independent
+    # blank check inserts five register writes between erase and buffer load.
+    trace=dev.flash.trace
+    at=next(i for i,(a,v) in enumerate(trace) if a==0x40034000 and v==5)
+    assert trace[:at-3]+trace[at+1:]==model.trace, (trace[:15],model.trace[:10])
     assert dev.flash.pages==model.pages
-    print('PASS original ARM differential: identical erase + 32 buffer loads + program register trace and page bytes')
+    print('PASS original ARM differential: identical erase/program trace plus verified CMD5 blank check')
 
 def live_tests(args):
     dev=Live(args.elf,args.reference); dev.service(400)
     s=snapshot(dev,'stream gui'); assert s.calibration_flags==4
     assert 0x20000000 <= dev.symbols['s_cal'] < dev.symbols['__app_load_end__'] <= 0x2001fc00
-    assert len(dev.flash.commands)==64 and all(cmd==3 for cmd,_ in dev.flash.commands)
+    dev.service(300)
+    assert snapshot(dev).storage_flags==1
+    assert sum(cmd==12 for cmd,_ in dev.flash.commands)==1
+    dev.flash.commands.clear();dev.flash.touched.clear()
     labels=sensor_labels()[61]
     dev.raw[labels.index('Fn')]=1000; dev.raw[labels.index('C')]=1000
     s=snapshot(dev); assert s.calibration_state==0 and not any(s.report)
@@ -146,7 +166,10 @@ def live_tests(args):
     # Advance simulated elapsed time, never report scan stale: the next DMA
     # completion carries a fresh sample. No physical device participates.
     def elapsed(ms):
-        dev.put32(dev.symbols['s_milliseconds'],dev.call_time()+ms)
+        while ms:
+            step=min(ms,500); ms-=step
+            dev.put32(dev.symbols['s_milliseconds'],dev.call_time()+step)
+            dev.peer.heartbeat(); dev.peer.drain()
         dev.service(4)
     elapsed(600); assert snapshot(dev).calibration_state==3
     elapsed(5000); s=snapshot(dev); assert s.calibration_state==7 and s.calibration_reason==1
@@ -165,15 +188,15 @@ def live_tests(args):
     assert s.calibration_state==6 and s.calibration_flags==6 and s.calibration_generation==1
     assert sum(cmd==4 for cmd,_ in dev.flash.commands)==1
     assert sum(cmd==12 for cmd,_ in dev.flash.commands)==1
-    assert bytes(dev.flash.pages[SLOTS[1]])==b'\xff'*512
-    assert dev.flash.touched=={SLOTS[0]},dev.flash.touched
+    assert bytes(dev.flash.pages[SLOTS[0]])[:4]==b'MTP1'
+    assert dev.flash.touched=={SLOTS[1]},dev.flash.touched
     reboot=Live(args.elf,args.reference,dev.flash.pages); reboot.service(400)
     s=snapshot(reboot,'stream gui'); assert s.calibration_flags==6 and s.calibration_generation==1
-    assert all(cmd==3 for cmd,_ in reboot.flash.commands)
+    assert all(cmd in (3,5) for cmd,_ in reboot.flash.commands)
     reboot.command('stream off'); reboot.service(10)
     output=reboot.command('scan sample 20'); assert b'lower=1032 upper=4000' in output,output
     print('PASS compiled Fn+C/GUI arm, release+settle, rejected edits, cancel/timeout no writes, 61-key save with HID isolation, reboot calibration readback')
-    dev=reboot; previous_page=bytes(dev.flash.pages[SLOTS[0]]); snapshot(dev,'stream gui')
+    dev=reboot; previous_page=bytes(dev.flash.pages[SLOTS[1]]); snapshot(dev,'stream gui')
     s=snapshot(dev,'cfg calibrate 704'); assert s.result==1
     elapsed(600); assert snapshot(dev).calibration_state==3
     dev.raw[0]=1000; dev.raw[1]=1100; dev.raw[2]=1200; dev.service(6)
@@ -190,10 +213,10 @@ def live_tests(args):
     dev.reports.clear(); elapsed(1000); s=snapshot(dev)
     assert s.calibration_completed==61 and s.calibration_state==6 and s.calibration_generation==2
     assert all(not any(p) for p in dev.reports) and not any(v&8 for v in s.velocity_state)
-    assert bytes(dev.flash.pages[SLOTS[0]])==previous_page
+    assert bytes(dev.flash.pages[SLOTS[1]])==previous_page
     assert sum(cmd==4 for cmd,_ in dev.flash.commands)==1
     # The second save rotated to the other slot; this device wrote only that one.
-    assert dev.flash.touched=={SLOTS[1]},dev.flash.touched
+    assert dev.flash.touched=={SLOTS[0]},dev.flash.touched
     print('PASS compiled parallel calibration: concurrent hold telemetry, isolated release/motion, completed keys held, final 59-key batch, second A/B save')
 
 def main():

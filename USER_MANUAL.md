@@ -333,21 +333,25 @@ discard one outlier interval. The result is normalized to 0…1 with
 4,500,000 counts/s as maximum, then converted to Note On velocity 1…127.
 
 This is not force or measured physical speed. The math assumes 8000 scans/s;
-measured pinned delivery is about 1.36 ksample/s. The GUI displays the device
+measured pinned delivery is about 1.34 ksample/s. The GUI displays the device
 float, not an estimate from its ~30 Hz snapshots. See [velocity design](docs/KEY_VELOCITY.md).
 
 ## 9. Use the configuration GUI
 
-On Linux, install Python and Tk, close other CDC readers, then run:
+On Linux, install Python and Tk, then install the GUI's MIDI dependency and run:
 
 ```sh
-python3 tools/keyboard_gui.py
+python3 -m venv build-gui-venv
+build-gui-venv/bin/pip install -r tools/requirements-gui.txt
+build-gui-venv/bin/python tools/keyboard_gui.py
 # Offline preview:
-python3 tools/keyboard_gui.py --demo
+build-gui-venv/bin/python tools/keyboard_gui.py --demo
 ```
 
-Your user needs access to the serial device. Use `--device /dev/ttyACM0` to
-select a port explicitly. The GUI supports ANSI editing only.
+Your user needs access to ALSA MIDI. Select the dedicated control port in the
+GUI; use the first, performance port in your DAW. Only one GUI should connect.
+Linux may truncate the control name to `Huntsman V3 Pro Mini MIDI MIDI-`;
+the GUI recognizes cable 1 automatically. No serial port is exposed. The GUI supports ANSI editing only.
 
 ### Read the screen
 
@@ -378,7 +382,7 @@ on success. It is not atomic; a failed batch may leave confirmed edits applied.
 
 The optional **Hold first 20 pts of keystroke** view switches to the selected
 sensor's full-rate stream. GUI status pauses and edits disable until return.
-It captures 20 points **including the trigger**, unlike the CLI's next 20.
+It captures 20 points **including the trigger**.
 Overflow fails rather than joining samples across a gap.
 See [GUI guide](docs/KEYBOARD_GUI.md#keystroke-hold-mode).
 
@@ -414,51 +418,26 @@ requires recalibration or a private backup.
 
 ## 12. Inspect sensor readings
 
-Only one tool may own CDC. Close the GUI before using these commands.
+The GUI is the only desktop application for this project. Its keyboard tiles
+show the newest whole-keyboard snapshot. Raw readbacks are 16-bit containers
+with valid values 1…4096; lower means deeper.
 
-### Whole-keyboard display
+Select a key and enable **Hold first 20 pts of keystroke** to stream that
+sensor on every hardware acquisition. The graph captures the first 20 points
+including the trigger, then waits for release before rearming. Samples are
+sequence-checked: corruption or overflow ends capture instead of hiding loss.
+Normal status and configuration resume when hold mode is disabled.
 
-```sh
-python3 tools/decode_scan_stream.py /dev/ttyACM0 --bars
-python3 tools/decode_scan_stream.py /dev/ttyACM0 --live
-```
-
-Bars use a caption and one updating row; each column is a character plus space.
-The display drops old frames to show the latest observation. Raw readbacks are
-16-bit containers with valid values 1…4096. Lower means deeper.
-[Whole-scan options](docs/SCAN_STREAM.md)
-
-### Capture a strike
-
-```sh
-python3 -u tools/decode_scan_stream.py /dev/ttyACM0 --last-key --threshold 3600
-python3 -u tools/decode_scan_stream.py /dev/ttyACM0 --last-key --threshold 3600 --repeat
-```
-
-The CLI prints Capture Armed, the triggering key, the **next 20 values
-excluding the trigger**, and its velocity estimate. Repeat waits for that
-key above threshold and rearms until Ctrl+C. Mixed-key input warns and restarts;
-sequence loss, overflow and corruption fail rather than skip data.
-[Capture options and exit behavior](docs/LAST_KEY_STREAM.md)
-
-### Private calibration backup
-
-The [read-only flash dumper](docs/FLASH_DUMP.md) can back up custom slots:
-
-```sh
-python3 tools/dump_flash.py --start 0x78000 --length 0x400 \
-  --output device-dumps/settings.device-dump.bin
-```
-
-Keep the binary and error-map JSON private. A dump containing unreadable words
-is not a restoration image; the tool does not provide an automatic restore.
+JSON export saves thresholds and note assignments, not private flash or calibration.
+There is no GUI flash-dump/restore action. Keep any existing private backups
+outside the repository.
 
 ## 13. Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
 | No typing after a change | Release all keys; check enable state and idle values above release thresholds |
-| GUI cannot connect | Close other CDC tools, check permissions/port and use matching host tools |
+| GUI cannot connect | Close other MIDI SysEx tools, check permissions/port and use matching host tools |
 | MIDI is silent | Blue Enter, instrument monitoring, channel 1, mapping, row/scale filter and octave range |
 | No aftertouch/sustain effect | Receiver must implement the message; check instrument routing |
 | Settings vanish after restart | Wait for saved, not just ACK; inspect storage errors and pending/open menus |
@@ -471,17 +450,29 @@ Do not erase Razer data or force bootloader recovery as a routine diagnostic.
 
 ## 14. Firmware maintenance
 
-Follow [Building](docs/BUILDING.md) for dependencies, presets and tests.
-Use the complete `huntsman` application, not the USB-only `firmware` preset.
+To identify your installed firmware, connect the GUI and read its firmware
+identity in **Device flashing**. The full `git=` hash identifies the build's
+base commit. `state=dirty` means it includes uncommitted changes;
+`state=unknown` means Git provenance was unavailable. Include this identity
+when reporting an issue. It is read from the keyboard, not your PC's checkout.
 
-Flash with the GUI or [custom flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
-using **application only** and leaving secondary firmware disabled.
-Normal updates preserve compatible settings. `--reset-settings` explicitly
-clears custom settings/calibration. Keep USB connected until completion.
+Follow [Building](docs/BUILDING.md) for dependencies, the complete `huntsman`
+preset and tests. The current custom firmware and matching GUI are the only
+supported implementation.
 
-The binary is 131072 bytes; its RAM execution address is not a flash-programming
-address. Do not program address zero. Stock firmware may reclaim custom tail
-space; neither Fn+R nor this configuration GUI installs stock firmware.
+Open the GUI’s **Device flashing** tab. Select the keyboard model, refresh its
+identity, choose MIDI-Typist or Razer, and select the appropriate application
+image. Validate it, confirm the model, then review and flash. Keep the keyboard
+connected until it returns and the tab refreshes its identity.
+
+The tab also works when the keyboard starts in the Razer bootloader. Razer
+restoration requires your own matching firmware file; no stock image is bundled.
+See [Device flashing](docs/DEVICE_FLASHING.md) for supported files and safety
+limits. Only the current custom firmware and matching GUI are supported.
+
+Ordinary custom updates retain current-format settings and calibration.
+Only a confirmed Fn+R reset clears them. Application updates never program
+address zero, the bootloader, factory settings or secondary firmware.
 
 ## Quick reference
 

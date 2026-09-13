@@ -7,10 +7,10 @@ bottom-out velocity windows and the gated interval pop filter. See
 ```sh
 cmake --preset huntsman
 cmake --build --preset huntsman
-python3 tools/keyboard_gui.py        # auto-detects the 1532:02b0 CDC port
+python3 tools/keyboard_gui.py        # auto-detects the 1532:02b0 MIDI SysEx port
 ```
 
-Use `build-keyboard-fn-menu/huntsman_firmware.bin` for an authorized
+Use `build-huntsman/huntsman_firmware.bin` for an authorized
 application-only flash. Use the matching GUI from this checkout.
 
 ## GUI
@@ -78,7 +78,7 @@ unmeasured. Different keys never share sample history, arming state, pending
 flags or output registers.
 
 The calculation uses the same raw estimator as `press_velocity()` in
-`tools/last_key_stream.py`, followed by MCU-side normalization:
+`tools/keyboard_capture.py`, followed by MCU-side normalization:
 
 ```text
 intervals = [x0-x1, x1-x2, ..., x(n-2)-x(n-1)]

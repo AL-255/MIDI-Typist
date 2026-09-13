@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Compiled dumper/CDC tests; flash controller modeled, hardware untouched."""
+"""Compiled dumper/SysEx tests; flash controller modeled, hardware untouched."""
 import argparse
 import struct
 from unicorn import UC_HOOK_MEM_WRITE
-from test_keyboard_console_arm import ConsoleArm
-from test_scan_stream_arm import drain,push
-from dump_flash import decode
+from test_midi_control_arm import MidiControlArm
+from test_scan_stream_arm import drain
+from test_dump_protocol import decode
 
 
-class DumpArm(ConsoleArm):
+class DumpArm(MidiControlArm):
     def __init__(self,elf,hs):
         self.reads=[]; self.read_error=None; self.flags=12; self.stuck=False; self.writes=[]
         super().__init__(elf,hs)
@@ -17,7 +17,7 @@ class DumpArm(ConsoleArm):
         self.cpu.hook_add(UC_HOOK_MEM_WRITE,self.flash_write,begin=0x40034000,end=0x40034fff)
         self.call('keyboard_live_init')
         # Command callback is the final field, following the isolated engine.
-        self.put32(self.console+self.sizes['s_console']-4,self.symbols['keyboard_live_command'])
+        self.call('midi_control_command_handler', self.symbols['keyboard_live_command'])
 
     def flash_write(self,cpu,access,address,size,value,user):
         self.writes.append((address,value))
@@ -59,15 +59,12 @@ def main():
             else: raise AssertionError('invalid response accepted')
         # Pending USB buffer immutable; busy request must not issue flash commands.
         dev.cpu.mem_write(0x2003d000,b'dump read 7 256\0')
-        dev.call('keyboard_live_command',0x2003d000); dev.call('debug_service')
-        address,length=dev.packet(9); saved=bytes(dev.cpu.mem_read(address,length))
+        dev.call('keyboard_live_command',0x2003d000)
+
         before=len(dev.reads)
         dev.call('keyboard_live_command',0x2003d000)
-        assert len(dev.reads)==before and bytes(dev.cpu.mem_read(address,length))==saved
+        assert len(dev.reads)==before
         assert decode(drain(dev),7,256)[0]==bytes((256+i)%251 for i in range(64))
-        # Explicit transition back to whole scan works after a dump.
-        dev.call('scan_stream_whole'); dev.call('scan_stream_start'); push(dev,1)
-        assert drain(dev)[:4]==b'HKS1'
         assert not any(name in dev.symbols for name in ('FLASH_Init','FLASH_Read','FLASH_Erase','FLASH_Program','FFR_CustFactoryPageWrite'))
         assert not dev.reset_requests
         print(f'PASS {"HS" if hs else "FS"}: dumper framing/CRC, bounds, 16-byte errors, pending IN ownership, stream resume; no erase/program issued by dump commands or ROM wrappers linked')

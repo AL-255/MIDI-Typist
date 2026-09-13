@@ -1,5 +1,12 @@
 # Port MIDI-Typist to a new keyboard or MCU
 
+Factory settings and behavioral tuning live in
+[defaults.h](../firmware/app/include/defaults.h), including a clearly marked
+Huntsman optical section. New ports use the shared defaults but provide their
+own acquisition rate, native calibration and hardware contracts; do not copy
+Huntsman timing assumptions into another board. Host tools read the same header.
+See [changing defaults](BUILDING.md#changing-defaults).
+
 The porting boundary is the **board**, not the manufacturer's name. A port
 owns acquisition, key identity, LED wiring, MCU startup, transport and storage.
 The same shared C11 application supplies typing, MIDI, menus, thresholds,
@@ -364,14 +371,14 @@ not a universal flash layout.
 | --- | --- |
 | `load_calibration(profile, count, lo, hi)` | Validate identity, complete bounds and integrity before changing arrays; false means no valid load |
 | `save_calibration(cal)` | Persist all staged endpoints and verify them before returning true |
-| `clear_profile()` | Clear only owned custom records after an explicit Fn-menu confirmation or accepted CDC `cfg clean`; false means clearing was not verified |
+| `clear_profile()` | Clear only owned custom records after an explicit Fn-menu confirmation or accepted MIDI SysEx `cfg clean`; false means clearing was not verified |
 | `reset_sensors(profile)` | Rebuild board-owned fallback state without an unrelated USB reboot or destructive peripheral restart |
 | `log(message)` | Optional bounded diagnostics, not a blocking serial write |
 
 `keyboard_app_reset_profile` releases outputs and cancels unfinished MIDI
 strikes, then defers defaults until a fresh neutral scan. This also works when
 keyboard output is disabled: do not use output arming as the reset-completion
-condition. The shared CDC parser requires a valid scan younger than 100 ms for
+condition. The shared MIDI SysEx parser requires a valid scan younger than 100 ms for
 `cfg clean`; its ACK confirms the erase, not that held keys have been released.
 
 Callbacks are synchronous with no context argument; the board supplies its
@@ -392,7 +399,13 @@ behavior, timeouts and power-loss recovery on the actual MCU. FF bytes alone
 do not establish ownership. Huntsman's RAM-executing flash adapter is not
 safe by implication for an MCU executing from the bank being erased.
 
-USB normally exposes NKRO HID, USB-MIDI and CDC through the platform's stack.
+USB exposes NKRO HID and two-cable USB-MIDI through the platform's stack:
+performance on cable 0, bidirectional GUI SysEx on cable 1. Preserve the
+separate control port, envelope framing/CRC, bounded command mailbox and
+main-context dispatch. The portable codec is `midi_sysex.c`; NXP endpoint
+ownership and session handling are in `midi_control.c`. A new platform must
+provide equivalent reset/lease handling and update host port discovery.
+The Huntsman additionally retains its updater HID at interface 3.
 Feed newline-stripped configuration commands to `keyboard_app_command`;
 it implements get/set/all/enable/MIDI/velocity/clean/calibrate/cancel validation and ACK
 semantics. Board diagnostics, telemetry serialization and the MCU's firmware
@@ -411,8 +424,11 @@ its reset/image contract. The
 [Huntsman flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
 is a separate board-specific tool, not a universal firmware installer.
 
-The existing GUI/scan tools understand Huntsman wire formats and physical
-geometry. They are not generic MCU discovery or flashing tools. Reusing those
+The configuration view understands Huntsman wire formats and physical
+geometry. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
+implement and register a separate adapter for each product, with its discovery,
+image checks, supported transitions and protected write boundary. Do not reuse
+Huntsman addresses for another platform. Reusing the configuration wire
 formats requires matching their layout/size contracts; a different host
 presentation can call the same common configuration command engine.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
@@ -422,6 +438,14 @@ Unparseable IDs leave the previous ACK unchanged. The parser itself neither
 emits text replies nor serializes GUI telemetry; provide settings readback in the port.
 
 ## 6. Prove the port
+
+The root CMake build injects platform-neutral Git metadata into C targets and
+orders generation before compilation. Use `keyboard_build.h`'s
+`MT_BUILD_INFO` and `MT_GIT_REPLY` for device identity; do not duplicate a
+commit hash in board code. A new control transport should expose a read-only
+provenance query and include the identity in its handshake. See
+[build provenance](BUILDING.md#build-provenance) and the
+[SysEx contract](TELEMETRY.md#text-replies).
 
 Build/test the shared code without another board's include directories or
 source files. Adapt the synthetic test to your descriptor and test:

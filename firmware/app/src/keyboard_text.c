@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "keyboard_text.h"
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
@@ -14,7 +15,7 @@ void keyboard_text_start(keyboard_text_t *s, uint8_t profile, const char *text, 
     keyboard_text_stop(s);
     s->started_at = now;
     s->profile = profile;
-    keyboard_text_color(s,255,255,255);
+    keyboard_text_color(s,COLOR_WHITE);
     if (!text || !keyboard_layout_count(profile)) return;
     uint8_t letters[29];
     memset(letters, 255, sizeof(letters));
@@ -45,8 +46,8 @@ bool keyboard_text_render(const keyboard_text_t *s, uint8_t *frame, uint32_t now
 {
     if (!s->length) return false;
     memset(frame, 0, LIGHTING_FRAME_SIZE);
-    for (unsigned i = 0; i < s->length; ++i) white(s, frame, i, 77);
-    const uint32_t phase = (uint32_t)(now - s->started_at) % (s->length * 200u + 500u);
-    if (phase < s->length * 200u) white(s, frame, phase / 200u, 255);
+    for (unsigned i = 0; i < s->length; ++i) white(s, frame, i, TEXT_BACKGROUND_PWM);
+    const uint32_t phase = (uint32_t)(now - s->started_at) % (s->length * TEXT_LETTER_MS + TEXT_REPEAT_PAUSE_MS);
+    if (phase < s->length * TEXT_LETTER_MS) white(s, frame, phase / TEXT_LETTER_MS, 255);
     return true;
 }

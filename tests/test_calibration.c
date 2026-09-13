@@ -1,37 +1,8 @@
-#include "calibration_store.h"
+#include "keyboard_calibration.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
-static uint8_t pages[2][512];
-static unsigned writes, cut=512;
-static uint32_t read_error, write_error;
-static unsigned erases, erase_order[2];
-static uint32_t erase_error;
-static bool erase_bad_verify;
-static unsigned erase_stop_slot, erase_prefix;
-static uint32_t interrupted_erase(unsigned slot)
-{
-    assert(slot<2);
-    memset(pages[slot],255,slot==erase_stop_slot ? erase_prefix : 512);
-    return slot==erase_stop_slot ? 105 : 0;
-}
-static uint32_t erase_page(unsigned slot)
-{
-    assert(slot<2 && erases<2); erase_order[erases++]=slot;
-    if (erase_error) return erase_error;
-    memset(pages[slot],255,512);
-    if (erase_bad_verify) pages[slot][0]=0;
-    return 0;
-}
-static uint32_t read_page(unsigned slot, uint8_t *out) { assert(slot<2); memcpy(out,pages[slot],512); return read_error; }
-static uint32_t write_page(unsigned slot, const uint8_t *in)
-{
-    assert(slot<2); ++writes;
-    if (write_error) return write_error;
-    memset(pages[slot],255,512); memcpy(pages[slot],in,cut);
-    return cut==512 ? 0 : 105;
-}
 static void fill(uint16_t *raw, unsigned n, unsigned value) { for (unsigned i=0;i<n;++i) raw[i]=value; }
 static keyboard_calibration_t capture(unsigned profile, uint32_t now)
 {
@@ -116,72 +87,6 @@ int main(void)
     assert(calibration_start(&s,1,61,0)); raw[2]=0;
     calibration_frame(&s,raw,true,true,0); assert(s.reason==CAL_INVALID);
 
-    calibration_store_t store;
-    uint16_t lo[65],hi[65]; fill(lo,65,2240); fill(hi,65,3360);
-    memset(pages,255,sizeof(pages));
-    calibration_store_load(&store,1,61,lo,hi,read_page);
-    assert(!store.saved && lo[0]==2240 && !writes);
-    assert(calibration_store_save(&store,&c,read_page,write_page));
-    assert(writes==1 && store.slot==0 && store.generation==1);
-    uint8_t first[512]; memcpy(first,pages[0],512);
-    c.lower[0]=1100;
-    for (cut=0;cut<512;++cut) {
-        calibration_store_t attempt=store;
-        assert(!calibration_store_save(&attempt,&c,read_page,write_page));
-        assert(!memcmp(first,pages[0],512));
-        calibration_store_t reboot;
-        calibration_store_load(&reboot,1,61,lo,hi,read_page);
-        assert(reboot.saved && reboot.generation==1 && lo[0]==1000);
-        memset(pages[1],255,512);
-    }
-    cut=512;
-    pages[1][200]=0x42;
-    unsigned before=writes;
-    assert(!calibration_store_save(&store,&c,read_page,write_page));
-    assert(store.error==0x20002 && before==writes && pages[1][200]==0x42);
-    memset(pages[1],255,512); read_error=116;
-    assert(!calibration_store_save(&store,&c,read_page,write_page) && writes==before);
-    read_error=0; write_error=105;
-    assert(!calibration_store_save(&store,&c,read_page,write_page) && store.generation==1);
-    write_error=0;
-    assert(calibration_store_save(&store,&c,read_page,write_page));
-    assert(store.slot==1 && store.generation==2 && !memcmp(first,pages[0],512));
-    calibration_store_load(&store,1,61,lo,hi,read_page);
-    assert(store.generation==2 && lo[0]==1100);
-    calibration_store_load(&store,2,62,lo,hi,read_page); assert(!store.saved);
-    for (unsigned i=0;i<512;++i) {
-        uint8_t tmp[512]; memcpy(tmp,first,512); tmp[i]^=1;
-        assert(!calibration_record_valid(tmp));
-    }
-    calibration_record(pages[0],1,61,UINT32_MAX,c.lower,c.upper);
-    calibration_record(pages[1],1,61,0,c.lower,c.upper);
-    calibration_store_load(&store,1,61,lo,hi,read_page); assert(store.slot==1 && !store.generation);
-    uint8_t saved_pages[2][512]; memcpy(saved_pages,pages,sizeof(pages));
-    for (erase_stop_slot=0;erase_stop_slot<2;++erase_stop_slot)
-        for (erase_prefix=0;erase_prefix<=512;++erase_prefix) {
-            memcpy(pages,saved_pages,sizeof(pages));
-            calibration_store_t attempt=store, reboot;
-            assert(!calibration_store_clear(&attempt,read_page,interrupted_erase));
-            calibration_store_load(&reboot,1,61,lo,hi,read_page);
-            assert(!reboot.saved || reboot.generation==0); /* never the older UINT32_MAX record */
-        }
-    memcpy(pages,saved_pages,sizeof(pages));
-    pages[0][0]=0;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && !erases && store.error==0x20002);
-    memcpy(pages,saved_pages,sizeof(pages)); read_error=116;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && !erases);
-    read_error=0; erase_error=105;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && erases==1 && store.saved);
-    erases=0; erase_error=0; erase_bad_verify=true;
-    assert(!calibration_store_clear(&store,read_page,erase_page) && erases==1 && store.error==0x20003);
-    erases=0; erase_bad_verify=false; memcpy(pages,saved_pages,sizeof(pages));
-    assert(calibration_store_clear(&store,read_page,erase_page));
-    assert(erases==2 && erase_order[0]==0 && erase_order[1]==1 && !store.saved && !store.generation);
-    for (unsigned i=0;i<sizeof(pages);++i) assert(((uint8_t *)pages)[i]==255);
-    erases=0; assert(calibration_store_clear(&store,read_page,erase_page) && !erases);
-    calibration_store_load(&store,1,61,lo,hi,read_page); assert(!store.saved);
-    c.completed=60; before=writes;
-    assert(!calibration_store_save(&store,&c,read_page,write_page) && writes==before);
-    c.completed=61; calibration_finish(&c,true,70000); assert(c.state==CAL_DONE);
-    puts("PASS calibration timing/layouts/wrap/noise/cancel, CRC, A/B reload, all 512 torn-write cut points, unknown-page and error guards");
+    calibration_finish(&c,true,70000); assert(c.state==CAL_DONE);
+    puts("PASS calibration timing, all layouts, time wrap, parallel holds, noise, cancel and invalid samples");
 }

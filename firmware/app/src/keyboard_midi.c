@@ -1,7 +1,10 @@
+#include "defaults.h"
 #include "keyboard_midi.h"
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
 #include <string.h>
+
+#define MIDI_WHEEL_SPAN_RAW ((int)(MIDI_WHEEL_RELEASE_RAW - MIDI_WHEEL_PRESSED_RAW))
 
 enum { ROLE_NOTE, ROLE_FN, ROLE_ENTER, ROLE_DOWN, ROLE_UP,
        ROLE_MODULATION, ROLE_BEND_DOWN, ROLE_BEND_UP, ROLE_SUSTAIN };
@@ -28,8 +31,11 @@ void keyboard_midi_init(keyboard_midi_t *s)
     memset(s->mapping, 255, sizeof(s->mapping));
     clear_voices(s);
     s->sent_bend=8192;
-    s->music.scale=MIDI_SCALE_CHROMATIC;
-    s->velocity_start=1u; /* 0%: the measured velocity is transmitted unchanged */
+    _Static_assert(DEFAULT_MIDI_SCALE < MIDI_SCALE_COUNT, "invalid default scale");
+    s->music=(midi_music_config_t){DEFAULT_MIDI_ROOT,DEFAULT_MIDI_SCALE};
+    s->mode=DEFAULT_MIDI_MODE; s->janko=DEFAULT_MIDI_JANKO;
+    s->lower_muted=DEFAULT_MIDI_LOWER_MUTED; s->octave=DEFAULT_MIDI_OCTAVE;
+    s->velocity_start=DEFAULT_MIDI_VELOCITY_START; /* 0%: the measured velocity is transmitted unchanged */
 }
 
 void keyboard_midi_abort(keyboard_midi_t *s)
@@ -58,15 +64,7 @@ void keyboard_midi_toggle(keyboard_midi_t *s, keyboard_raw_t *raw, uint32_t now)
 static uint8_t default_note(uint8_t usage)
 {
     /* Scientific note names: C4=60, C5=72, C6=84. Two playable rows. */
-    static const uint8_t map[][2] = {
-        {0x2b,72},{0x14,74},{0x1a,76},{0x08,77},{0x15,79},{0x17,81},
-        {0x1c,83},{0x18,84},{0x0c,86},{0x12,88},{0x13,89},{0x2f,91},
-        {0x30,93},{0x31,95},{0x1e,73},{0x1f,75},{0x21,78},{0x22,80},
-        {0x23,82},{0x25,85},{0x26,87},{0x2d,90},{0x2e,92},{0x2a,94},
-        {0x04,61},{0x1d,62},{0x16,63},{0x1b,64},{0x06,65},{0x09,66},
-        {0x19,67},{0x0a,68},{0x05,69},{0x0b,70},{0x11,71},{0x10,72},
-        {0x0e,73},{0x36,74},{0x0f,75},{0x37,76},{0x38,77},{0x34,78}
-    };
+    static const uint8_t map[][2] = DEFAULT_MIDI_NOTE_MAP;
     for (unsigned i = 0; i < sizeof(map)/sizeof(map[0]); ++i)
         if (map[i][0] == usage) return map[i][1];
     return MIDI_UNMAPPED;
@@ -87,22 +85,11 @@ void keyboard_midi_toggle_lower(keyboard_midi_t *s, keyboard_raw_t *raw)
  * controls, modifier roles, space) keep their configured mapping and role.
  * Rows: number row including Backspace, Tab row including backslash, Caps row
  * including Enter, Shift row with the two Shift keys. */
-static const uint8_t janko_notes[][2] = {
-    {0x29,58},{0x1e,60},{0x1f,62},{0x20,64},{0x21,66},{0x22,68},{0x23,70},
-    {0x24,72},{0x25,74},{0x26,76},{0x27,78},{0x2d,80},{0x2e,82},{0x2a,84},
-    {0x2b,59},{0x14,61},{0x1a,63},{0x08,65},{0x15,67},{0x17,69},{0x1c,71},
-    {0x18,73},{0x0c,75},{0x12,77},{0x13,79},{0x2f,81},{0x30,83},{0x31,85},
-    {0x39,60},{0x04,62},{0x16,64},{0x07,66},{0x09,68},{0x0a,70},{0x0b,72},
-    {0x0d,74},{0x0e,76},{0x0f,78},{0x33,80},{0x34,82},{0x28,84},
-    {0x1d,63},{0x1b,65},{0x06,67},{0x19,69},{0x05,71},{0x11,73},
-    {0x10,75},{0x36,77},{0x37,79},{0x38,81},
-};
+static const uint8_t janko_notes[][2] = DEFAULT_JANKO_NOTE_MAP;
 
 /* Left Shift and Right Shift are part of the Jankó rows but the board tables
  * carry their modifier mask in arg0 with a zero usage (the same convention the
  * menu uses for Fn+Left Shift). Every other modifier keeps its control role. */
-#define JANKO_LEFT_SHIFT 61u  /* C#4 */
-#define JANKO_RIGHT_SHIFT 83u /* B5  */
 
 static uint8_t janko_note(const keyboard_action_t *a)
 {
@@ -195,7 +182,7 @@ static void layout(keyboard_midi_t *s, const keyboard_raw_t *raw)
             else if (a->arg0 == 4) s->role[i] = ROLE_BEND_UP;
             else if (a->arg1 == 0x2c) s->role[i] = ROLE_SUSTAIN;
             else if (a->arg1 == 0x28) s->role[i] = ROLE_ENTER;
-            if (a->arg0 == 2) s->mapping[i] = 60; /* left Shift: C4 in MIDI only */
+            if (a->arg0 == 2) s->mapping[i] = DEFAULT_MIDI_LEFT_SHIFT_NOTE; /* left Shift: C4 in MIDI only */
             else if (!a->arg0) s->mapping[i] = default_note(a->arg1);
         }
     }
@@ -234,7 +221,8 @@ bool keyboard_midi_map(keyboard_midi_t *s, keyboard_raw_t *raw, unsigned sensor,
 
 static unsigned wheel_depth(uint16_t value)
 {
-    return value>=3800u ? 0u : value<=1000u ? 2800u : 3800u-value;
+    return value>=MIDI_WHEEL_RELEASE_RAW ? 0u :
+        value<=MIDI_WHEEL_PRESSED_RAW ? MIDI_WHEEL_SPAN_RAW : MIDI_WHEEL_RELEASE_RAW-value;
 }
 
 void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
@@ -262,7 +250,7 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
     }
     if (s->mode && !fn && shift) {
         int octave = s->octave + shift;
-        s->octave = octave < -10 ? -10 : octave > 10 ? 10 : octave;
+        s->octave = octave < -MIDI_OCTAVE_LIMIT ? -MIDI_OCTAVE_LIMIT : octave > MIDI_OCTAVE_LIMIT ? MIDI_OCTAVE_LIMIT : octave;
     }
     if (s->mode) {
         bool sustain=false;
@@ -279,14 +267,14 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
         s->modulation=0;
         if (!fn) for (unsigned i=0; i<raw->count; ++i) {
             unsigned depth=wheel_depth(raw->raw[i]);
-            if (s->role[i]==ROLE_MODULATION) s->modulation=(depth*127u+1400u)/2800u;
+            if (s->role[i]==ROLE_MODULATION) s->modulation=(depth*127u+(MIDI_WHEEL_SPAN_RAW/2u))/MIDI_WHEEL_SPAN_RAW;
             if (s->role[i]==ROLE_BEND_DOWN) bend-=(int)depth;
             if (s->role[i]==ROLE_BEND_UP) bend+=(int)depth;
         }
         /* Sum travel before quantization: equal opposing pressure is exactly
          * center despite MIDI's asymmetric negative/positive endpoint sizes. */
-        s->bend=bend<0 ? 8192-((-bend*8192+1400)/2800) :
-                         8192+((bend*8191+1400)/2800);
+        s->bend=bend<0 ? 8192-((-bend*8192+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW) :
+                         8192+((bend*8191+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW);
         memset(s->pressure, 0, sizeof(s->pressure));
         for (unsigned i = 0; i < raw->count; ++i) {
             if (s->previous[i] && !raw->down[i]) {
@@ -335,11 +323,16 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                     unsigned slot = 5u;
                     for (unsigned candidate = 0; candidate < 5u; ++candidate)
                         if (s->pending[i][candidate] == MIDI_UNMAPPED) { slot = candidate; break; }
-                    if (slot < 5u) { /* windows overlap at most a few taps */
-                        s->pending[i][slot] = (uint8_t)shifted;
-                        s->released[i] &= ~(1u << slot);
-                        s->current[i] = slot;
+                    if (slot == 5u) {
+                        /* Retriggers can indefinitely postpone the fit. Do
+                         * not silently drop a strike when its slots fill. */
+                        ++s->errors;
+                        keyboard_midi_abort(s);
+                        goto overflow;
                     }
+                    s->pending[i][slot] = (uint8_t)shifted;
+                    s->released[i] &= ~(1u << slot);
+                    s->current[i] = slot;
                 }
             }
             if (s->active[i] != MIDI_UNMAPPED) {
@@ -381,7 +374,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     }
     /* Latest-value registers, not the note FIFO. Check both controllers once
      * per millisecond; a busy endpoint retains only their newest positions. */
-    if (!s->wheel_sweep && (uint32_t)(now-s->wheel_at)>=1u) {
+    if (!s->wheel_sweep && (uint32_t)(now-s->wheel_at)>=MIDI_WHEEL_PERIOD_MS) {
         s->wheel_sweep=3; s->wheel_at=now;
     }
     if (s->wheel_sweep & 1u) {
@@ -398,7 +391,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
         }
         s->wheel_sweep &= ~2u;
     }
-    if (!s->pressure_sweep && (uint32_t)(now - s->pressure_at) >= 10u) {
+    if (!s->pressure_sweep && (uint32_t)(now - s->pressure_at) >= MIDI_PRESSURE_PERIOD_MS) {
         s->pressure_sweep = true; s->pressure_cursor = 0; s->pressure_at = now;
     }
     while (s->pressure_sweep) {
@@ -427,10 +420,10 @@ void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now
 {
     if (!s->profile) return;
     unsigned magnitude = s->octave < 0 ? -(int)s->octave : s->octave;
-    if (magnitude > 10u) magnitude = 10u;
+    if (magnitude > MIDI_OCTAVE_LIMIT) magnitude = MIDI_OCTAVE_LIMIT;
     /* Full period 1200 ms at +/-1, down to 120 ms at +/-10. Minimum
      * half-period 60 ms stays above the LED scheduler's 40 ms frame period. */
-    const unsigned half_period = 60u * (11u - magnitude);
+    const unsigned half_period = MIDI_OCTAVE_BLINK_STEP_MS * (MIDI_OCTAVE_LIMIT + 1u - magnitude);
     const bool blink_on = (now / half_period) % 2u == 0u;
     const unsigned count = keyboard_layout_count(s->profile);
     for (unsigned i = 0; i < count; ++i) {
@@ -452,9 +445,11 @@ void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now
         /* Mode/octave hints remain explicit overlays, not note backlighting. */
         if (s->role[i] != ROLE_ENTER && !(s->mode && s->role[i]>=ROLE_DOWN)) continue;
         if (octave_key) {
-            keyboard_light_set(s->profile,i,frame,0,0,blink_on?255:0);
+            if(blink_on) keyboard_light_set(s->profile,i,frame,COLOR_MIDI);
+            else keyboard_light_set(s->profile,i,frame,0,0,0);
             continue;
         }
-        keyboard_light_set(s->profile,i,frame,0,s->mode?0:255,s->mode?255:0);
+        if(s->mode) keyboard_light_set(s->profile,i,frame,COLOR_MIDI);
+        else keyboard_light_set(s->profile,i,frame,COLOR_CONFIRM);
     }
 }

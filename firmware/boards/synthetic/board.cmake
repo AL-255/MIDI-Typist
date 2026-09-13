@@ -16,3 +16,4 @@ target_link_libraries(portable_app_tests PRIVATE midi_typist_app synthetic_board
 target_compile_options(portable_app_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME portable_app COMMAND portable_app_tests)
 add_test(NAME portability_architecture COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_portability.py)
+add_test(NAME defaults COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_defaults.py)

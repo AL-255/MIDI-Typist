@@ -4,7 +4,7 @@ The processing engine is shared across platforms. Unless stated otherwise,
 physical key positions, memory figures and USB/GUI framing here describe the
 Huntsman board. New platforms use the same engine through the [porting API](PORTING.md).
 
-Current Huntsman application: `huntsman` (alias `keyboard-fn-menu`). See
+Current Huntsman application: `huntsman`. See
 [current validation](VALIDATION.md) and
 [filter design](MIDI_FILTER.md).
 This is application behavior, not a claim that the stock firmware implements
@@ -56,7 +56,7 @@ their individual release thresholds before arming again.
 Keyboard mode applies the [keyboard shortcut overrides](FN_MENU.md#keyboard-shortcuts)
 above the recovered base/Fn action maps. MIDI mode does not invoke
 that HID/configuration engine for raw edges, so performance keys do not type
-letters or activate the legacy Fn+Tab/Caps editor. The GUI uses a separate
+letters or activate the keyboard Fn+Tab/Caps editor. The GUI uses a separate
 performance-mode field, distinct from its Fn editor-mode field.
 
 Fn, Left Ctrl/Windows/Alt and Right Alt/Ctrl are reserved MIDI controls.
@@ -283,7 +283,7 @@ Repeated invalid frames do not restart the cleanup sweep. A host that stops
 consuming MIDI must not trap the mode chord or block ordinary HID: the user can
 still switch back to keyboard mode. Physical USB disconnection cannot deliver
 Note Off to an absent host; cleanup resumes after configuration returns. The
-synth/host must also handle device removal. Closing CDC alone does not affect
+synth/host must also handle device removal. Closing MIDI SysEx alone does not affect
 MIDI or keyboard operation.
 
 ## LEDs and configuration persistence
@@ -316,7 +316,7 @@ The overlay uses recovered per-profile channels, not new GPIO or controller
 initialization. Existing `light off`, invalid/stale frame blanking and transfer
 ownership still take precedence.
 
-Per-key note edits are acknowledged over CDC and invalidate held output, just
+Per-key note edits are acknowledged over MIDI SysEx and invalidate held output, just
 like threshold edits. Both persist in complete device snapshots after neutral
 and 250 ms without changes. Version-2 host JSON also exports mappings and
 threshold pairs, but not mode/octave. Primary stock settings and serial-number

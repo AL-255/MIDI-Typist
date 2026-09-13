@@ -9,6 +9,10 @@ I2C = 0x40087000
 
 
 class LightingArm(ScanArm):
+    def peripheral_write(self,cpu,access,address,size,value,user):
+        if address==0x40034000 and value!=2: return
+        super().peripheral_write(cpu,access,address,size,value,user)
+
     def __init__(self, elf, reference, profile=1):
         super().__init__(elf, reference, profile)
         self.put32(I2C + 0xff8, 0x40)  # I2C peripheral present
@@ -24,6 +28,7 @@ class LightingArm(ScanArm):
         # Imported lazily: the calibration suite imports this module.
         from test_calibration_arm import FlashModel
         self.flash = FlashModel(self.cpu)
+        self.put32(0x40000fe0,2)
 
     def i2c_read(self, cpu, access, address, size, value, _):
         self.put32(address, self.i2c_regs.get(address, 0))
@@ -162,7 +167,7 @@ def main():
         expected_host = b'KEYS host=1' if 's_raw' in dev.symbols else b'KEYS host=0'
         assert expected_host in dev.command('keys status')
         assert not dev.reset_requests
-        print(f'PASS I2C {failure}: one fault, no retry/GPIO cycling, scanner and USB/CDC remain serviced', flush=True)
+        print(f'PASS I2C {failure}: one fault, no retry/GPIO cycling, scanner and USB/SysEx remain serviced', flush=True)
 
 
 if __name__ == '__main__': main()

@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "keyboard_app.h"
 #include "keyboard_layout.h"
 #include <string.h>
@@ -16,6 +17,10 @@ bool keyboard_app_reset_profile(keyboard_app_t *s)
         log_message(s,"RESET failed; saved profile not confirmed cleared\r\n");
         return false;
     }
+    /* SysEx can request RESET during a held chord, without the Fn menu's
+     * neutral gate. Release outputs and require a fresh neutral frame. */
+    keyboard_app_invalidate(s,s->last_frame);
+    keyboard_midi_abort(s->midi);
     s->reset_pending=true;
     log_message(s,"RESET saved profile cleared; release all keys for defaults\r\n");
     return true;
@@ -35,7 +40,7 @@ void keyboard_app_invalidate(keyboard_app_t *s,uint32_t now)
 }
 bool keyboard_app_calibrate(keyboard_app_t *s,uint32_t now,bool healthy)
 {
-    if(!healthy || !s->frame_valid || (uint32_t)(now-s->last_frame)>=100u ||
+    if(!healthy || !s->frame_valid || (uint32_t)(now-s->last_frame)>=SCAN_STALE_MS ||
        s->midi->mode || s->raw->engine.config.mode ||
        !calibration_start(s->cal,s->raw->profile,s->raw->count,now)) return false;
     keyboard_raw_invalidate(s->raw); s->sent_valid=false;
@@ -64,10 +69,16 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     const keyboard_config_t before=raw->engine.config;
     keyboard_raw_frame(raw,samples,count,profile,valid);
     s->frame_valid=valid && raw->valid;
-    if(s->reset_pending && raw->armed) {
-        if(s->ops && s->ops->reset_sensors) s->ops->reset_sensors(profile);
-        defaults(s); keyboard_midi_abort(s->midi);
-        s->frame_valid=false; /* wait for freshly initialized board samples */
+    if(s->reset_pending && s->frame_valid) {
+        bool neutral=true;
+        for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
+        /* Output may have been disabled through SysEx. Neutrality, not output
+         * arming, controls RESET so disabled keyboards can reset too. */
+        if(neutral) {
+            if(s->ops && s->ops->reset_sensors) s->ops->reset_sensors(profile);
+            defaults(s); keyboard_midi_abort(s->midi);
+            s->frame_valid=false; /* wait for freshly initialized board samples */
+        }
     }
     uint8_t action=keyboard_menu_frame(s->menu,raw,lo,hi,&before,now,
         calibration_active(s->cal),s->midi->lower_muted,&s->midi->music,s->midi->velocity_start);
@@ -101,7 +112,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
 void keyboard_app_service(keyboard_app_t *s,uint32_t now,bool healthy,
                           keyboard_send_fn keyboard_send,midi_send_fn midi_send)
 {
-    const bool fresh=healthy && (uint32_t)(now-s->last_frame)<100u;
+    const bool fresh=healthy && (uint32_t)(now-s->last_frame)<SCAN_STALE_MS;
     bool active=calibration_active(s->cal);
     calibration_tick(s->cal,fresh && s->frame_valid,now);
     if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(s->raw);
@@ -114,7 +125,7 @@ void keyboard_app_service(keyboard_app_t *s,uint32_t now,bool healthy,
     keyboard_report_t report={0};
     if(s->raw->armed && !calibration_active(s->cal) && !s->midi->mode) report=s->raw->engine.report;
     if(keyboard_send && (!s->sent_valid || memcmp(&s->sent,&report,sizeof(report)) ||
-                        (uint32_t)(now-s->last_report)>=1000u) && keyboard_send(&report)) {
+                        (uint32_t)(now-s->last_report)>=KEYBOARD_REPORT_REFRESH_MS) && keyboard_send(&report)) {
         s->sent=report; s->sent_valid=true; s->last_report=now;
     }
 }
@@ -126,6 +137,6 @@ void keyboard_app_lights(keyboard_app_t *s,const uint16_t *lo,const uint16_t *hi
     keyboard_midi_lights(s->midi,frame,now);
     calibration_lights(s->cal,frame,now);
     keyboard_menu_lights(s->menu,s->raw,lo,hi,frame,now,s->midi->mode,
-        calibration_active(s->cal) || (s->cal->state!=CAL_IDLE && (uint32_t)(now-s->cal->since)<1500u),
+        calibration_active(s->cal) || (s->cal->state!=CAL_IDLE && (uint32_t)(now-s->cal->since)<CALIBRATION_RESULT_MS),
         s->midi->janko);
 }

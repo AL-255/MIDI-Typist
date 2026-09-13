@@ -1,14 +1,6 @@
-"""Two-row ANSI view of raw optical samples, labelled from recovered C tables."""
-import os
+"""Physical sensor labels for the GUI, read from board mapping tables."""
 from pathlib import Path
 import re
-
-ESC = '\x1b['
-BLOCKS = '▁▂▃▄▅▆▇█'
-COLORS = (34, 34, 36, 36, 32, 32, 33, 31)
-PREFIX = 16
-CELL = 2
-
 
 def sensor_labels():
     # Reuse the firmware's production-derived tables, not a guessed scan order.
@@ -60,68 +52,3 @@ def sensor_labels():
             raise ValueError('incomplete recovered sensor mapping')
         layouts[count] = labels
     return layouts
-
-
-def compact_label(label):
-    if len(label) == 1:
-        return label
-    if label.startswith('I') and label[1:].isdigit():
-        return 'i'
-    return {'Esc': 'e', 'Tab': 't', 'BkS': 'b', 'Cap': 'c', 'Ent': 'r',
-            'Spc': '_', 'Mnu': 'm', 'Fn': 'f', 'N\\': '\\',
-            'LCt': '^', 'RCt': '^', 'LSh': 's', 'RSh': 's',
-            'LAl': 'a', 'RAl': 'a', 'LGu': 'g', 'RGu': 'g'}.get(label, '?')
-
-
-def block(value):
-    if not 1 <= value <= 4096:
-        return f'{ESC}35m! {ESC}0m'
-    level = (value - 1) * 8 // 4096
-    return f'{ESC}{COLORS[level]}m{BLOCKS[level]} {ESC}0m'
-
-
-class BarDisplay:
-    def __init__(self, output, start=0, columns=None):
-        self.output = output
-        self.start = start
-        self.columns = columns
-        self.labels = sensor_labels()
-        self.started = False
-
-    def width(self):
-        if self.columns is not None:
-            return self.columns
-        try:
-            return os.get_terminal_size(self.output.fileno()).columns
-        except (OSError, ValueError):
-            return 80
-
-    def lines(self, record):
-        samples = record[4]
-        count = len(samples)
-        columns = self.width()
-        visible = max(0, (columns - PREFIX - 1) // CELL)
-        end = min(count, self.start + visible)
-        if end <= self.start:
-            return 'Widen terminal / change --start'[:max(0, columns - 1)], ''
-        caption = f'{self.start:02}-{end - 1:02}/{count:02} keys |'.ljust(PREFIX)
-        caption += ''.join(compact_label(label) + ' ' for label in self.labels[count][self.start:end])
-        values = 'raw 1..4096 |'.ljust(PREFIX)
-        values += ''.join(block(value) for value in samples[self.start:end])
-        return caption, values
-
-    def __call__(self, record):
-        caption, values = self.lines(record)
-        if not self.started:
-            self.started = True
-            prefix = f'{ESC}?25l{ESC}?7l'  # Hide cursor, prevent resize-induced wrapping.
-        else:
-            prefix = '\r' + ESC + '1A'
-        self.output.write(prefix + '\r' + ESC + '2K' + caption + '\r\n' + ESC + '2K' + values)
-        self.output.flush()
-
-    def close(self):
-        if self.started:
-            self.output.write(f'{ESC}0m{ESC}?7h{ESC}?25h\r\n')
-            self.output.flush()
-            self.started = False

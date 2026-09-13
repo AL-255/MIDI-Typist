@@ -210,8 +210,46 @@ static void layout_change(void)
     keyboard_app_frame(&app,samples,SYN_COUNT,SYN_PROFILE,lo,hi,true,now);
     assert(!raw.valid);
 }
+static void reset_while_held(void)
+{
+    init();
+    uint32_t ack=0; uint8_t result=0;
+    samples[100]=3000; frame();
+    keyboard_app_service(&app,now,true,send_hid,send);
+    assert(raw.armed && keyboard_report_get_usage(&hid,4));
+    assert(keyboard_app_command(&app,"cfg clean 1",now,true,&ack,&result));
+    assert(result==1 && app.reset_pending && !raw.armed);
+    keyboard_app_service(&app,now,true,send_hid,send);
+    assert(!keyboard_report_get_usage(&hid,4));
+    for(unsigned i=0;i<10;++i) { frame(); assert(app.reset_pending); }
+    samples[100]=3900; frame(); assert(!app.reset_pending);
+    frame(); assert(raw.armed);
+    now+=100;
+    assert(keyboard_app_command(&app,"cfg clean 2",now,true,&ack,&result));
+    assert(result==2 && resets==1); /* stale scans never authorize an erase */
+    keyboard_app_invalidate(&app,now);
+    assert(keyboard_app_command(&app,"cfg clean 3",now,true,&ack,&result));
+    assert(result==2 && resets==1);
+    init(); keyboard_raw_enable(&raw,false); frame();
+    assert(!raw.enabled && raw.valid && !raw.armed);
+    assert(keyboard_app_command(&app,"cfg clean 4",now,true,&ack,&result));
+    assert(result==1 && app.reset_pending);
+    frame(); assert(!app.reset_pending && raw.enabled);
+}
+static void atomic_press_edit(void)
+{
+    init();
+    uint16_t before[SYN_COUNT]; memcpy(before,raw.press,sizeof(before));
+    raw.release[SYN_COUNT-1]=1;
+    assert(!keyboard_raw_set_press_all(&raw,2000));
+    assert(!memcmp(before,raw.press,sizeof(before)) && raw.revision==0 && raw.armed);
+    raw.release[SYN_COUNT-1]=3600;
+    assert(keyboard_raw_set_press_all(&raw,4095));
+    for(unsigned i=0;i<SYN_COUNT;++i) assert(raw.press[i]==3599);
+    assert(raw.revision==1 && !raw.armed);
+}
 int main(void)
 {
-    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change();
+    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change(); reset_while_held(); atomic_press_edit();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

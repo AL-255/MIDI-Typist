@@ -53,7 +53,7 @@ static void step(unsigned ms)
 int main(void)
 {
     synthetic_board_init();
-    for(unsigned i=0;i<SYN_COUNT;++i) { lo[i]=1000; hi[i]=4096; }
+    for(unsigned i=0;i<SYN_COUNT;++i) { lo[i]=SYNTHETIC_CALIBRATION_LOWER_RAW; hi[i]=4096; }
     keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
     puts("MIDI-Typist synthetic board: 104 keys, ascending 16-bit ADC, 2kHz");
     puts("set SENSOR ADC | step MILLISECONDS | status | cfg commands | quit");

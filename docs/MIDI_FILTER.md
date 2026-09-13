@@ -78,17 +78,11 @@ The existing 8 kHz assumption is not a measured scan-rate claim.
 
 ## Host capture consistency
 
-`decode_scan_stream.py --last-key` collects the same window in the host
-capture helper (triggering readback plus following values, cut before the
-first below-1500 readback, ten maximum) and applies the same median-interval
-gate. It prints signed raw counts/s to three decimals, rather than normalizing
-or rounding away the fractional mean. All captured readbacks are still
-printed; filtering changes the velocity estimate, not the data stream.
-The host helper is fixed at 8000 Hz; do not use its velocity result as an oracle
-for a differently timed board without adapting it. The configuration GUI
-reproduces the same window math for its held keystroke captures; ordinary
-telemetry still displays the float received from firmware without host-side
-filtering. Telemetry is the 1152-byte GUI stream.
+The GUI capture helper, `tools/keyboard_capture.py`, reproduces the same
+window and median-interval filter on every-acquisition readbacks. Filtering
+changes only the estimate; the waveform retains all samples. The helper uses
+the declared 8000 Hz timebase, which is not measured physical speed.
+Ordinary GUI telemetry displays the device-computed normalized float.
 
 ## Octave LEDs
 

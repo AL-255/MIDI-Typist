@@ -1,20 +1,22 @@
+#include "defaults.h"
 #include "keyboard_config.h"
 
 #include <string.h>
 #include "keyboard_layout.h"
 
-static uint8_t valid_level(uint8_t value)
+static uint8_t valid_level(uint8_t value, uint8_t fallback)
 {
-    return value >= 1u && value <= 10u ? value : 4u;
+    return value >= 1u && value <= 10u ? value : fallback;
 }
 
 void keyboard_config_init(keyboard_config_t *state, uint8_t profile)
 {
     memset(state, 0, sizeof(*state));
     state->profile = profile;
-    state->actuation = state->saved_actuation = 4u;
-    state->rapid = state->saved_rapid = 4u;
-    state->rapid_enabled = 1u;
+    state->actuation = state->saved_actuation = DEFAULT_ACTUATION_LEVEL;
+    state->rapid = state->saved_rapid = DEFAULT_RAPID_LEVEL;
+    state->rapid_enabled = DEFAULT_RAPID_ENABLED;
+    state->locked = DEFAULT_PROFILE_LOCKED;
 }
 
 static void commit(keyboard_config_t *state)
@@ -24,8 +26,8 @@ static void commit(keyboard_config_t *state)
     if (state->mode == KEY_CONFIG_RAPID) state->saved_rapid = state->rapid;
     state->dirty = 0u;
     ++state->revision;
-    /* Deliberately RAM-only: production 0x2001a3bc also writes its profile
-     * storage. That flash layout is not owned by this application image. */
+    /* The application storage adapter observes this committed state and saves
+     * it in the custom tail pages; never write the original profile area. */
 }
 
 bool keyboard_config_event(keyboard_config_t *state, uint8_t key, bool down, bool fn_at_press)
@@ -49,9 +51,9 @@ bool keyboard_config_event(keyboard_config_t *state, uint8_t key, bool down, boo
         {
             state->mode = action->arg0 == 0x70u ? KEY_CONFIG_ACTUATION : KEY_CONFIG_RAPID;
             if (state->mode == KEY_CONFIG_ACTUATION)
-                state->actuation = valid_level(state->saved_actuation);
+                state->actuation = valid_level(state->saved_actuation, DEFAULT_ACTUATION_LEVEL);
             else
-                state->rapid = valid_level(state->saved_rapid);
+                state->rapid = valid_level(state->saved_rapid, DEFAULT_RAPID_LEVEL);
             state->dirty = 0u;
         }
         return true;
@@ -80,7 +82,7 @@ bool keyboard_config_event(keyboard_config_t *state, uint8_t key, bool down, boo
         const uint8_t previous = state->mode;
         commit(state);
         state->mode = previous == KEY_CONFIG_ACTUATION ? KEY_CONFIG_NORMAL : KEY_CONFIG_ACTUATION;
-        if (state->mode) state->actuation = valid_level(state->saved_actuation);
+        if (state->mode) state->actuation = valid_level(state->saved_actuation, DEFAULT_ACTUATION_LEVEL);
         return true;
     }
     if (key == layout->caps)
@@ -99,7 +101,7 @@ bool keyboard_config_event(keyboard_config_t *state, uint8_t key, bool down, boo
         const uint8_t previous = state->mode;
         commit(state);
         state->mode = previous == KEY_CONFIG_RAPID ? KEY_CONFIG_NORMAL : KEY_CONFIG_RAPID;
-        if (state->mode) state->rapid = valid_level(state->saved_rapid);
+        if (state->mode) state->rapid = valid_level(state->saved_rapid, DEFAULT_RAPID_LEVEL);
         return true;
     }
 
@@ -119,18 +121,19 @@ uint16_t keyboard_config_actuation_q16(const keyboard_config_t *state)
     const keyboard_layout_t *layout=keyboard_layout(state->profile);
     if(!layout) return 0;
     return layout->actuation_levels[valid_level(state->mode == KEY_CONFIG_ACTUATION ?
-                                        state->actuation : state->saved_actuation)];
+                                        state->actuation : state->saved_actuation, DEFAULT_ACTUATION_LEVEL)];
 }
 
 uint16_t keyboard_config_release_q16(const keyboard_config_t *state)
 {
     const uint16_t press = keyboard_config_actuation_q16(state);
-    return press <= 0x0766u ? 0x0100u : press - 0x0666u;
+    return press <= OPTICAL_RELEASE_MIN_Q16 + OPTICAL_RELEASE_GAP_Q16 ?
+           OPTICAL_RELEASE_MIN_Q16 : press - OPTICAL_RELEASE_GAP_Q16;
 }
 
 uint16_t keyboard_config_rapid_q16(const keyboard_config_t *state)
 {
     const keyboard_layout_t *layout=keyboard_layout(state->profile);
     if(!layout) return 0;
-    return layout->rapid_levels[valid_level(state->mode == KEY_CONFIG_RAPID ? state->rapid : state->saved_rapid)];
+    return layout->rapid_levels[valid_level(state->mode == KEY_CONFIG_RAPID ? state->rapid : state->saved_rapid, DEFAULT_RAPID_LEVEL)];
 }

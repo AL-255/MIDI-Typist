@@ -1,17 +1,14 @@
 #ifndef KEYBOARD_RAW_H
 #define KEYBOARD_RAW_H
+#include "defaults.h"
 #include "keyboard_engine.h"
 #include "keyboard_limits.h"
 #define RAW_KEY_COUNT MT_KEY_CAPACITY
-#define RAW_DEFAULT_PRESS 3500u
-#define RAW_DEFAULT_RELEASE 3600u
 /* Velocity window: the triggering sample plus up to nine more. A sample
  * below the bottom-out threshold closes the window early (it is excluded),
  * so very fast presses fit on as few as two readbacks. */
-#define RAW_BOTTOM_OUT 1500u
-#define RAW_VELOCITY_WINDOW 10u
 typedef struct {
-    float value;              /* clamp(raw counts/s / 4500000, 0, 1) */
+    float value;              /* clamp(counts/s / VELOCITY_MAX_COUNTS_PER_SECOND, 0, 1) */
     uint32_t captures;         /* completed fits, wrapping uint32 */
     uint16_t window[RAW_VELOCITY_WINDOW]; /* current fit samples, per key only */
     uint8_t count, pending;    /* samples collected; 1 while a fit is in flight */
@@ -33,7 +30,7 @@ void keyboard_raw_enable(keyboard_raw_t *s, bool enabled);
 bool keyboard_raw_set(keyboard_raw_t *s, unsigned index, unsigned press, unsigned release);
 bool keyboard_raw_set_all(keyboard_raw_t *s, unsigned press, unsigned release);
 /* MIDI-mode trigger point: level 1..10 selects a raw press threshold between
- * RAW_DEFAULT_PRESS and RAW_BOTTOM_OUT; per-key release values are kept and
+ * RAW_BOTTOM_OUT and RAW_DEFAULT_RELEASE-1; per-key release values are kept and
  * the pair stays valid (press < release). */
 unsigned keyboard_raw_press_level(unsigned level);
 bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press);

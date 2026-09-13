@@ -94,7 +94,7 @@ power-control behavior beyond the original register sequences.
 Raw thresholds default to press 3500 / release 3600. Down requires strictly
 less than press; up requires strictly more than release. Neutral arming,
 invalid/stale scan handling, GUI changes and USB reset protect against stuck
-reports. CDC does not need to stay open for normal keyboard operation.
+reports. MIDI SysEx does not need to stay open for normal keyboard operation.
 
 The Fn+Tab/Fn+Caps editors implement the recovered interactions above.
 Actuation commits convert the original normalized threshold rules into raw

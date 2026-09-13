@@ -295,12 +295,12 @@ Reset deletion is not undoable on-device; recalibrate or use a private backup.
 
 ## Diagnostics and tests
 
-Close the GUI/other CDC tools, select `stream off`, then issue `menu status`
+Offline protocol audits issue a SysEx `menu status` command
 to read Fn state, editor mode, current/saved actuation level and brightness
 index/PWM, `reset_confirm` and confirmation `ready` flags. The lower-row mute,
 Jankó flag, root/scale, music page and velocity start appear as `lower_muted`,
-`janko`, `root`, `scale`, `music_page` and `velocity_start`. Select `stream gui`
-to resume GUI telemetry. GUI telemetry framing is
+`janko`, `root`, `scale`, `music_page` and `velocity_start`.
+The GUI is the only supported PC application; no serial command client is needed. GUI telemetry framing is
 defined by the Huntsman port; use the matching GUI from this checkout.
 
 ```sh

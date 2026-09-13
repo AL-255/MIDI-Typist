@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "keyboard_raw.h"
 #include "keyboard_layout.h"
 #include "keyboard_menu.h"
@@ -33,7 +34,7 @@ void keyboard_raw_init(keyboard_raw_t *s)
         s->press[i] = RAW_DEFAULT_PRESS;
         s->release[i] = RAW_DEFAULT_RELEASE;
     }
-    s->enabled = true;
+    s->enabled = DEFAULT_KEYBOARD_ENABLED;
     keyboard_raw_invalidate(s);
 }
 
@@ -71,10 +72,12 @@ unsigned keyboard_raw_press_level(unsigned level)
 
 bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press)
 {
-    if (!s->count || !press || press >= 4096u) return false;
+    if (!s->count || s->count>RAW_KEY_COUNT || !press || press >= 4096u) return false;
+    /* Validate the entire edit before touching any threshold. */
+    for (unsigned i = 0; i < s->count; ++i)
+        if (s->release[i] < 2u || s->release[i] >= 4096u) return false;
     for (unsigned i = 0; i < s->count; ++i) {
         const unsigned release = s->release[i];
-        if (release < 2u) return false;
         s->press[i] = (uint16_t)(press < release ? press : release - 1u);
     }
     ++s->revision;
@@ -109,7 +112,7 @@ static void velocity_finish(keyboard_velocity_t *v, uint32_t sample_hz)
      * intervals): discard the interval furthest from the median (earliest
      * wins ties). Shorter windows keep every interval, so their speed is
      * exactly d(x)/count. */
-    if (intervals > 4u) {
+    if (intervals >= VELOCITY_FILTER_MIN_INTERVALS) {
         for (unsigned i = 1; i < intervals; ++i) {
             const int32_t item = sorted[i];
             unsigned j = i;
@@ -128,8 +131,8 @@ static void velocity_finish(keyboard_velocity_t *v, uint32_t sample_hz)
         --intervals;
     }
     const float raw_velocity = (float)sum * ((float)sample_hz / (float)intervals);
-    v->value = raw_velocity <= 0 ? 0.0f : raw_velocity >= 4500000 ? 1.0f
-               : raw_velocity / 4500000.0f;
+    v->value = raw_velocity <= 0 ? 0.0f : raw_velocity >= VELOCITY_MAX_COUNTS_PER_SECOND ? 1.0f
+               : raw_velocity / (float)VELOCITY_MAX_COUNTS_PER_SECOND;
     ++v->captures;
     v->valid = true;
 }

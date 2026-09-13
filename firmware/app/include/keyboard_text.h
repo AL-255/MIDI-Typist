@@ -2,7 +2,7 @@
 #define KEYBOARD_TEXT_H
 #include <stdbool.h>
 #include <stdint.h>
-#define KEYBOARD_TEXT_MAX 32u
+#include "defaults.h"
 typedef struct {
     uint32_t started_at;
     uint8_t sensors[KEYBOARD_TEXT_MAX];

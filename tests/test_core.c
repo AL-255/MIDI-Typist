@@ -1,6 +1,5 @@
 #include "keyboard.h"
 #include "huntsman_layout.h"
-#include "optical_scan.h"
 #include "updater_protocol.h"
 
 #include <assert.h>
@@ -20,38 +19,6 @@ static void test_keyboard(void)
     assert(keyboard_report_set_usage(&report, 0xe1u, false));
     assert(!keyboard_report_get_usage(&report, 0xe1u));
     assert(!keyboard_report_set_usage(&report, 0x74u, true));
-    assert(keyboard_usage_for_sensor(0u) == 0x25u); /* 8, reversed ASIC order */
-    assert(keyboard_usage_for_sensor(8u) == 0x29u); /* Escape */
-    assert(keyboard_usage_for_sensor(43u) == 0u); /* FN after startup map patch */
-    assert(keyboard_usage_for_sensor(60u) == 0x36u); /* comma */
-    assert(keyboard_usage_for_sensor(61u) == 0u);
-}
-
-static void test_optical(void)
-{
-    uint8_t wire[OPTICAL_REPLY_SIZE(2)] = {0xc0u, 0xa0u, 0xe8u, 0x03u, 0x84u, 0x03u};
-    uint16_t samples[2] = {0};
-    assert(optical_scan_parse_response(wire, sizeof(wire), samples, 2u));
-    assert(samples[0] == 1000u && samples[1] == 900u);
-    wire[0] = 0u;
-    assert(!optical_scan_parse_response(wire, sizeof(wire), samples, 2u));
-
-    optical_scan_state_t state;
-    optical_scan_init(&state, 2u);
-    samples[0] = samples[1] = 1000u;
-    for (unsigned i = 0; i < OPTICAL_SETTLING_FRAMES; ++i)
-    {
-        optical_scan_result_t result = optical_scan_process(&state, samples);
-        assert(result.changed_mask_low == 0u);
-    }
-    samples[0] = 600u;
-    optical_scan_result_t result = optical_scan_process(&state, samples);
-    assert(result.changed_mask_low == 1u);
-    assert(state.pressed[0] == 1u);
-    samples[0] = 800u;
-    result = optical_scan_process(&state, samples);
-    assert(result.changed_mask_low == 1u);
-    assert(state.pressed[0] == 0u);
 }
 
 static void test_updater(void)
@@ -90,7 +57,6 @@ static void test_updater(void)
 int main(void)
 {
     test_keyboard();
-    test_optical();
     test_updater();
     puts("core tests passed");
     return 0;

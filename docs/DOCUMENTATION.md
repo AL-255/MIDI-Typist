@@ -44,7 +44,10 @@ URLs in `docs/conf.py` before deployment. See
 ## Editing rules
 
 - Describe the latest build only. Remove obsolete status, hashes and session
-  narratives; preserve useful design rationale and supported compatibility.
+  narratives; preserve useful design rationale and supported factory behavior.
+- Enforce the [current-only implementation rule](../AGENTS.md#latest-implementation-only):
+  one current custom firmware and matching GUI, without superseded variants or
+  protocol/profile fallbacks. CI checks this rule before building the site.
 - Use the manual for operation, Building for commands, Telemetry for byte
   layouts, Device storage for persistence, and Validation for evidence limits.
   Link to these rather than duplicating tables or test reports.

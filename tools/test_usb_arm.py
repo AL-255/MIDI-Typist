@@ -43,7 +43,11 @@ class UsbArm:
         self.stubs = {self.symbols[name] & ~1 for name in
                       ("board_usb_clock_init", "usb_errata_init", "board_delay_ms",
                        "board_usb_isr_enable", "usb_errata_bus_reset", "board_enter_bootloader") if name in self.symbols}
-        self.cpu.hook_add(UC_HOOK_CODE, self.code)
+        # Only stub entry points need a Python instruction callback. Running
+        # one on every arithmetic/load instruction dwarfs actual emulation.
+        # MMIO and Device-memory alignment checks remain fully instrumented.
+        for address in self.stubs:
+            self.cpu.hook_add(UC_HOOK_CODE, self.code, begin=address, end=address)
         self.cpu.hook_add(UC_HOOK_MEM_READ, self.read_register, begin=USB, end=USB + 0xFFF)
         self.cpu.hook_add(UC_HOOK_MEM_WRITE, self.write_register, begin=USB, end=USB + 0xFFF)
         self.cpu.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, self.check_usb_alignment,
@@ -223,7 +227,7 @@ def main():
         dev.control_out(bytes.fromhex("00 05 07 00 00 00 00 00"))
         assert dev.registers[USB] & 0x7F == 7
         config = dev.control_in(bytes.fromhex("80 06 00 02 00 00 ff 00"))
-        assert len(config) == 210, len(config)
+        assert len(config) == 184, len(config)
         print("PASS SET_ADDRESS and full configuration descriptor")
         for index in range(8):
             response = dev.control_in(struct.pack("<BBHHH", 0x80, 6, 0x300 | index,
@@ -241,13 +245,13 @@ def main():
         print("PASS keyboard/updater HID report descriptor requests")
         dev.control_out(bytes.fromhex("00 09 01 00 00 00 00 00"))
         # Enumeration succeeding does not prove that class endpoints opened.
-        for index in (4, 8):  # MIDI OUT and CDC OUT must be receiving
+        for index in (4,):  # MIDI OUT must be receiving
             dev.packet(index)
             # NXP DCI ABI: callbacks begin at +20, stride 12 for this build.
             assert dev.u32(dev.u32(dev.symbols["s_device"]) + 20 + index * 12), (index, "missing endpoint callback")
         print("PASS SET_CONFIGURATION")
         assert dev.control_in(bytes.fromhex("80 08 00 00 00 00 01 00")) == b"\x01"
-        for interface in range(6):
+        for interface in range(4):
             assert dev.control_in(struct.pack("<BBHHH", 0x81, 10, 0, interface, 1)) == b"\x00"
             dev.control_out(struct.pack("<BBHHH", 0x01, 11, 0, interface, 0))
         print("PASS GET_CONFIGURATION and all GET_INTERFACE/SET_INTERFACE(0)")
@@ -263,18 +267,7 @@ def main():
         dev.complete(5)
         print("PASS MIDI IN/OUT and rearm")
 
-        line = dev.control_in(bytes.fromhex("a1 21 00 00 04 00 07 00"))
-        assert line == bytes.fromhex("00 c2 01 00 00 00 08"), line.hex()
-        dev.control_out(bytes.fromhex("21 22 01 00 04 00 00 00"))
-        debug_data = b"CDC offline test\r\n"
-        dev.cpu.mem_write(0x04005001, debug_data)
-        assert dev.call("usb_cdc_write", 0x04005001, len(debug_data))
-        address, length = dev.packet(9)
-        assert bytes(dev.cpu.mem_read(address, length)) == debug_data
-        dev.complete(9)
-        dev.complete(8, b"test")
-        dev.packet(8)
-        print("PASS CDC line coding, DTR, IN/OUT and rearm")
+        assert 'usb_cdc_write' not in dev.symbols
 
         dev.cpu.mem_write(0x04005000, bytes.fromhex("02 00 01") + bytes(13))
         assert dev.call("usb_keyboard_send", 0x04005000)
@@ -324,7 +317,7 @@ def main():
                 boot.call("usb_composite_service")
                 assert boot.reset_requests == 0, "deferral shorter than 20 ms"
                 # A later request must not restart the already-ACKed deadline.
-                boot.control_out(bytes.fromhex("21 22 01 00 04 00 00 00"))
+                boot.control_in(bytes.fromhex("80 08 00 00 00 00 01 00"))
             boot.put32(boot.symbols["s_milliseconds"], 1020)
             boot.call("usb_composite_service")
             assert boot.reset_requests == (1 if abort is None else 0), abort

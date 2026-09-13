@@ -45,12 +45,8 @@ cmake --build --preset huntsman
 ```
 
 The ARM toolchain file is `cmake/arm-none-eabi.cmake`; no IDE-generated project
-is necessary. `huntsman` selects the Huntsman board and aliases
-`keyboard-fn-menu`, which inherits the recovered scan/lighting application
-and enables standalone keyboard mode. `firmware` is a USB-only diagnostic
-preset and does **not** enable MIDI performance or automatic scanning.
-Use `huntsman` for the complete application. Existing presets and the
-`huntsman_firmware` artifact names remain supported for tooling compatibility.
+is necessary. `huntsman` builds the complete current application; no partial
+or historical firmware presets are supported.
 
 The SDK-free desktop port uses the same application sources with a synthetic
 104-key layout and 2 kHz ascending 16-bit input:
@@ -68,7 +64,7 @@ HID/MIDI packets print to stdout, and calibration storage is process RAM.
 It never opens USB devices or flashes hardware. See the
 [porting guide](PORTING.md) for selecting another `MT_BOARD`.
 
-Artifacts in `build-keyboard-fn-menu`:
+Artifacts in `build-huntsman`:
 
 - `huntsman_firmware.elf`: debug symbols, linked ARM instructions and memory map.
 - `huntsman_firmware.hex`: addressed Intel HEX.
@@ -86,19 +82,56 @@ endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.
 
 The complete application builds without the updater, extraction or private
-device data. The 14 native suites pass. See [validation status](VALIDATION.md)
+device data. The 15 native suites pass. See [validation status](VALIDATION.md)
 for the hardware boundary. Newlib may emit linker warnings about unimplemented
 `_close`, `_lseek`, `_read` and `_write`; those functions are absent from the
-final linked image after garbage collection. CDC debug output uses the
+final linked image after garbage collection. MIDI SysEx debug output uses the
 application's USB transport, not libc file I/O.
+
+## Build provenance
+
+Every CMake build checks Git and generates `generated/git_identity.h` in its
+build directory before compiling. This runs on incremental builds as well as
+fresh ones, so a changed HEAD or clean/dirty state does not require manual
+reconfiguration. The header changes only when the metadata changes; it contains
+no timestamp. Keep source and Git state stable while building.
+
+The firmware reports the full commit hash plus `clean`/`dirty` in its SysEx
+handshake and the read-only `git` command. The GUI shows this as part of the
+firmware identity. Dirty builds identify their base commit, not all local edits;
+use a clean checkout for reproducible releases. Git-less exports and unborn
+repositories report `unknown`, never a guessed hash. The identifier is
+provenance, not a signature or an authentication check.
+
+## Changing defaults
+
+Edit [defaults.h](../firmware/app/include/defaults.h), then rebuild. It owns
+factory Schmitt thresholds, velocity scaling/window, MIDI wheel endpoints and
+note maps, calibration timing, LED/menu settings and autosave timing. Constants
+include units and compile-time checks for invalid combinations. Keep scalar
+definitions literal: the GUI and capture tools read this same header through
+[firmware_defaults.py](../tools/firmware_defaults.py), without a C compiler or
+duplicated fallback values. Distribute the header with the host tools.
+
+Valid saved profiles override factory settings. Rebuilding or flashing does
+**not** apply new factory thresholds to an existing profile or erase calibration;
+edit settings through the GUI, or deliberately use the documented profile reset.
+Hardware addresses, flash ownership and protocol encodings are not defaults.
+Changes to tuning values need behavioral validation, not just a successful build.
+Reference-backed threshold-table comparisons deliberately fail if you retune
+the values away from the reference; they still check the header's table data.
+
+The `defaults` test compiles the actual initializers with both shipped and
+alternate defaults, rejects invalid combinations and checks host consistency.
 
 ## Tests that need no original firmware or device
 
-The 14 CTest suites run in parallel and cover application portability and architecture boundaries,
+The 15 CTest suites run in parallel and cover application portability and architecture boundaries,
 core logic, raw keyboard/velocity, MIDI state and
 interruptible text lighting,
-Fn menu/threshold conversion, parallel calibration/storage, GUI model/PTY transport, image reservation,
-scan display, compact captures, offline flasher validation and flash-dump framing.
+Fn menu/threshold conversion, parallel calibration/storage, GUI model/MIDI mock transport, image reservation,
+strict capture framing, offline device-flashing validation, build-time Git
+provenance (including incremental rebuilds) and the current-only repository rule.
 Neither the updater EXE nor proprietary extracted firmware is needed for
 these tests or the application build.
 
@@ -116,15 +149,15 @@ target covers the compiled descriptor/control/endpoint paths at modeled full
 and high speeds, Device-memory alignment, updater reset deferral, startup,
 clock setup and USB chirp behavior. It does not open physical devices.
 
-For a real Tk GUI test against a simulated serial peer, install Tk and `Xvfb`:
+For a real Tk GUI test against a simulated MIDI peer, install Tk and `Xvfb`:
 
 ```sh
 python3 -B tools/test_keyboard_gui_tk.py
 ```
 
-The test starts a private virtual display with TCP disabled and uses POSIX PTYs,
-not `/dev/ttyACM0`. Optional `--screenshot /tmp/gui.png` additionally needs Pillow.
-The GUI runtime itself has no PySerial, Pillow or other pip dependency.
+The test starts a private virtual display with TCP disabled and uses simulated MIDI peers,
+not a physical MIDI port. Optional `--screenshot /tmp/gui.png` additionally needs Pillow.
+The GUI runtime needs python-rtmidi, but not PySerial or Pillow.
 
 ## Optional reference-backed audits
 
@@ -136,15 +169,15 @@ python3 tools/run_tests.py
 ```
 
 This configures/builds the native and complete `huntsman` targets, then runs
-19 independent audit jobs (including all 14 native CTest suites) with up to
+19 independent audit jobs (including all 15 native CTest suites) with up to
 eight workers. It includes original-reference comparisons, linked ARM USB,
-optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated PTYs.
+optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated MIDI peers.
 The total deadline, including builds, is **300 seconds**; failures, missing
 dependencies and timeouts fail the command, never silently skip coverage.
 Use `--jobs N` to control parallelism or `--group usb` for a focused run.
 Per-job output is in the ignored `build-test-logs/` directory.
 
-Each audit owns its emulator or PTY. Native tests include the synthetic port;
+Each audit owns its emulator or MIDI mock. Native tests include the synthetic port;
 the simulator preset is a separate runnable example, not additional hardware
 coverage. See [Validation](VALIDATION.md) for what the suite establishes.
 
@@ -171,11 +204,26 @@ the separate reference is expected to fail; it is not a build dependency.
 
 ## GUI access and troubleshooting
 
-Run `python3 tools/keyboard_gui.py --demo` for a no-device preview. For hardware,
-the user must have read/write permission on the device's CDC node. Use the
-operating system's serial-access group/device permissions, and close other
-monitors before connecting. The GUI takes an exclusive advisory lock and does
-not steal a port from another owner. Its transport is Linux/POSIX-specific.
+Install the runtime MIDI dependency in an isolated environment:
+
+```sh
+python3 -m venv build-gui-venv
+build-gui-venv/bin/pip install -r tools/requirements-gui.txt
+build-gui-venv/bin/python tools/keyboard_gui.py
+```
+
+Tk must be installed for that Python interpreter. Building python-rtmidi from
+source on Linux also needs a C++ compiler, Python development headers and
+ALSA development headers (`libasound2-dev` on Debian/Ubuntu).
+`--demo` runs without opening a device. Runtime access is through ALSA MIDI,
+not serial or raw USB. Linux is the hardware-tested platform; Windows/macOS
+backends, especially large SysEx buffer limits, are not validated.
+
+Use the port selector for multiple keyboards. Auto-detection chooses only a
+unique paired control port; performance MIDI belongs in the DAW. Linux can
+truncate the control name; the GUI recognizes the board's second cable.
+Only one GUI control session is supported. A new handshake replaces a previous
+owner; it is not an OS-level exclusive lock.
 
 If the GUI rejects telemetry, use the matching GUI from this checkout: the
 1152-byte layout is a fixed contract with no version field, and the device
@@ -190,8 +238,9 @@ The updater is vendored as the git submodule `third_party/huntsman_updater`
 (`Huntsman-V3-Pro-Mini-Flasher`); a checkout needs
 `git submodule update --init third_party/huntsman_updater` before flashing, and
 `HUNTSMAN_UPDATER_SRC` overrides its location. Flashing is available from the
-[GUI's **Flash application...** control](KEYBOARD_GUI.md#flashing-from-the-gui)
-and from `tools/flash_application.py`; both build on `tools/firmware_flasher.py`.
+[GUI's **Device flashing** tab](DEVICE_FLASHING.md)
+using the private `tools/device_flash_service.py` worker and model adapter. Its elevated worker is
+an internal GUI implementation detail, not a standalone user application.
 
 No build/test target flashes or resets hardware. Use only the supplied updater's
 reviewed application-only path after explicit authorization and record the exact
@@ -199,8 +248,7 @@ binary hash. The updater is pinned as the submodule described above.
 Do not overwrite bootloader, factory/security data, primary stock settings or
 secondary-controller regions. Settings/calibration write only the two documented tail
 pages. Flashing preserves compatible records by default; firmware initializes
-missing/corrupt saves. Use `--reset-settings` only to explicitly clear custom
-settings and calibration. Do not use manual forced bootloader recovery as a
+missing/corrupt saves. Use the confirmed Fn+R action to clear custom settings and calibration. Do not use manual forced bootloader recovery as a
 routine test. Application updates are authorized for this device; that does
 not authorize writes outside the application and documented calibration slots.
 Build validation does not establish comprehensive MIDI/DAW compatibility.

@@ -47,7 +47,8 @@ bool keyboard_app_command(keyboard_app_t *s,const char *line,uint32_t now,
     }
     /* Cold boot: erase the stored calibration profile exactly like
      * Fn+R, so a freshly flashed application cannot inherit stale state. */
-    else if(!strncmp(line,"cfg clean ",10) && !*p && healthy &&
+    else if(!strncmp(line,"cfg clean ",10) && !*p && healthy && s->frame_valid &&
+            (uint32_t)(now-s->last_frame)<SCAN_STALE_MS &&
             keyboard_app_reset_profile(s)) *result=1u;
     return true;
 }

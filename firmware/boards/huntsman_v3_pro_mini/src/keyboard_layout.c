@@ -2,20 +2,6 @@
 
 #include <stddef.h>
 
-uint8_t keyboard_usage_for_sensor(size_t sensor_index)
-{
-    /* Compatibility helper for ANSI only. New code uses the discovered
-     * profile, key ID and action directly (FN is not a HID usage). */
-    if (sensor_index >= 61u) return 0u;
-    const keyboard_action_t *action = keyboard_action(1u,
-        keyboard_key_for_sensor(1u, (uint8_t)sensor_index), 0u);
-    if (action == NULL || action->type != 2u) return 0u;
-    if (action->arg0)
-        for (unsigned bit = 0; bit < 8u; ++bit)
-            if (action->arg0 == (1u << bit)) return 0xe0u + bit;
-    return action->arg1;
-}
-
 uint8_t keyboard_key_for_sensor(uint8_t profile, uint8_t sensor)
 {
     if (profile < 1u || profile > 3u || sensor >= (profile == 3u ? 65u : 60u + profile))

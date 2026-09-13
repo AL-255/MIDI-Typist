@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "optical_transport.h"
 #include "optical_bus.h"
 #include <string.h>
@@ -57,14 +58,14 @@ bool optical_transport_service(optical_transport_t *s, uint32_t now, uint32_t ti
     if (s->phase == OPT_OFF || s->phase >= OPT_STOPPED) return false;
     if (s->phase == OPT_ROUTE)
     {
-        if ((uint32_t)(now - s->since) < 10u) return false;
+        if ((uint32_t)(now - s->since) < OPTICAL_RESET_LOW_MS) return false;
         optical_bus_route();
         s->phase = OPT_ENABLE; s->since = now;
         return false;
     }
     if (s->phase == OPT_ENABLE)
     {
-        if ((uint32_t)(now - s->since) < 150u) return false;
+        if ((uint32_t)(now - s->since) < OPTICAL_RESET_HIGH_MS) return false;
         if (!optical_bus_enable()) return fault(s, "SPI init");
         s->enabled = true;
         s->phase = OPT_PROBE; s->since = now;
@@ -77,7 +78,7 @@ bool optical_transport_service(optical_transport_t *s, uint32_t now, uint32_t ti
         if (result < 0) return fault(s, "SPI completion");
         if (!result)
         {
-            if ((uint32_t)(now - s->since) >= 20u) return fault(s, "SPI timeout");
+            if ((uint32_t)(now - s->since) >= OPTICAL_SPI_TIMEOUT_MS) return fault(s, "SPI timeout");
             return false;
         }
         s->pending = false;
@@ -128,7 +129,7 @@ bool optical_transport_service(optical_transport_t *s, uint32_t now, uint32_t ti
     if (s->phase != OPT_SCAN_READ && (uint32_t)(now - s->since) < 1u) return frame;
     if (!optical_bus_ready())
     {
-        if ((uint32_t)(now - s->since) >= 125u) return fault(s, "ASIC ready timeout");
+        if ((uint32_t)(now - s->since) >= OPTICAL_READY_TIMEOUT_MS) return fault(s, "ASIC ready timeout");
         return frame;
     }
     switch (s->phase)

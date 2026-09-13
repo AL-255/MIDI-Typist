@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "huntsman_layout.h"
 #include "keyboard_scan.h"
 #include "travel_lighting.h"
@@ -6,9 +7,9 @@
 const keyboard_layout_t *keyboard_layout(uint8_t profile)
 {
     static const keyboard_layout_t layouts[]={
-        {61,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,8000,g_actuation_levels,g_rapid_levels,true},
-        {62,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,8000,g_actuation_levels,g_rapid_levels,true},
-        {65,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,8000,g_actuation_levels,g_rapid_levels,true}
+        {61,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true},
+        {62,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true},
+        {65,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true}
     };
     return profile>=1 && profile<=3 ? &layouts[profile-1] : NULL;
 }

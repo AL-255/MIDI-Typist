@@ -1,33 +1,35 @@
 """GUI telemetry, physical ANSI geometry and host profile validation."""
 from dataclasses import dataclass
+from firmware_defaults import DEFAULTS as D, initializer
 import struct
 import math
 import re
-from scan_bars import sensor_labels
+from keyboard_labels import sensor_labels
 
 SIZE = 1152
 MIDI_CONTROLS = {'Fn':'mode', 'RAl':'oct−', 'RCt':'oct+',
                  'LCt':'bend−', 'LAl':'bend+', 'LGu':'mod', 'Spc':'sustain'}
 # Constant frame magic: the telemetry layout carries no version number. The
-# build identity (version and target) is queried over the text console.
+# build identity (version and target) comes from the SysEx READY handshake.
 MAGIC = b'HKG\x00'
 # Build identity answered by the `version` command: project version plus the
 # board model the firmware targets, e.g. v0.1.0-RZ03-0499.
-BUILD_RE = re.compile(r'build=(v\d+\.\d+\.\d+-[A-Za-z0-9_.-]+)\s*[\r\n]')
+BUILD_RE = re.compile(r'build=(v(\d+\.\d+\.\d+)-([A-Za-z0-9_.-]+) '
+                      r'git=([0-9a-f]{40}|[0-9a-f]{64}|unknown) state=(clean|dirty|unknown))\r?\n')
 KNOWN_TARGETS = {'RZ03-0499':'Huntsman V3 Pro Mini'}
 FLAG_JANKO = 64  # the built-in Jankó note layout is active
-# Built-in Jankó layout (Fn+J in MIDI mode) by physical key label, mirroring
-# firmware/app/src/keyboard_midi.c. Display-only; the device owns the mapping.
-JANKO_NOTES = {
-    'Esc':'A#3','1':'C4','2':'D4','3':'E4','4':'F#4','5':'G#4','6':'A#4',
-    '7':'C5','8':'D5','9':'E5','0':'F#5','-':'G#5','=':'A#5','BkS':'C6',
-    'Tab':'B3','Q':'C#4','W':'D#4','E':'F4','R':'G4','T':'A4','Y':'B4',
-    'U':'C#5','I':'D#5','O':'F5','P':'G5','[':'A5',']':'B5','\\':'C#6',
-    'Cap':'C4','A':'D4','S':'E4','D':'F#4','F':'G#4','G':'A#4','H':'C5',
-    'J':'D5','K':'E5','L':'F#5',';':'G#5',"'":'A#5','Ent':'C6',
-    'LSh':'C#4','Z':'D#4','X':'F4','C':'G4','V':'A4','B':'B4','N':'C#5',
-    'M':'D#5',',':'F5','.':'G5','/':'A5','RSh':'B5',
-}
+def note_name(note):
+    return 'Off' if note == 255 else f'{("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")[note%12]}{note//12-1}'
+
+# HID label spelling is protocol metadata; pitches come only from defaults.h.
+_HID_LABELS = {i+4:chr(65+i) for i in range(26)}
+_HID_LABELS.update({i+0x1e:label for i,label in enumerate('1234567890')})
+_HID_LABELS.update({0x29:'Esc',0x2a:'BkS',0x2b:'Tab',0x2d:'-',0x2e:'=',
+    0x2f:'[',0x30:']',0x31:'\\',0x39:'Cap',0x33:';',0x34:"'",0x28:'Ent',
+    0x36:',',0x37:'.',0x38:'/'})
+JANKO_NOTES = {_HID_LABELS[usage]:note_name(note)
+               for usage,note in initializer('DEFAULT_JANKO_NOTE_MAP')}
+JANKO_NOTES.update(LSh=note_name(D['JANKO_LEFT_SHIFT']), RSh=note_name(D['JANKO_RIGHT_SHIFT']))
 
 
 @dataclass(frozen=True)
@@ -50,9 +52,9 @@ class Snapshot:
     velocity: tuple = ()
     captures: tuple = ()
     velocity_state: tuple = ()
-    velocity_start: int = 1
-    performance_mode: int = 0
-    octave: int = 0
+    velocity_start: int = D['DEFAULT_MIDI_VELOCITY_START']
+    performance_mode: int = D['DEFAULT_MIDI_MODE']
+    octave: int = D['DEFAULT_MIDI_OCTAVE']
     midi_mapping: tuple = ()
     midi_cleanup: bool = False
     midi_errors: int = 0
@@ -69,16 +71,18 @@ class Snapshot:
     calibration_lower: int = 0
     calibration_generation: int = 0
     calibration_error: int = 0
+    storage_flags: int = 0  # valid snapshot, pending save, fault
+    storage_slot: int = 255
+    storage_generation: int = 0  # low 16 bits of whole-profile generation
 
 
 def parse_build(text):
-    """Split a complete `version` reply line into (identity, version, target)."""
+    """Parse current READY/version provenance into (display, version, target)."""
     if isinstance(text,bytes): text = text.decode('ascii','replace')
     match = BUILD_RE.search(text)
     if not match: return None
-    identity = match.group(1)
-    version,target = identity[1:].split('-',1)
-    return identity,version,target
+    if (match[4] == 'unknown') != (match[5] == 'unknown'): return None
+    return match[1],match[2],match[3]
 
 
 def decode(data):
@@ -91,7 +95,7 @@ def decode(data):
         raise ValueError('invalid GUI layout')
     if sum(struct.unpack_from(f'<{(size-4)//2}H',data)) & 0xffffffff != struct.unpack_from('<I',data,size-4)[0]:
         raise ValueError('GUI checksum mismatch')
-    padding = data[1101:1104]+data[1134:1136]+data[1144:1148]
+    padding = data[1101:1104]+data[1134:1136]
     if any(padding) or data[430] & 0xfe:
         raise ValueError('invalid GUI padding')
     sequence,revision,ack,scan_errors,light_errors = struct.unpack_from('<5I',data,12)
@@ -123,8 +127,11 @@ def decode(data):
     reason = data[1129]
     upper,lower = struct.unpack_from('<HH',data,1130)
     generation,error = struct.unpack_from('<II',data,1136)
-    if (state > 8 or completed > count or selected != 255 and selected >= count or
-        cflags & ~7 or bool(cflags & 1) != (1 <= state <= 5) or hold > 1000 or idle > 5000 or
+    storage_flags,storage_slot,storage_generation = struct.unpack_from('<BBH',data,1144)
+    if storage_flags & ~7 or storage_slot not in (0,1,255):
+        raise ValueError('invalid storage state')
+    if (state > 8 or state == 4 or completed > count or selected != 255 and selected >= count or
+        cflags & ~7 or bool(cflags & 1) != (1 <= state <= 5) or hold > D['CALIBRATION_HOLD_MS'] or idle > D['CALIBRATION_IDLE_MS'] or
         done >> count or done.bit_count() != completed or reason > 4 or upper > 4096 or lower > 4096):
         raise ValueError('invalid calibration state')
     if any(v & 8 and (state != 3 or done & (1<<i)) for i,v in enumerate(states)):
@@ -132,7 +139,8 @@ def decode(data):
     cal = dict(calibration_state=state,calibration_completed=completed,calibration_selected=selected,
                calibration_flags=cflags,calibration_hold=hold,calibration_idle=idle,
                calibration_done=tuple(bool(done & (1<<i)) for i in range(count)),calibration_reason=reason,
-               calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error)
+               calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error,
+               storage_flags=storage_flags,storage_slot=storage_slot,storage_generation=storage_generation)
     return Snapshot(profile,count,flags,result,sequence,revision,ack,scan_errors,light_errors,
                     raw,press,release,tuple(bool(bits & (1<<i)) for i in range(count)),bytes(data[431:447]),mode,
                     velocity,captures,states,velocity_start,performance_mode,octave,mapping,bool(cleanup),errors,changes,**cal)
@@ -141,17 +149,9 @@ def decode(data):
 class Decoder:
     def __init__(self):
         self.buffer = bytearray()
-        self.started = False
-        self.skipped = 0
 
     def feed(self,data):
         self.buffer.extend(data)
-        if not self.started:
-            start = self.buffer.find(MAGIC)
-            skip = start if start >= 0 else max(0,len(self.buffer)-3)
-            self.skipped += skip
-            del self.buffer[:skip]
-            if self.skipped > 65536: raise ValueError('GUI stream unavailable; install keyboard-gui firmware')
         while len(self.buffer) >= 6:
             if self.buffer[:4] != MAGIC: raise ValueError('bad GUI frame magic')
             size = struct.unpack_from('<H',self.buffer,4)[0]
@@ -159,7 +159,6 @@ class Decoder:
             if len(self.buffer) < size: break
             result = decode(self.buffer[:size])
             del self.buffer[:size]
-            self.started = True
             yield result
 
 
@@ -211,8 +210,8 @@ def profile_from_snapshot(snapshot):
 
 
 def validate_profile(data):
-    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') not in (1,2) or data.get('layout') != 'ansi':
-        raise ValueError('Expected an ANSI profile, version 1 or 2.')
+    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') != 2 or data.get('layout') != 'ansi':
+        raise ValueError('Expected an ANSI profile, version 2.')
     keys = data.get('keys')
     if not isinstance(keys,list) or len(keys) != 61: raise ValueError('Profile must contain all 61 keys.')
     labels = sensor_labels()[61]
@@ -223,18 +222,15 @@ def validate_profile(data):
         if type(index) is not int or not 0 <= index < 61 or index in result or key.get('label') != labels[index]:
             raise ValueError('Profile sensor/label mismatch or duplicate.')
         result[index] = validate_pair(key.get('press'),key.get('release'))
-        if data['version'] == 2:
-            note = key.get('midi')
-            if type(note) is not int or not (0 <= note <= 127 or note == 255): raise ValueError('Invalid MIDI note.')
-            if labels[index] in MIDI_CONTROLS and note != 255: raise ValueError('Reserved MIDI control key.')
+        note = key.get('midi')
+        if type(note) is not int or not (0 <= note <= 127 or note == 255): raise ValueError('Invalid MIDI note.')
+        if labels[index] in MIDI_CONTROLS and note != 255: raise ValueError('Reserved MIDI control key.')
     return result
 
 
-def note_name(note):
-    return 'Off' if note == 255 else f'{("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")[note%12]}{note//12-1}'
 
 
-CAPTURE_POINTS = 20
+CAPTURE_POINTS = D['CAPTURE_DEFAULT_POINTS']
 
 
 class KeystrokeCapture:
@@ -246,8 +242,8 @@ class KeystrokeCapture:
     collected points are held — feed() returns False — until that happens.
     feed() consumes telemetry frames with the device-reported down state and
     velocity fit; feed_sample() consumes full-rate key-stream readbacks and
-    applies the key's Schmitt pair itself, so samples 1..5 after the trigger
-    match the device velocity window exactly (host-side fit stored in
+    applies the key's Schmitt pair itself. The trigger and subsequent samples
+    reproduce the device's bottom-out/ten-point window (host-side fit stored in
     ``velocity``). The device fit counter attribution applies to telemetry
     frames: the fit whose completion counter first rises after the trigger
     belongs to this keystroke (normally already present in the triggering
@@ -294,8 +290,8 @@ class KeystrokeCapture:
         """Consume one full-rate (8 ksps) key-stream sample.
 
         The down state uses the selected key's Schmitt pair; every sample is
-        appended to an active capture so the trigger sample and the five
-        following readbacks match the device velocity window exactly.
+        appended to an active capture for the bottom-out/ten-point device
+        velocity window. Its timebase assumes 8 kHz, not a measured cadence.
         """
         down = (raw < press) if not self.prev_down else (raw <= release)
         return self.feed(raw, down)

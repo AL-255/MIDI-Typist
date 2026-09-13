@@ -13,4 +13,15 @@
 #endif
 #define MT_BUILD_ID "v" MT_BUILD_VERSION "-" MT_BUILD_TARGET
 
+/* Direct, non-CMake logic tests have no repository provenance. Never report
+ * a guessed commit for an unversioned source export or standalone compile. */
+#ifndef MT_GIT_COMMIT
+#define MT_GIT_COMMIT "unknown"
+#endif
+#ifndef MT_GIT_STATE
+#define MT_GIT_STATE "unknown"
+#endif
+#define MT_GIT_REPLY "git=" MT_GIT_COMMIT " state=" MT_GIT_STATE
+#define MT_BUILD_INFO MT_BUILD_ID " " MT_GIT_REPLY
+
 #endif

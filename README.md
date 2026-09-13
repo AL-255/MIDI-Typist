@@ -37,13 +37,16 @@ lighting and menu instructions.
 On Linux with Python 3.10+ and Tk:
 
 ```sh
-python3 tools/keyboard_gui.py          # auto-detect the CDC device
-python3 tools/keyboard_gui.py --demo   # preview without hardware
+python3 -m venv build-gui-venv
+build-gui-venv/bin/pip install -r tools/requirements-gui.txt
+build-gui-venv/bin/python tools/keyboard_gui.py          # auto-detect the MIDI SysEx device
+build-gui-venv/bin/python tools/keyboard_gui.py --demo   # preview without hardware
 ```
 
 The ANSI GUI edits thresholds/mappings, displays velocities, starts calibration,
 exports host JSON profiles and flashes application images after confirmation.
-Only one program may own CDC. See [GUI operation](docs/KEYBOARD_GUI.md).
+Use the performance MIDI port in your DAW and the separate control port in the GUI.
+Only one GUI session may own control. See [GUI operation](docs/KEYBOARD_GUI.md).
 
 ## Build from scratch
 
@@ -61,8 +64,10 @@ cmake --preset huntsman
 cmake --build --preset huntsman
 ```
 
-Output: `build-keyboard-fn-menu/huntsman_firmware.bin`, exactly 131072 bytes.
-`huntsman` and `keyboard-fn-menu` are equivalent; `firmware` is USB-only.
+Output: `build-huntsman/huntsman_firmware.bin`, exactly 131072 bytes.
+This checkout supports only the current custom firmware and matching GUI.
+Superseded code, firmware variants and compatibility fallbacks are removed;
+the rule is defined in [AGENTS.md](AGENTS.md#latest-implementation-only).
 Use `simulator` for the SDK-free desktop port.
 [Build prerequisites and tests](docs/BUILDING.md) ·
 [Validation scope](docs/VALIDATION.md)
@@ -70,16 +75,18 @@ Use `simulator` for the SDK-free desktop port.
 ## Flashing and safety
 
 Use the [custom firmware flashing tool](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
-or the configuration GUI's **Flash application** action. For the bundled CLI:
+through the GUI's **Device flashing** tab. It identifies application/bootloader
+state and offers install, custom reflash, or restoration from a user-supplied
+Razer application. See the [flashing guide](docs/DEVICE_FLASHING.md).
+Initialize its updater backend:
 
 ```sh
 git submodule update --init third_party/huntsman_updater
-sudo python3 tools/flash_application.py build-keyboard-fn-menu/huntsman_firmware.bin
 ```
 
 Choose **application only**, leaving secondary firmware disabled. Normal
-updates preserve compatible saves; `--reset-settings` explicitly deletes
-custom settings and calibration. Builds, tests and documentation CI never flash.
+updates preserve compatible saves. Fn+R explicitly deletes custom settings and calibration.
+The GUI is the project's only desktop application; the linked updater remains its backend. Builds, tests and documentation CI never flash.
 
 Custom storage writes only **0x78000 and 0x78200**. Razer primary settings and
 serial data, bootloader, factory/security data and the optical ASIC firmware

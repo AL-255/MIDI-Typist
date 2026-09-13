@@ -9,7 +9,7 @@
 #define USB_DEVICE_CONFIG_HID               2
 #define USB_DEVICE_CONFIG_AUDIO             0
 #define USB_DEVICE_CONFIG_AUDIO_CLASS_2_0   0
-#define USB_DEVICE_CONFIG_CDC_ACM           1
+#define USB_DEVICE_CONFIG_CDC_ACM           0
 #define USB_DEVICE_CONFIG_CDC_ECM           0
 #define USB_DEVICE_CONFIG_CDC_RNDIS         0
 #define USB_DEVICE_CONFIG_MSC               0

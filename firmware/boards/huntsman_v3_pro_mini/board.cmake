@@ -1,25 +1,33 @@
 option(HUNTSMAN_BUILD_FIRMWARE "Build the LPC5528 application image" OFF)
-option(HUNTSMAN_USB_ONLY "Build USB bring-up without optical or lighting initialization" ON)
-option(HUNTSMAN_KEYBOARD_DIAGNOSTICS "Enable recovered keyboard engine and isolated CDC tests" OFF)
-option(HUNTSMAN_TRAVEL_LIGHTING "Automatic optical scanning and production-mapped travel lighting" OFF)
-option(HUNTSMAN_KEYBOARD_MODE "Standalone raw Schmitt keyboard with GUI configuration" OFF)
-if(HUNTSMAN_KEYBOARD_MODE AND NOT HUNTSMAN_TRAVEL_LIGHTING)
-    message(FATAL_ERROR "Keyboard mode requires the automatic scan/lighting application")
-endif()
-if(HUNTSMAN_TRAVEL_LIGHTING AND NOT HUNTSMAN_KEYBOARD_DIAGNOSTICS)
-    message(FATAL_ERROR "Travel lighting requires the keyboard diagnostic application")
-endif()
 set(HUNTSMAN_PRODUCTION_REFERENCE "${CMAKE_CURRENT_SOURCE_DIR}/../extracted_firmware/raw/Talia_T1_60%_7203_App_FW_v2.1.0_E888780F.bin"
     CACHE FILEPATH "Read-only hash-pinned production reference for offline audits")
 # Build target: the model number this port reports in its build identity.
 set(MT_BOARD_TARGET "RZ03-0499")
 
+# The audit targets share the complete suite manifest (tools/run_tests.py).
+function(mt_audit_target name)
+    if(HUNTSMAN_BUILD_FIRMWARE)
+        set(dependency huntsman_firmware)
+        set(artifact --elf $<TARGET_FILE:huntsman_firmware>)
+    else()
+        set(dependency keyboard_logic)
+        set(artifact --library $<TARGET_FILE:keyboard_logic>)
+    endif()
+    set(groups)
+    foreach(group IN LISTS ARGN)
+        list(APPEND groups --group ${group})
+    endforeach()
+    add_custom_target(${name}
+        COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_tests.py
+            --no-build ${artifact} --reference ${HUNTSMAN_PRODUCTION_REFERENCE} ${groups}
+        DEPENDS ${dependency} VERBATIM)
+endfunction()
+
 set(KEYBOARD_LOGIC_SOURCES
     ${MT_APP_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/layout_port.c
-    firmware/boards/huntsman_v3_pro_mini/src/keyboard_console.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c
-    firmware/boards/huntsman_v3_pro_mini/src/calibration_store.c
+    firmware/boards/huntsman_v3_pro_mini/src/device_store.c
     firmware/boards/huntsman_v3_pro_mini/src/optical_key.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c
@@ -35,7 +43,6 @@ target_compile_options(midi_typist_app PRIVATE -Wall -Wextra -Werror)
 set(HUNTSMAN_BOARD_SOURCES ${KEYBOARD_LOGIC_SOURCES})
 list(REMOVE_ITEM HUNTSMAN_BOARD_SOURCES ${MT_APP_SOURCES})
 add_library(huntsman_core STATIC
-    firmware/boards/huntsman_v3_pro_mini/src/optical_scan.c
     $<TARGET_OBJECTS:midi_typist_app>
     ${HUNTSMAN_BOARD_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/updater_protocol.c
@@ -55,6 +62,7 @@ if(NOT HUNTSMAN_BUILD_FIRMWARE)
     target_compile_options(portable_app_tests PRIVATE -Wall -Wextra -Werror)
     add_test(NAME portable_app COMMAND portable_app_tests)
     add_test(NAME portability_architecture COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_portability.py)
+    add_test(NAME defaults COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_defaults.py)
     add_executable(core_tests tests/test_core.c)
     target_link_libraries(core_tests PRIVATE huntsman_core)
     target_compile_options(core_tests PRIVATE -Wall -Wextra -Werror)
@@ -75,33 +83,23 @@ if(NOT HUNTSMAN_BUILD_FIRMWARE)
     target_link_libraries(calibration_tests PRIVATE huntsman_core)
     target_compile_options(calibration_tests PRIVATE -Wall -Wextra -Werror)
     add_test(NAME calibration COMMAND calibration_tests)
+    add_executable(device_store_tests tests/test_device_store.c)
+    target_link_libraries(device_store_tests PRIVATE huntsman_core)
+    target_compile_options(device_store_tests PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME device_store COMMAND device_store_tests)
     add_test(NAME keyboard_gui COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_gui.py)
-    add_test(NAME firmware_flasher COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_firmware_flasher.py)
+    add_test(NAME latest_only COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_latest_only.py)
+    add_test(NAME build_identity COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_build_identity.py)
+    add_test(NAME device_flashing COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_device_flashing.py)
     add_test(NAME image_reservation COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_image_reservation.py)
-    add_test(NAME scan_display COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_scan_display.py)
-    add_test(NAME last_key_stream COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_last_key_stream.py)
-    add_test(NAME flash_dump COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_dump_flash.py)
+    add_test(NAME midi_sysex COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_midi_sysex.py)
     # Host ABI for comparison against executed production ARM instructions.
     add_library(keyboard_logic SHARED ${KEYBOARD_LOGIC_SOURCES})
     target_include_directories(keyboard_logic PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
     target_compile_definitions(keyboard_logic PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
     target_compile_options(keyboard_logic PRIVATE -Wall -Wextra -Werror)
-    add_custom_target(audit-keyboard
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/keyboard_reference_tables.py
-            ${HUNTSMAN_PRODUCTION_REFERENCE} --check ${CMAKE_CURRENT_SOURCE_DIR}/firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_config.py
-            $<TARGET_FILE:keyboard_logic> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_optical_key.py
-            $<TARGET_FILE:keyboard_logic> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_scan.py
-            $<TARGET_FILE:keyboard_logic> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        DEPENDS keyboard_logic USES_TERMINAL VERBATIM)
-    add_custom_target(audit-lighting
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/lighting_reference_tables.py
-            ${HUNTSMAN_PRODUCTION_REFERENCE} --check ${CMAKE_CURRENT_SOURCE_DIR}/firmware/boards/huntsman_v3_pro_mini/src/lighting_reference_tables.c
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_lighting.py
-            $<TARGET_FILE:keyboard_logic> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        DEPENDS keyboard_logic USES_TERMINAL VERBATIM)
+    mt_audit_target(audit-keyboard reference-keyboard)
+    mt_audit_target(audit-lighting reference-lighting)
     return()
 endif()
 
@@ -129,61 +127,32 @@ add_executable(huntsman_firmware
     ${NXP_USB}/device/usb_device_lpcip3511.c
     ${NXP_USB}/device/class/usb_device_class.c
     ${NXP_USB}/device/class/usb_device_hid.c
-    ${NXP_USB}/device/class/usb_device_cdc_acm.c
     ${NXP_ROOT}/component/osa/fsl_os_abstraction_bm.c
     ${NXP_ROOT}/component/lists/fsl_component_generic_list.c
     firmware/boards/huntsman_v3_pro_mini/src/board.c
     firmware/platform/nxp_lpc55/src/debug.c
+    firmware/platform/nxp_lpc55/src/midi_control.c
     firmware/platform/nxp_lpc55/src/usb_composite.c
     firmware/boards/huntsman_v3_pro_mini/src/usb_descriptors.c
     firmware/platform/nxp_lpc55/src/usb_errata.c
     firmware/platform/nxp_lpc55/src/usb_safe_memcpy.c
 )
-if(HUNTSMAN_KEYBOARD_DIAGNOSTICS)
-    if(HUNTSMAN_KEYBOARD_MODE)
-        set(OPTICAL_AUDIT tools/test_keyboard_mode_arm.py)
-    else()
-        set(OPTICAL_AUDIT tools/test_optical_bus_arm.py)
-    endif()
-    target_sources(huntsman_firmware PRIVATE firmware/boards/huntsman_v3_pro_mini/src/main_keyboard.c firmware/platform/nxp_lpc55/src/debug_rx.c
-        firmware/boards/huntsman_v3_pro_mini/src/optical_bus.c firmware/boards/huntsman_v3_pro_mini/src/optical_transport.c firmware/boards/huntsman_v3_pro_mini/src/keyboard_live.c firmware/platform/nxp_lpc55/src/scan_stream.c
-        ${NXP_DRIVERS}/lpc_dma/fsl_dma.c
-        ${NXP_DRIVERS}/flexcomm/spi/fsl_spi_dma.c)
-    target_compile_definitions(huntsman_firmware PRIVATE HUNTSMAN_KEYBOARD_DIAGNOSTICS=1)
-    if(HUNTSMAN_KEYBOARD_MODE)
-        target_compile_definitions(huntsman_firmware PRIVATE HUNTSMAN_KEYBOARD_MODE=1)
-        target_sources(huntsman_firmware PRIVATE firmware/boards/huntsman_v3_pro_mini/src/flash_dump.c)
-        target_include_directories(huntsman_firmware PRIVATE ${NXP_DRIVERS}/iap1)
-        add_custom_target(audit-dump
-            COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_flash_dump_arm.py $<TARGET_FILE:huntsman_firmware>
-            DEPENDS huntsman_firmware USES_TERMINAL VERBATIM)
-        add_custom_target(audit-calibration
-            COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_calibration_arm.py
-                $<TARGET_FILE:huntsman_firmware> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-            DEPENDS huntsman_firmware USES_TERMINAL VERBATIM)
-        add_custom_target(audit-menu
-            COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_menu_arm.py
-                $<TARGET_FILE:huntsman_firmware> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-            DEPENDS huntsman_firmware USES_TERMINAL VERBATIM)
-    endif()
-    if(HUNTSMAN_TRAVEL_LIGHTING)
-        target_sources(huntsman_firmware PRIVATE firmware/boards/huntsman_v3_pro_mini/src/travel_lighting.c firmware/boards/huntsman_v3_pro_mini/src/lighting_bus.c)
-        target_compile_definitions(huntsman_firmware PRIVATE HUNTSMAN_TRAVEL_LIGHTING=1)
-    endif()
-elseif(HUNTSMAN_USB_ONLY)
-    target_sources(huntsman_firmware PRIVATE firmware/boards/huntsman_v3_pro_mini/src/main_usb.c)
-else()
-    target_sources(huntsman_firmware PRIVATE firmware/boards/huntsman_v3_pro_mini/src/main.c firmware/boards/huntsman_v3_pro_mini/src/lighting.c firmware/boards/huntsman_v3_pro_mini/src/optical_hw.c)
-endif()
-
-if(HUNTSMAN_TRAVEL_LIGHTING)
-    add_custom_target(audit-lighting
-        COMMAND python3 -u ${CMAKE_CURRENT_SOURCE_DIR}/tools/lighting_reference_tables.py
-            ${HUNTSMAN_PRODUCTION_REFERENCE} --check ${CMAKE_CURRENT_SOURCE_DIR}/firmware/boards/huntsman_v3_pro_mini/src/lighting_reference_tables.c
-        COMMAND python3 -u ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_lighting_arm.py
-            $<TARGET_FILE:huntsman_firmware> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        DEPENDS audit-keyboard USES_TERMINAL VERBATIM)
-endif()
+target_sources(huntsman_firmware PRIVATE
+    firmware/boards/huntsman_v3_pro_mini/src/main_keyboard.c
+    firmware/boards/huntsman_v3_pro_mini/src/optical_bus.c
+    firmware/boards/huntsman_v3_pro_mini/src/optical_transport.c
+    firmware/boards/huntsman_v3_pro_mini/src/keyboard_live.c
+    firmware/platform/nxp_lpc55/src/scan_stream.c
+    firmware/boards/huntsman_v3_pro_mini/src/flash_dump.c
+    firmware/boards/huntsman_v3_pro_mini/src/travel_lighting.c
+    firmware/boards/huntsman_v3_pro_mini/src/lighting_bus.c
+    ${NXP_DRIVERS}/lpc_dma/fsl_dma.c
+    ${NXP_DRIVERS}/flexcomm/spi/fsl_spi_dma.c)
+target_include_directories(huntsman_firmware PRIVATE ${NXP_DRIVERS}/iap1)
+mt_audit_target(audit-dump dump)
+mt_audit_target(audit-calibration calibration)
+mt_audit_target(audit-menu menu)
+mt_audit_target(audit-lighting lighting)
 target_link_libraries(huntsman_firmware PRIVATE huntsman_core)
 
 target_include_directories(huntsman_firmware PRIVATE
@@ -259,31 +228,9 @@ set_property(TARGET huntsman_firmware APPEND PROPERTY LINK_DEPENDS
 
 # Explicit, offline-only target; optional Python dependencies are not needed
 # to build firmware. This target never opens a USB device or runs the updater.
-add_custom_target(audit-usb
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
-            python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_usb_arm.py
-            $<TARGET_FILE:huntsman_firmware>
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
-            python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_usb_startup_arm.py
-            $<TARGET_FILE:huntsman_firmware>
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
-            python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_usb_chirp_arm.py
-            $<TARGET_FILE:huntsman_firmware>
-    DEPENDS huntsman_firmware
-    USES_TERMINAL
-    VERBATIM
-)
+mt_audit_target(audit-usb usb)
 
-if(HUNTSMAN_KEYBOARD_DIAGNOSTICS)
-    add_custom_target(audit-keyboard
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_console_arm.py
-            $<TARGET_FILE:huntsman_firmware>
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/${OPTICAL_AUDIT}
-            $<TARGET_FILE:huntsman_firmware> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_scan_stream_arm.py
-            $<TARGET_FILE:huntsman_firmware> --reference ${HUNTSMAN_PRODUCTION_REFERENCE}
-        DEPENDS audit-usb USES_TERMINAL VERBATIM)
-endif()
+mt_audit_target(audit-keyboard keyboard)
 
 add_custom_command(TARGET huntsman_firmware POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O binary --gap-fill 0xFF --pad-to 0x20020000

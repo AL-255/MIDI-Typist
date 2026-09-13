@@ -7,7 +7,7 @@
 
 typedef struct {
     /* Synchronous, single-owner callbacks. Only the board owns storage
-     * addresses, erase geometry, format migration and bootloader boundaries. */
+     * addresses, erase geometry, current schema and bootloader boundaries. */
     bool (*load_calibration)(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi);
     bool (*save_calibration)(const keyboard_calibration_t *cal);
     bool (*clear_profile)(void);
@@ -36,8 +36,8 @@ void keyboard_app_init(keyboard_app_t *app,keyboard_raw_t *raw,keyboard_midi_t *
                        const keyboard_app_ops_t *ops);
 void keyboard_app_invalidate(keyboard_app_t *app,uint32_t now);
 bool keyboard_app_calibrate(keyboard_app_t *app,uint32_t now,bool healthy);
-/* Erase the stored profile and settings (Fn+R and the flashing script's cold
- * boot), then apply defaults once every key is released. */
+/* Explicitly erase custom profile/settings (Fn+R or cfg clean), then apply
+ * defaults once every key is released. Routine flashing retains settings. */
 bool keyboard_app_reset_profile(keyboard_app_t *app);
 void keyboard_app_frame(keyboard_app_t *app,const uint16_t *samples,uint8_t count,
                         uint8_t profile,uint16_t *lo,uint16_t *hi,bool valid,uint32_t now);

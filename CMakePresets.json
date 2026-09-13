@@ -4,9 +4,13 @@
     {
       "name": "huntsman",
       "displayName": "MIDI-Typist — Huntsman V3 Pro Mini",
-      "inherits": "keyboard-fn-menu",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-huntsman",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
       "cacheVariables": {
-        "MT_BOARD": "huntsman_v3_pro_mini"
+        "MT_BOARD": "huntsman_v3_pro_mini",
+        "CMAKE_BUILD_TYPE": "Release",
+        "HUNTSMAN_BUILD_FIRMWARE": "ON"
       }
     },
     {
@@ -27,116 +31,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
-    },
-    {
-      "name": "firmware",
-      "displayName": "LPC5528 application firmware",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-firmware",
-      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "HUNTSMAN_BUILD_FIRMWARE": "ON"
-      }
-    },
-    {
-      "name": "keyboard-diagnostics",
-      "inherits": "firmware",
-      "displayName": "Keyboard/CDC diagnostic candidate (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard",
-      "cacheVariables": {
-        "HUNTSMAN_KEYBOARD_DIAGNOSTICS": "ON"
-      }
-    },
-    {
-      "name": "scan-stream",
-      "inherits": "keyboard-diagnostics",
-      "displayName": "Whole-keyboard CDC raw stream (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-stream"
-    },
-    {
-      "name": "travel-lighting",
-      "inherits": "scan-stream",
-      "displayName": "Automatic optical travel lighting (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-lighting",
-      "cacheVariables": {
-        "HUNTSMAN_TRAVEL_LIGHTING": "ON"
-      }
-    },
-    {
-      "name": "last-key",
-      "inherits": "travel-lighting",
-      "displayName": "Compact loss-detecting last-key CDC (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-last-key"
-    },
-    {
-      "name": "keyboard-gui",
-      "inherits": "last-key",
-      "displayName": "Standalone Schmitt keyboard and GUI configuration (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard-gui",
-      "cacheVariables": {
-        "HUNTSMAN_KEYBOARD_MODE": "ON"
-      }
-    },
-    {
-      "name": "keyboard-velocity",
-      "inherits": "keyboard-gui",
-      "displayName": "Per-key on-device velocity and atomic all-key thresholds (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard-velocity"
-    },
-    {
-      "name": "keyboard-velocity-float",
-      "inherits": "keyboard-velocity",
-      "displayName": "Firmware-normalized float velocity (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard-velocity-float"
-    },
-    {
-      "name": "keyboard-storage-layout",
-      "inherits": "keyboard-velocity-float",
-      "displayName": "Complete application with unused image-tail reservation",
-      "binaryDir": "${sourceDir}/build-keyboard-storage-layout"
-    },
-    {
-      "name": "keyboard-midi",
-      "inherits": "keyboard-storage-layout",
-      "displayName": "Keyboard/MIDI modes, velocity, poly aftertouch, GUI mapping (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard-midi"
-    },
-    {
-      "name": "keyboard-midi-filter",
-      "inherits": "keyboard-midi",
-      "displayName": "C4-B6 MIDI mapping and interval pop filter (no automatic flash)",
-      "binaryDir": "${sourceDir}/build-keyboard-midi-filter"
-    },
-    {
-      "name": "keyboard-dump",
-      "inherits": "keyboard-midi-filter",
-      "displayName": "Read-only bounded main-flash dumper over CDC",
-      "binaryDir": "${sourceDir}/build-keyboard-dump"
-    },
-    {
-      "name": "keyboard-dump-controller",
-      "inherits": "keyboard-dump",
-      "displayName": "Reference-matched flash controller read command (no ROM calls)",
-      "binaryDir": "${sourceDir}/build-keyboard-dump-controller"
-    },
-    {
-      "name": "keyboard-calibration",
-      "inherits": "keyboard-dump-controller",
-      "displayName": "Per-key calibration with bounded two-page tail storage",
-      "binaryDir": "${sourceDir}/build-keyboard-calibration"
-    },
-    {
-      "name": "keyboard-calibration-parallel",
-      "inherits": "keyboard-calibration",
-      "displayName": "Independent simultaneous per-key calibration holds",
-      "binaryDir": "${sourceDir}/build-keyboard-calibration-parallel"
-    },
-    {
-      "name": "keyboard-fn-menu",
-      "inherits": "keyboard-calibration-parallel",
-      "displayName": "Complete keyboard with Fn hints, actuation editor and brightness",
-      "binaryDir": "${sourceDir}/build-keyboard-fn-menu"
     }
   ],
   "buildPresets": [
@@ -151,76 +45,15 @@
     {
       "name": "host-tests",
       "configurePreset": "host-tests"
-    },
-    {
-      "name": "firmware",
-      "configurePreset": "firmware"
-    },
-    {
-      "name": "keyboard-diagnostics",
-      "configurePreset": "keyboard-diagnostics"
-    },
-    {
-      "name": "scan-stream",
-      "configurePreset": "scan-stream"
-    },
-    {
-      "name": "travel-lighting",
-      "configurePreset": "travel-lighting"
-    },
-    {
-      "name": "last-key",
-      "configurePreset": "last-key"
-    },
-    {
-      "name": "keyboard-gui",
-      "configurePreset": "keyboard-gui"
-    },
-    {
-      "name": "keyboard-velocity",
-      "configurePreset": "keyboard-velocity"
-    },
-    {
-      "name": "keyboard-velocity-float",
-      "configurePreset": "keyboard-velocity-float"
-    },
-    {
-      "name": "keyboard-storage-layout",
-      "configurePreset": "keyboard-storage-layout"
-    },
-    {
-      "name": "keyboard-midi",
-      "configurePreset": "keyboard-midi"
-    },
-    {
-      "name": "keyboard-midi-filter",
-      "configurePreset": "keyboard-midi-filter"
-    },
-    {
-      "name": "keyboard-dump",
-      "configurePreset": "keyboard-dump"
-    },
-    {
-      "name": "keyboard-dump-controller",
-      "configurePreset": "keyboard-dump-controller"
-    },
-    {
-      "name": "keyboard-calibration",
-      "configurePreset": "keyboard-calibration"
-    },
-    {
-      "name": "keyboard-calibration-parallel",
-      "configurePreset": "keyboard-calibration-parallel"
-    },
-    {
-      "name": "keyboard-fn-menu",
-      "configurePreset": "keyboard-fn-menu"
     }
   ],
   "testPresets": [
     {
       "name": "host-tests",
       "configurePreset": "host-tests",
+      "execution": {
+        "jobs": 8
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -228,6 +61,9 @@
     {
       "name": "simulator",
       "configurePreset": "simulator",
+      "execution": {
+        "jobs": 8
+      },
       "output": {
         "outputOnFailure": true
       }

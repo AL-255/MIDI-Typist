@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include "keyboard_limits.h"
 #define CAL_KEYS MT_KEY_CAPACITY
-enum cal_state { CAL_IDLE, CAL_RELEASE, CAL_SETTLE, CAL_COLLECT, CAL_KEY_RELEASE,
-                 CAL_SAVE, CAL_DONE, CAL_ABORTED, CAL_ERROR };
+enum cal_state { CAL_IDLE, CAL_RELEASE, CAL_SETTLE, CAL_COLLECT,
+                 CAL_SAVE=5, /* wire value 4 is reserved */ CAL_DONE, CAL_ABORTED, CAL_ERROR };
 enum cal_reason { CAL_OK, CAL_TIMEOUT, CAL_INVALID, CAL_CANCELLED, CAL_STORAGE };
 typedef struct {
     uint32_t since, sum, samples;

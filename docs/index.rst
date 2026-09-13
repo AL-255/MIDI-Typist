@@ -21,10 +21,11 @@ the shared application to another board. These pages describe the latest build.
 
    Fn menu <docs/FN_MENU>
    Configuration GUI <docs/KEYBOARD_GUI>
+   Device flashing <docs/DEVICE_FLASHING>
    Calibration <docs/CALIBRATION>
-   Whole-scan display <docs/SCAN_STREAM>
+   Whole-keyboard visualization <docs/SCAN_STREAM>
    Per-key capture <docs/LAST_KEY_STREAM>
-   Private flash backups <docs/FLASH_DUMP>
+   Bounded flash read protocol <docs/FLASH_DUMP>
 
 .. toctree::
    :maxdepth: 1

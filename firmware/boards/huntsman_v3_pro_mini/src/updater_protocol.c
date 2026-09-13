@@ -23,10 +23,10 @@ bool updater_frame_valid(const uint8_t *frame, size_t length)
     }
 
     /* The factory DLL emits SET_MODE with checksum zero; preserve that quirk. */
-    const bool legacy_set_mode = (frame[UPDATER_CHANNEL_OFFSET] == 0u) &&
+    const bool factory_set_mode = (frame[UPDATER_CHANNEL_OFFSET] == 0u) &&
                                  (frame[UPDATER_OPCODE_OFFSET] == 0x04u) &&
                                  (frame[UPDATER_CHECKSUM_OFFSET] == 0u);
-    return legacy_set_mode || (frame[UPDATER_CHECKSUM_OFFSET] == updater_frame_checksum(frame));
+    return factory_set_mode || (frame[UPDATER_CHECKSUM_OFFSET] == updater_frame_checksum(frame));
 }
 
 static void response_begin(const uint8_t *request, uint8_t *response)

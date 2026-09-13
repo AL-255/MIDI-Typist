@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "optical_key.h"
 
 uint8_t optical_key_level(uint16_t lower, uint16_t upper, uint16_t sample)
@@ -11,11 +12,11 @@ uint8_t optical_key_level(uint16_t lower, uint16_t upper, uint16_t sample)
 bool optical_key_calibrate(uint16_t raw_lower, uint16_t raw_upper, uint16_t settled,
                            bool use_settled, uint16_t *lower, uint16_t *upper)
 {
-    if (use_settled && raw_upper < (uint32_t)settled + 500u) raw_upper = settled;
+    if (use_settled && raw_upper < (uint32_t)settled + OPTICAL_SETTLED_MARGIN_RAW) raw_upper = settled;
     if (!raw_lower || raw_lower == 0xffffu || !raw_upper || raw_upper > 0xfffu ||
-        (uint32_t)raw_lower + 2000u >= raw_upper) return false;
+        (uint32_t)raw_lower + OPTICAL_FACTORY_MIN_SPAN_RAW >= raw_upper) return false;
     *upper = raw_upper;
-    *lower = raw_lower + ((uint32_t)(raw_upper - raw_lower) * 10u) / 100u;
+    *lower = raw_lower + ((uint32_t)(raw_upper - raw_lower) * OPTICAL_LOWER_TRIM_PERCENT) / 100u;
     return true;
 }
 

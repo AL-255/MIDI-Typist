@@ -32,9 +32,9 @@ First installation or two invalid/incompatible snapshots initializes defaults
 and automatically erases/programs/verifies a fresh snapshot in the owned tail
 area. One valid snapshot is sufficient for recovery; a bad peer never causes
 the good snapshot to be erased. Compatible application updates retain settings.
-Valid calibration-only HKC1 data migrates through the opposite slot while
-preserving endpoint generation. Compatibility uses schema and layout, not
-build timestamps.
+Only the current MTP1 schema and matching layout are accepted. Unsupported
+records are invalid input, not migration sources; current valid saves survive
+application updates.
 
 ECC failures invalidate nonblank data. Other controller faults, geometry
 errors and timeouts inhibit automatic writes rather than trigger erasure.
@@ -100,15 +100,15 @@ Defaults apply after release and save automatically. Two-page reset is not
 atomic: interruption may retain the newest record or leave defaults, but
 older-first erasure prevents stale-record resurrection.
 
-Explicit CDC `cfg clean` performs the same destructive custom reset and needs
+Explicit MIDI SysEx `cfg clean` performs the same destructive custom reset and needs
 a fresh valid scan. Its ACK confirms erase, not the neutral gate. Neither
 path touches Razer data. Recover deleted calibration by recalibrating or using
 a private backup.
 
 GUI offsets 1144…1147 report valid/pending/fault flags, slot and low 16 bits of
 whole-profile generation; 1136/1140 retain calibration generation/error.
-See [telemetry](TELEMETRY.md). GUI/CLI flashing preserves compatible records
-by default; CLI `--reset-settings` explicitly clears them. Stock firmware may
+See [telemetry](TELEMETRY.md). GUI flashing preserves compatible records by default; confirmed Fn+R
+explicitly clears them. Stock firmware may
 reclaim this custom tail space.
 
 ## Validation
@@ -116,8 +116,8 @@ reclaim this custom tail space.
 Native tests cover all layouts, packed fields, unchanged-state wear,
 neutral debounce, settings/calibration preservation, corruption, controller
 faults and all 512 byte-cut points in an inactive-page write.
-Compiled ARM tests drive Fn+Enter/Fn+J, CDC thresholds/velocity, reboot,
-blank-ECC initialization, corrupt-page recovery and HKC1 migration.
+Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity, reboot,
+blank-ECC initialization, corrupt-page recovery and unsupported-schema rejection.
 The controller model rejects commands outside the tail pages and compares
 erase/program transactions against executed original code, separately
 checking the added CMD5 verification.

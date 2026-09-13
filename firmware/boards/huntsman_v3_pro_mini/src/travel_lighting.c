@@ -1,3 +1,4 @@
+#include "defaults.h"
 #include "travel_lighting.h"
 #include "lighting_bus.h"
 #include <string.h>
@@ -5,7 +6,7 @@
 void travel_lighting_init(travel_lighting_t *s)
 {
     memset(s, 0, sizeof(*s));
-    s->requested = true;
+    s->requested = DEFAULT_LIGHTING_ENABLED;
 }
 
 bool travel_lighting_start(travel_lighting_t *s, uint8_t profile, uint32_t now)
@@ -48,7 +49,7 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
     if (s->phase == LIGHT_OFF || s->phase == LIGHT_FAULT) return;
     if (s->phase == LIGHT_LOW)
     {
-        if ((uint32_t)(now - s->since) < 10u) return;
+        if ((uint32_t)(now - s->since) < LIGHTING_RESET_LOW_MS) return;
         lighting_bus_enable_pins(true);
         s->since = now;
         s->phase = LIGHT_HIGH;
@@ -56,7 +57,7 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
     }
     if (s->phase == LIGHT_HIGH)
     {
-        if ((uint32_t)(now - s->since) < 5u) return;
+        if ((uint32_t)(now - s->since) < LIGHTING_RESET_HIGH_MS) return;
         s->phase = LIGHT_PRIMARY;
     }
     if (s->pending)
@@ -65,7 +66,7 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
         if (result < 0) { fault(s, "I2C completion"); return; }
         if (!result)
         {
-            if ((uint32_t)(now - s->since) >= 20u) fault(s, "I2C timeout");
+            if ((uint32_t)(now - s->since) >= LIGHTING_I2C_TIMEOUT_MS) fault(s, "I2C timeout");
             return;
         }
         s->pending = false;
@@ -76,7 +77,7 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
             {
                 s->stage = 0;
                 ++s->frames;
-                if (++s->cycles == 26u)
+                if (++s->cycles == LIGHTING_MAINTENANCE_FRAMES)
                 {
                     s->cycles = 0;
                     s->phase = LIGHT_MAINTENANCE;
@@ -98,7 +99,7 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
         {
             s->operation = 0;
             if (s->phase == LIGHT_PRIMARY && s->profile == 3u) s->phase = LIGHT_SECONDARY;
-            else { s->phase = LIGHT_RUN; s->last_cycle = now - 40u; }
+            else { s->phase = LIGHT_RUN; s->last_cycle = now - LIGHTING_FRAME_PERIOD_MS; }
             return;
         }
         const lighting_op_t *op = &ops[s->operation];
@@ -109,9 +110,9 @@ void travel_lighting_service(travel_lighting_t *s, uint32_t now)
     }
     if (s->stage == 0u)
     {
-        if ((uint32_t)(now - s->last_cycle) < 40u) return;
+        if ((uint32_t)(now - s->last_cycle) < LIGHTING_FRAME_PERIOD_MS) return;
         s->last_cycle = now;
-        if (s->requested && s->frame_valid && (uint32_t)(now - s->last_frame) < 100u)
+        if (s->requested && s->frame_valid && (uint32_t)(now - s->last_frame) < SCAN_STALE_MS)
             memcpy(s->snapshot, s->desired, sizeof(s->snapshot));
         else memset(s->snapshot, 0, sizeof(s->snapshot));
         memcpy(s->tx, s->snapshot, 192u);

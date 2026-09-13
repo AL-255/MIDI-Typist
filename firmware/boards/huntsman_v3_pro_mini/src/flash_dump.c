@@ -2,7 +2,7 @@
 #include "board.h"
 #include "board_config.h"
 #include "fsl_iap.h"
-#include "calibration_store.h"
+#include "device_store.h"
 #include <string.h>
 
 /* No ROM calls: the original application uses the controller command path,
@@ -122,9 +122,31 @@ static bool config_allowed(unsigned slot)
     return slot<2u && !s_timeout && SystemCoreClock==BOARD_CORE_CLOCK_HZ &&
         flash_size()>=CAL_SLOT_B+CAL_PAGE_SIZE+0x2800u;
 }
+/* Erased LPC55 flash has no valid ECC parity. CMD3 may therefore report ECC
+ * errors for a perfectly erased page. CMD5 checks data AND parity with ECC
+ * disabled; never infer erase success from an unreadable ordinary read. */
+static uint32_t blank_check(unsigned slot)
+{
+    if (!config_allowed(slot)) return kStatus_FLASH_AddressError;
+    board_watchdog_refresh();
+    uint32_t irq=DisableGlobalIRQ();
+    FLASH->INT_CLR_STATUS=15u;
+    FLASH->STARTA=(slot ? CAL_SLOT_B : CAL_SLOT_A)>>4u;
+    FLASH->STOPA=FLASH->STARTA;
+    FLASH->CMD=5u;
+    uint32_t result=wait_done(96000u);
+    EnableGlobalIRQ(irq);
+    board_watchdog_refresh();
+    return result;
+}
 uint32_t flash_calibration_read(unsigned slot, uint8_t *page)
 {
     if (!page || !config_allowed(slot)) return kStatus_FLASH_AddressError;
+    uint32_t blank=blank_check(slot);
+    /* Logical empty-page representation, only after hardware confirmation.
+     * The diagnostic dumper still returns unmodified per-word ECC status. */
+    if (!blank) { memset(page,255,CAL_PAGE_SIZE); return 0; }
+    if (blank!=kStatus_FLASH_CommandFailure) return blank;
     const uint32_t address=slot ? CAL_SLOT_B : CAL_SLOT_A;
     for (unsigned i=0; i<CAL_PAGE_SIZE; i+=16u) {
         board_watchdog_refresh();
@@ -146,11 +168,12 @@ uint32_t flash_calibration_erase(unsigned slot)
     SYSCON->FMCFLUSH=1u;
     EnableGlobalIRQ(irq);
     board_watchdog_refresh();
-    return result;
+    return result ? result : blank_check(slot);
 }
 uint32_t flash_calibration_write(unsigned slot, const uint8_t *page)
 {
-    if (!page || !config_allowed(slot) || !calibration_record_valid(page)) return kStatus_FLASH_AddressError;
+    if (!page || !config_allowed(slot) ||
+        !device_record_valid(page)) return kStatus_FLASH_AddressError;
     uint32_t result=flash_calibration_erase(slot);
     if (result) return result;
     const uint32_t address=slot ? CAL_SLOT_B : CAL_SLOT_A;

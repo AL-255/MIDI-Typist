@@ -1,28 +1,68 @@
 # Device telemetry
 
-Everything the `huntsman` application reports to a host: the binary CDC streams,
-the text replies on the same interface, and the build identity. HID reports and
-USB-MIDI events are **output**, not telemetry; the last accepted HID report is
-only echoed back inside the GUI snapshot. See
-[USB/GUI protocol](MIDI_PROTOCOL.md) for the command surface and
-[porting](PORTING.md) for which parts are board contracts.
+The GUI uses bidirectional USB-MIDI 1.0 SysEx on **cable 1**, separate from
+musical events on cable 0. No CDC/serial interface exists. USB endpoints remain
+OUT `0x02` and IN `0x82`; the driver exposes two paired MIDI ports.
+
+## SysEx envelope
+
+`F0 7D 4D 54 01 KIND PACKED_BODY F7`
+
+`7D` is the experimental/non-commercial SysEx namespace; `4D 54` is the
+project tag "MT", not a registered manufacturer ID. Commercial/product
+distribution requires an appropriate registered ID. Do not use another vendor's ID.
+
+Before packing, the body is little-endian `session:u32, sequence:u32,
+payload_length:u16, payload, crc32:u32`. CRC-32 uses reflected polynomial
+`0xEDB88320`, initial/final XOR `0xFFFFFFFF`, over bytes
+`7D 4D 54 01 KIND` followed by the unencoded header and payload.
+Each group of up to seven body bytes becomes an MSB bitmask (bit i is byte i's
+high bit), followed by those bytes with their high bits cleared. Unused mask
+bits must be zero. Payloads are at most 1152 bytes; the largest SysEx is 1340 bytes.
+
+| Kind | Value | Payload and meaning |
+| --- | --- | --- |
+| HELLO | 1 | Empty; new nonzero random session, sequence 0 |
+| READY | 2 | ASCII `build=vVERSION-TARGET git=HASH state=STATE`; confirms session |
+| COMMAND | 3 | One printable ASCII command, at most 96 bytes; no newline/NUL |
+| ACK | 4 | Command dispatched, echoes command sequence; empty except `git`, which returns provenance |
+| SNAPSHOT | 5 | One HKG snapshot, sequence 0 in envelope |
+| SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
+| LOG | 7 | Best-effort debug text, sequence 0 |
+| ERROR | 8 | ASCII rejection reason, command sequence |
+| DUMP | 9 | One HBD1 read response, sequence 0 |
+| KEEPALIVE | 10 | Empty, sequence 0 |
+| CLOSE | 11 | Empty, sequence 0; stops GUI streaming |
+
+HELLO replaces the current GUI session and stops its stream. The GUI waits for
+READY, selects `stream gui`, then issues `cfg get ID`. Commands are strictly
+serialized with sequences 1,2,…; duplicates do not execute twice. Foreign
+sessions and malformed framing/CRC are ignored. An incomplete inbound SysEx
+expires after 1000 ms. GUI heartbeats arrive every 500 ms; after 2500 ms without
+a valid session command/heartbeat, streaming stops. Neither close nor expiry
+disables normal keyboard/MIDI performance. Only one GUI owner is supported.
+
+A COMMAND ACK means dispatch, not configuration acceptance or flash completion.
+For `cfg`, the GUI additionally requires matching HKG request ID, accepted
+result and applicable readback checks. Timeout is 3000 ms, with no automatic
+retry. Settings may already have applied when a response is lost.
+
+USB event CIN 4 carries continuing three-byte groups; CIN 5/6/7 terminates with
+one/two/three bytes ending F7. Cable-0 notes are serviced before control traffic.
+A complete encoded outbound message remains immutable; each up-to-16-event
+chunk is copied to a separate DMA buffer. Command execution and CRC processing
+run in main, not in the USB ISR. Buffer/timing defaults live in `defaults.h`.
 
 ## Channels
 
-Only one binary stream is served at a time on the CDC IN endpoint, chosen by the
-command in the last column. Text replies are available only while no binary
-stream is active, so a host selects `stream off` before reading them.
+| Payload | Size | Selection | Delivery |
+| --- | --- | --- | --- |
+| HKG snapshot | 1152 | `stream gui` | latest-only, at most once per 33 ms |
+| HKL1 sample | 20 | `stream key THRESHOLD SESSION SENSOR` | every acquisition of the pinned sensor |
+| HBD1 read | 128 | `dump read ID ADDRESS` | diagnostic, one response per request |
 
-| Stream | Magic | Record | Rate | Selected by | Consumed by |
-| --- | --- | --- | --- | --- | --- |
-| GUI snapshot | `HKG` + NUL | 1152 bytes, latest-only | ≤ 1 per 33 ms | `stream gui` | `tools/keyboard_gui.py` |
-| Per-key samples | `HKL1` | 20 bytes, loss-detecting | one per hardware scan | `stream key N [SESSION [SENSOR]]` | `tools/last_key_stream.py`, GUI hold mode |
-| Whole-scan frames | `HKS1` | 160 bytes | one per scan frame before host-rate drops | `stream on` | `tools/decode_scan_stream.py` |
-| Flash dump | `HBD1` | 128 bytes | one per `dump read` request | `dump read ID ADDRESS` | `tools/dump_flash.py` |
-| Text replies | — | newline-terminated ASCII | on request | `version`, `menu status`, `status`, `light status`, `help` | operators, ARM audits |
-
-Switching streams resets the previous one. `stream off` stops binary output;
-`stream gui` then `stream key ...` re-selects without re-enumerating USB.
+`stream off` stops binary telemetry. GUI and capture are mutually exclusive,
+but LOG messages have independent framing and can accompany either.
 
 ## GUI snapshot (`stream gui`)
 
@@ -38,7 +78,7 @@ only the newest state matters. 1152 bytes, little-endian, no faster than one per
 | 7, 8 | u8 each | profile 0…3, sensor count 0/61/62/65 |
 | 9 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó layout=64 |
 | 10 | u8 | last command result: initial=0, accepted=1, rejected=2 |
-| 11 | u8 | legacy Fn editor mode 0…2, **not** performance mode |
+| 11 | u8 | keyboard Fn trigger editor mode 0…2, **not** performance mode |
 | 12 | u32 | snapshot sequence |
 | 16 | u32 | RAM configuration revision |
 | 20 | u32 | ID of the last command this snapshot acknowledges |
@@ -69,8 +109,8 @@ Unused sensor slots are zero, including MIDI mapping padding; **active** unmappe
 slots are 255. Frames carry no version number: the constant magic and size
 identify the layout, and the build identity below records which application
 produced them. The decoder validates magic, size, checksum, reserved bytes,
-value ranges and padding. It skips pre-session bytes until the first magic;
-framing or checksum errors after acquisition fail the connection.
+value ranges and padding. The enclosing SysEx message supplies framing and protocol version;
+CRC or payload validation errors fail the connection.
 
 `cfg` commands are acknowledged **in this stream**, not as text: the snapshot
 carries the request ID in field 20 and accepted/rejected in field 10, and only
@@ -102,29 +142,17 @@ measured and is not specified by the packet format.
 | 16 | u16 | trigger threshold from the command |
 | 18 | u16 | checksum: sum of the preceding 9 little-endian u16 words |
 
-Records are never dropped silently: a full ring, an unready CDC endpoint or a
-USB reset stops the session and sets the fault flag rather than losing samples.
+Records are never dropped silently. A full ring emits a terminal fault record
+once queued data drains. USB reset or session expiry stops the stream; the
+host detects disconnect or stale telemetry and must open a new session.
 See [the per-key stream](LAST_KEY_STREAM.md).
 The GUI's 16384-sample host buffer likewise fails on overflow, rather than
 silently deleting samples used for a velocity waveform.
-
-## Whole-scan stream (`stream on`)
-
-One record per scan frame: every sensor's raw value, so a host can draw the
-whole keyboard. Records are dropped whole and counted when the host falls
-behind.
-
-| Offset | Encoding | Meaning |
-| --- | --- | --- |
-| 0 | 4 bytes | `HKS1` |
-| 4 | u16 | 160 |
-| 6, 7 | u8 each | sensor count, profile |
-| 8 | u32 | frame sequence |
-| 12 | u32 | optical tick the frame belongs to |
-| 16 | u32 | dropped-frame count so far |
-| 20 | u8 | set when any sample in this frame was 0 or above 4096 |
-| 24 | 65 × u16 | raw samples |
-| 156 | u32 | checksum: sum of the preceding 78 little-endian u16 words |
+When changing the selected sensor, the GUI stops the previous capture and
+waits for its ACK before starting a fresh nonce-bearing capture. Typed packets
+from the completed capture are not input to the new decoder. Within a capture,
+bad framing, foreign nonces and sequence gaps fail; no byte-prefix recovery
+or old-firmware fallback is supported.
 
 ## Flash dump (`dump read`)
 
@@ -146,26 +174,40 @@ issues only the controller's read command and can never erase or program.
 
 ## Text replies
 
-Newline-terminated ASCII, available only while no binary stream is active.
+Best-effort ASCII LOG payloads, independently framed and allowed alongside
+snapshots/capture. The bounded debug ring may drop logs; logs are never command
+acknowledgments or sample data.
 
 | Command | Reply |
 | --- | --- |
-| `version` | `build=v0.1.0-RZ03-0499` — project version plus board build target |
-| `menu status` | Fn/menu state: `fn`, legacy editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `build`, `key`, `scale_name` |
+| `version` | `build=vVERSION-TARGET git=HASH state=STATE` — project version, target and build-time Git provenance (LOG) |
+| `git` | `git=HASH state=STATE` in the matching ACK, not the best-effort LOG stream |
+| `menu status` | Fn/menu state: `fn`, keyboard trigger editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `build`, `key`, `scale_name` |
 | `status`, `scan status` | `SCAN phase`, `profile`, `count`, `transfers`, `frames`, `markers`, `errors`, `settled`, `valid`, `calibrated`, `stream_dropped`, optional `fault` |
 | `light status` | `LIGHT phase`, `on`, `profile`, `transfers`, `frames`, `errors`, `calibrated`, `count`, optional `fault` |
 | keyboard/config changes | `KEYS host`, `fn`, `mode`, `act`, `rapid`, `enabled`, `saved`, `revision`, then `RAW enabled`, `armed`, `valid`, `revision`; raw status notes automatic save after neutral |
 | `help` | Command summary, including `stream ...`, `cfg ...`, `dump read`, `menu status`; RAlt/RCtrl are octave −/+ |
 
-`menu status` and `version` are the record of what the keyboard currently holds,
-so hosts and audits read them instead of guessing from the binary streams.
+`HASH` is the full lowercase Git commit object ID (40 hex digits for SHA-1,
+64 for SHA-256). `STATE` is `clean` or `dirty`; a build without usable Git
+metadata reports `git=unknown state=unknown`. Dirty includes staged, unstaged,
+untracked and submodule changes, excluding Git-ignored build artifacts.
+The hash is embedded at build time, never read from the PC checkout at query
+time. A dirty build names its base commit, not an exact source snapshot.
+
+Send `git` as a COMMAND on control cable 1 after HELLO/READY, using the next
+command sequence. Its ACK contains the complete ASCII result without a newline.
+The query is read-only and works during snapshots, captures and calibration;
+it neither stops telemetry nor changes settings. READY carries the same fields
+so the GUI can display them without an additional query. `version` and
+`menu status` also include them in debug output. Telemetry field layouts do not
+change, and the factory HID compatibility version is not a source identifier.
 
 ## What the streams do not carry
 
 - Timestamps. The GUI snapshot has a sequence, the per-key stream a sequence and
-  a session, the scan stream a sequence and an optical tick; none is wall time.
-- Historical samples. The GUI stream is latest-only and the scan stream is
-  rate-limited by the host's consumption.
+  and a session; neither is wall time.
+- Historical samples. The GUI stream is latest-only; no whole-scan history is transmitted.
 - Private flash contents in ordinary scan/GUI telemetry. Explicit `dump read`
   requests can return bootloader and user-storage contents, including calibration
   slots and serial data; treat dumps as private. Security/PFR, ROM, MMIO and
@@ -173,17 +215,7 @@ so hosts and audits read them instead of guessing from the binary streams.
 - Host-side interpretation: velocity is computed on the keyboard, and the host
   reproduces the same window from the per-key stream instead of rescaling it.
 
-## Validation
 
-```sh
-cmake --preset host-tests && cmake --build --preset host-tests && ctest --preset host-tests
-python3 -B tools/test_keyboard_gui.py         # GUI framing, fields, transport readback
-python3 -B tools/test_last_key_stream.py      # HKL1 records and velocity reproduction
-python3 -B tools/test_scan_display.py         # HKS1 frames and display model
-python3 -B tools/test_dump_flash.py           # HBD1 framing, bounds, error priority
-```
-
-The offline ARM suites execute the compiled firmware and assert the same
-framing end to end: `tools/test_keyboard_mode_arm.py`,
-`tools/test_scan_stream_arm.py`, `tools/test_flash_dump_arm.py` and
-`tools/test_calibration_arm.py`. They never touch hardware.
+The framing follows [USB-MIDI 1.0](https://www.usb.org/sites/default/files/midi10.pdf).
+The experimental identifier is subject to the
+[MIDI Association's SysEx ID policy](https://midi.org/new-midi-association-sysex-id-policies-as-of-oct-15-2025).
