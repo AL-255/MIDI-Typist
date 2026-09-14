@@ -16,8 +16,10 @@ from keyboard_gui_transport import Connection, find_midi_device, USB_VENDOR_ID, 
 from midi_backend import control_ports
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
 from keyboard_flash_tab import FlashTab
+import gui_fonts
+from gui_widgets import ScrollArea
 
-AXIS_W = 34  # left gutter for the raw-value vertical axis of the bottom plot
+AXIS_W = 34  # minimum left gutter for the bottom plot's raw-value axis
 # Fn+Tab (MIDI) trigger point: level 1 is the velocity window's bottom-out
 # floor, level 0 (10) stops one count below the release threshold. Mirrors
 # keyboard_raw_press_level() in the firmware.
@@ -46,9 +48,18 @@ class App:
         self.initial_fields = False
         self.flashing = False           # a worker thread owns the device
         root.title('Huntsman • Keyboard configuration')
-        root.geometry('1180x920'); root.minsize(930,900)
+        # Fit the screen, but never below the size at which the page still
+        # shows its keyboard, settings row and footer without clipping.
+        width = min(1180,max(900,root.winfo_screenwidth()-80))
+        height = min(920,max(700,root.winfo_screenheight()-140))
+        root.geometry(f'{width}x{height}')
+        root.minsize(900,min(700,max(480,root.winfo_screenheight()-60)))
         root.configure(bg='#101820')
         style = ttk.Style(root); style.theme_use('clam')
+        # Resolve real families before any widget exists: a missing family
+        # silently becomes the `fixed` bitmap font, which is what looked
+        # pixelated. Every font below comes from this object.
+        self.fonts = gui_fonts.apply(root,style)
         style.configure('TFrame',background='#101820')
         style.configure('TLabel',background='#101820',foreground='#d9e5ec')
         style.configure('TButton',padding=7)
@@ -56,21 +67,25 @@ class App:
         style.map('TButton',background=[('active','#35566a'),('disabled','#17232d')],
                   foreground=[('disabled','#718492')])
         style.configure('TLabelframe',background='#101820',bordercolor='#354958',relief='solid')
-        style.configure('TLabelframe.Label',background='#101820',foreground='#a6bdca',font=('sans',10,'bold'))
+        style.configure('TLabelframe.Label',background='#101820',foreground='#a6bdca',font=self.fonts.sans_font(weight='bold'))
         style.configure('TNotebook',background='#101820',borderwidth=0)
         style.configure('TNotebook.Tab',background='#21313e',foreground='#c6dbe5',padding=(16,9))
         style.map('TNotebook.Tab',background=[('selected','#35566a')],foreground=[('selected','#ffffff')])
         for name in ('TCheckbutton','TRadiobutton'):
             style.configure(name,background='#101820',foreground='#d9e5ec',indicatorbackground='#21313e')
             style.map(name,background=[('active','#101820')],foreground=[('disabled','#718492')])
+        # The axis labels must fit the resolved monospace face, whatever it is.
+        self.axis_w = max(AXIS_W,self.fonts.measure('4000',9,mono=True)+10)
         for name in ('TEntry','TCombobox'):
             style.configure(name,fieldbackground='#17232d',foreground='#e5f1f5',bordercolor='#354958',arrowcolor='#9cafbc')
             style.map(name,fieldbackground=[('readonly','#17232d')],foreground=[('readonly','#e5f1f5')])
         style.configure('Horizontal.TProgressbar',background='#68d8cf',troughcolor='#17232d',bordercolor='#354958')
-        style.configure('Title.TLabel',font=('sans',18,'bold'))
+        style.configure('Title.TLabel',font=self.fonts.sans_font(self.fonts.title,weight='bold'))
         self.notebook = ttk.Notebook(root); self.notebook.pack(fill='both',expand=True)
         outer = ttk.Frame(self.notebook,padding=18)
         self.notebook.add(outer,text='  Keyboard configuration  ')
+        self._page_wrap = 0
+        outer.bind('<Configure>',self._wrap_page)
         ttk.Label(outer,text='HUNTSMAN  /  KEYBOARD',style='Title.TLabel').pack(anchor='w')
         ttk.Label(outer,text='Raw Schmitt thresholds • press below the lower value, release above the upper value').pack(anchor='w',pady=(3,12))
         bar = ttk.Frame(outer); bar.pack(fill='x')
@@ -91,7 +106,8 @@ class App:
         self.status = tk.StringVar(value=('DEMO — no device access' if demo else
             'Disconnected — press Connect to use the detected device' if device else
             f'Disconnected — no {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x} MIDI control device detected; click Detect'))
-        ttk.Label(outer,textvariable=self.status,wraplength=1100).pack(anchor='w',pady=(12,4))
+        self.status_label = ttk.Label(outer,textvariable=self.status,wraplength=1100)
+        self.status_label.pack(anchor='w',pady=(12,4))
         self.canvas = tk.Canvas(outer,height=270,bg='#101820',highlightthickness=0)
         self.canvas.pack(fill='x'); self.canvas.bind('<Configure>',lambda _:self.draw())
         ttk.Label(outer,text='Orange = sensor down   •   Cyan = selected   •   Numbers = raw / device velocity (0–1)').pack(anchor='w',pady=(0,12))
@@ -101,16 +117,26 @@ class App:
         self.cancel_calibration_button = ttk.Button(calbar,text='Cancel calibration',command=self.cancel_calibration)
         self.cancel_calibration_button.pack(side='left',padx=6)
         self.calibration_status = tk.StringVar(value='Calibration: connect to a keyboard to read status.')
-        ttk.Label(outer,textvariable=self.calibration_status,wraplength=1100).pack(anchor='w',pady=(0,8))
+        self.calibration_label = ttk.Label(outer,textvariable=self.calibration_status,wraplength=1100)
+        self.calibration_label.pack(anchor='w',pady=(0,8))
         self.message = tk.StringVar(value='Settings save automatically after release; wait for settings saved before unplugging. Calibration saves after all keys finish.')
         self.footer = ttk.Label(outer,textvariable=self.message,wraplength=890)
         self.footer.pack(side='bottom',anchor='w',pady=(12,0))
+        if self.fonts.advisory:
+            ttk.Label(outer,text=self.fonts.advisory,foreground='#e8c27d',wraplength=1100).pack(side='bottom',anchor='w',pady=(8,0))
         lower = ttk.Frame(outer); lower.pack(fill='both',expand=True)
-        panel = ttk.Frame(lower); panel.pack(side='left',fill='y',padx=(0,20))
+        # The settings panel is taller than a small window, so it scrolls:
+        # the fields and the shortcut reference stay reachable at any size.
+        self.panel_area = ScrollArea(lower,width=392)
+        self.panel_area.pack(side='left',fill='y',padx=(0,20))
+        panel = self.panel_area.body
+        self._panel_wrap = 0
+        panel.bind('<Configure>',self._wrap_panel)
         self.key_title = tk.StringVar(value='A  /  sensor 32')
         ttk.Label(panel,textvariable=self.key_title,style='Title.TLabel').pack(anchor='w')
         self.details = tk.StringVar(value='Waiting for device telemetry')
-        ttk.Label(panel,textvariable=self.details,justify='left',wraplength=355).pack(anchor='w',pady=10)
+        self.details_label = ttk.Label(panel,textvariable=self.details,justify='left',wraplength=355)
+        self.details_label.pack(anchor='w',pady=10)
         self.press = tk.StringVar(value=str(D['RAW_DEFAULT_PRESS'])); self.release = tk.StringVar(value=str(D['RAW_DEFAULT_RELEASE']))
         for title,var in (('Press when raw <',self.press),('Release when raw >',self.release)):
             row = ttk.Frame(panel); row.pack(fill='x',pady=3)
@@ -145,7 +171,8 @@ class App:
         self.velocity_entry.pack(side='left')
         self.velocity_button = ttk.Button(velocity_row,text='Apply velocity start',command=self.apply_velocity_start)
         self.velocity_button.pack(side='left',padx=6)
-        ttk.Label(panel,text=f'Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw {D["MIDI_WHEEL_RELEASE_RAW"]} = 0%, {D["MIDI_WHEEL_PRESSED_RAW"]} = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nSettings and calibration persist on-device. Release all keys and wait for\nsettings saved before unplugging. Fn+R or `cfg clean` clears custom state.\nHost JSON also exports thresholds and MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left').pack(anchor='w')
+        self.help_label = ttk.Label(panel,text=f'Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw {D["MIDI_WHEEL_RELEASE_RAW"]} = 0%, {D["MIDI_WHEEL_PRESSED_RAW"]} = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nSettings and calibration persist on-device. Release all keys and wait for\nsettings saved before unplugging. Fn+R or `cfg clean` clears custom state.\nHost JSON also exports thresholds and MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left')
+        self.help_label.pack(anchor='w')
         plot = ttk.Frame(lower); plot.pack(side='right',fill='both',expand=True)
         holdbar = ttk.Frame(plot); holdbar.pack(fill='x',pady=(0,4))
         self.hold_button = ttk.Checkbutton(holdbar,text=f'Hold first {CAPTURE_POINTS} pts of keystroke',
@@ -162,6 +189,22 @@ class App:
         if demo: self.connect_button.configure(state='disabled')
         self.update()
 
+    def _wrap_page(self,event):
+        """Wrap the full-width status lines to the window instead of clipping."""
+        width = max(320,event.width-36)
+        if width == self._page_wrap: return
+        self._page_wrap = width
+        for label in (self.status_label,self.calibration_label,self.footer):
+            label.configure(wraplength=width)
+
+    def _wrap_panel(self,event):
+        """Wrap the panel text to the scrolled viewport instead of the screen."""
+        width = max(260,event.width-6)
+        if width == self._panel_wrap: return
+        self._panel_wrap = width
+        self.details_label.configure(wraplength=width)
+        self.help_label.configure(wraplength=width)
+
     def draw(self):
         self.canvas.delete('all'); self.items.clear(); self.titles.clear()
         unit = max(50,(self.canvas.winfo_width()-4)/15)
@@ -171,9 +214,9 @@ class App:
             tag = f'key{key.sensor}'
             rect = self.canvas.create_rectangle(x,y,x+key.width*unit-4,y+height-5,
                                                 fill='#21313e',outline='#354958',width=2,tags=tag)
-            self.titles[key.sensor] = self.canvas.create_text(x+key.width*unit/2-2,y+12,text=key.label,fill='#f0f5f7',font=('sans',10,'bold'),tags=tag)
-            text = self.canvas.create_text(x+key.width*unit/2-2,y+28,text='—',fill='#9cafbc',font=('monospace',10),tags=tag)
-            velocity = self.canvas.create_text(x+key.width*unit/2-2,y+40,text='v —',fill='#80c8ce',font=('monospace',8),tags=tag)
+            self.titles[key.sensor] = self.canvas.create_text(x+key.width*unit/2-2,y+12,text=key.label,fill='#f0f5f7',font=self.fonts.sans_font(weight='bold'),tags=tag)
+            text = self.canvas.create_text(x+key.width*unit/2-2,y+28,text='—',fill='#9cafbc',font=self.fonts.mono_font(),tags=tag)
+            velocity = self.canvas.create_text(x+key.width*unit/2-2,y+40,text='v —',fill='#80c8ce',font=self.fonts.mono_font(9),tags=tag)
             self.items[key.sensor] = rect,text,velocity
             self.canvas.tag_bind(tag,'<Button-1>',lambda _,i=key.sensor:self.select(i))
         self.paint()
@@ -242,12 +285,12 @@ class App:
 
     def draw_axis(self,w,h):
         """Vertical raw-value axis (1..4096 scale) with ticks and gridlines."""
-        self.graph.create_line(AXIS_W,15,AXIS_W,h-15,fill='#354958')
+        self.graph.create_line(self.axis_w,15,self.axis_w,h-15,fill='#354958')
         for value in range(0,5000,1000):
             y = h-15-value/4096*(h-30)
-            self.graph.create_line(AXIS_W-4,y,AXIS_W,y,fill='#9cafbc')
-            self.graph.create_text(AXIS_W-7,y,anchor='e',text=str(value),fill='#9cafbc',font=('monospace',8))
-            self.graph.create_line(AXIS_W,y,w,y,fill='#23303b',dash=(2,4))
+            self.graph.create_line(self.axis_w-4,y,self.axis_w,y,fill='#9cafbc')
+            self.graph.create_text(self.axis_w-7,y,anchor='e',text=str(value),fill='#9cafbc',font=self.fonts.mono_font(9))
+            self.graph.create_line(self.axis_w,y,w,y,fill='#23303b',dash=(2,4))
 
     def paint_hold(self,w,h):
         cap = self.capture
@@ -258,11 +301,11 @@ class App:
         if cap.armed:
             self.graph.create_text(w/2,h/2,
                 text=f'Armed — press the selected key to hold its first {CAPTURE_POINTS} points{suffix}',
-                fill='#9cafbc',font=('sans',11))
+                fill='#9cafbc',font=self.fonts.sans_font(11))
             self.hold_status.set('Armed — waiting for a keystroke trigger'+suffix)
             return
         span = CAPTURE_POINTS-1
-        coords = [(AXIS_W+i/span*(w-AXIS_W-4),h-15-v/4096*(h-30)) for i,v in enumerate(cap.points)]
+        coords = [(self.axis_w+i/span*(w-self.axis_w-4),h-15-v/4096*(h-30)) for i,v in enumerate(cap.points)]
         if len(cap.points) > 1:
             self.graph.create_line(*[c for xy in coords for c in xy],fill='#e9f0f4',width=2)
         for i,(x,y) in enumerate(coords):
@@ -276,11 +319,11 @@ class App:
             if fitted >= 2:
                 drop = cap.velocity/8000.0  # raw counts per sample
                 x0,y0 = coords[0]
-                x1 = AXIS_W+(fitted-1)/span*(w-AXIS_W-4)
+                x1 = self.axis_w+(fitted-1)/span*(w-self.axis_w-4)
                 y1 = y0+drop*(fitted-1)/4096*(h-30)
                 self.graph.create_line(x0,y0,x1,y1,fill='#7ee787',width=2,dash=(6,3))
         for i in range(0,CAPTURE_POINTS,5):
-            self.graph.create_text(AXIS_W+i/span*(w-AXIS_W-4),h-3,text=str(i),fill='#9cafbc',font=('monospace',8))
+            self.graph.create_text(self.axis_w+i/span*(w-self.axis_w-4),h-3,text=str(i),fill='#9cafbc',font=self.fonts.mono_font(9))
         state = f'{"held" if cap.done else "capturing"} • {len(cap.points)}/{CAPTURE_POINTS} points{suffix}'
         if cap.velocity is not None:
             normalized = 0.0 if cap.velocity <= 0 else 1.0 if cap.velocity >= D['VELOCITY_MAX_COUNTS_PER_SECOND'] else cap.velocity/D['VELOCITY_MAX_COUNTS_PER_SECOND']
@@ -336,7 +379,7 @@ class App:
         if s and s.count == 61:
             for value,color,title in ((s.press[self.selected],'#f1a366','press'),(s.release[self.selected],'#56d7db','release')):
                 y = h-15-value/4096*(h-30)
-                self.graph.create_line(AXIS_W,y,w-2,y,fill=color,dash=(4,4))
+                self.graph.create_line(self.axis_w,y,w-2,y,fill=color,dash=(4,4))
                 self.graph.create_text(w-6,y+10 if title == 'press' else y-10,anchor='e',text=f'{title} {value}',fill=color)
         if self.hold_mode.get():
             self.paint_hold(w,h)
@@ -344,7 +387,7 @@ class App:
             self.hold_status.set('')
             if len(self.history)>1:
                 points = []
-                for i,value in enumerate(self.history): points.extend((AXIS_W+i/(len(self.history)-1)*(w-AXIS_W-2),h-15-value/4096*(h-30)))
+                for i,value in enumerate(self.history): points.extend((self.axis_w+i/(len(self.history)-1)*(w-self.axis_w-2),h-15-value/4096*(h-30)))
                 self.graph.create_line(*points,fill='#e9f0f4',width=2)
 
     def refresh_ports(self):

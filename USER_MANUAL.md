@@ -358,7 +358,9 @@ the GUI recognizes cable 1 automatically. No serial port is exposed. The GUI sup
 Connect, then select a drawn key. Tiles show live raw values, press state and
 latest velocity. The panel shows thresholds, note/control role, waveform,
 calibration progress and settings-save status. Stale telemetry disables edits.
-A displayed HID submission is not proof of host receipt.
+A displayed HID submission is not proof of host receipt. If the window is
+short, scroll the settings panel on the left: its fields, buttons and the
+shortcut reference stay reachable instead of being cut off.
 
 ### Change one key or all keys
 

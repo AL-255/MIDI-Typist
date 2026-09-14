@@ -16,6 +16,12 @@ class FlashTab(ttk.Frame):
     MODES = {'custom':'MIDI-TYPIST', 'razer':'RAZER FIRMWARE',
              'bootloader':'BOOTLOADER · READY TO RECOVER', 'unknown':'UNRECOGNIZED APPLICATION'}
 
+    def _font(self, size=None, weight='normal', mono=False):
+        """The App's resolved typography, or None for the ttk default."""
+        fonts = getattr(self.app, 'fonts', None)
+        if fonts is None: return None
+        return fonts.mono_font(size, weight) if mono else fonts.sans_font(size, weight)
+
     def __init__(self, parent, app, registry=None):
         super().__init__(parent,padding=24)
         self.app = app
@@ -44,11 +50,11 @@ class FlashTab(ttk.Frame):
         devicecard=ttk.LabelFrame(self,text='  01  /  Connected device  ',padding=18)
         devicecard.grid(row=3,column=0,sticky='nsew',padx=(0,16))
         self.badge=tk.StringVar(value='NOT CHECKED')
-        ttk.Label(devicecard,textvariable=self.badge,foreground='#68d8cf',font=('sans',12,'bold'),
+        ttk.Label(devicecard,textvariable=self.badge,foreground='#68d8cf',font=self._font(13,'bold'),
                   wraplength=330).pack(anchor='w',pady=(0,16))
         self.identity={}
         for key in ('Product','Serial number','Firmware','USB identity','Connection','Speed'):
-            ttk.Label(devicecard,text=key.upper(),foreground='#8299aa',font=('sans',9)).pack(anchor='w',pady=(9,2))
+            ttk.Label(devicecard,text=key.upper(),foreground='#8299aa',font=self._font(9)).pack(anchor='w',pady=(9,2))
             value=tk.StringVar(value='—');self.identity[key]=value
             ttk.Label(devicecard,textvariable=value,wraplength=340,justify='left').pack(anchor='w')
         self.device_note=tk.StringVar(value='Select the model and refresh. No flashing starts automatically.')
@@ -78,7 +84,7 @@ class FlashTab(ttk.Frame):
         self.validate_button=ttk.Button(firmware,text='Validate image',command=self.validate)
         self.validate_button.grid(row=1,column=0,columnspan=2,sticky='w',pady=10)
         self.image_info=tk.StringVar(value='Choose a file to see its application size and SHA-256.')
-        ttk.Label(firmware,textvariable=self.image_info,wraplength=570,justify='left',font=('monospace',9)).grid(row=2,column=0,columnspan=2,sticky='w')
+        ttk.Label(firmware,textvariable=self.image_info,wraplength=570,justify='left',font=self._font(9,mono=True)).grid(row=2,column=0,columnspan=2,sticky='w')
         self.confirm_model=tk.BooleanVar(value=False)
         self.confirm_check=ttk.Checkbutton(firmware,text='I verified this firmware is for the selected keyboard model.',
             variable=self.confirm_model,command=self.sync)
@@ -92,7 +98,7 @@ class FlashTab(ttk.Frame):
         self.status=tk.StringVar(value='Ready to identify a keyboard.')
         ttk.Label(right,textvariable=self.status,wraplength=610).grid(row=5,column=0,sticky='w')
         self.log=tk.Text(right,height=6,bg='#17232d',fg='#b7cfdd',insertbackground='white',
-                         relief='flat',wrap='word',font=('monospace',9),state='disabled')
+                         relief='flat',wrap='word',font=self._font(9,mono=True),state='disabled')
         self.log.grid(row=6,column=0,sticky='nsew',pady=(12,0));right.rowconfigure(6,weight=1)
         self.sync()
 

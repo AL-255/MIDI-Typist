@@ -33,6 +33,20 @@ Tiles show raw values, down state and latest velocity. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
 
+Text uses the best outline family the platform's Tk build can really render
+(Windows system UI, macOS system face, Cantarell/Ubuntu/Noto/DejaVu on Linux,
+or a scalable X11 core family when Tk has no fontconfig). Tk does not
+substitute a missing family, so no widget hard-codes a generic `sans` or
+`monospace` name; the plot gutter is measured from the resolved monospace
+face. If only bitmap families exist, the window says so instead of pretending
+the text is smooth.
+
+The window opens at the largest comfortable size for the screen and never
+below the size at which the keyboard, settings row and footer still fit. The
+bottom-left settings panel scrolls with its own scrollbar (mouse wheel, arrows
+and Page Up/Down) whenever its fields, buttons or the shortcut reference are
+taller than the window, so nothing is clipped in a small window.
+
 ## Key behavior
 
 - Defaults: press 3500 / release 3600. Valid pairs are
@@ -164,5 +178,6 @@ requires continuity; stream changes discard the previous unsent session.
 
 [Building](BUILDING.md) documents native, MIDI mock and real-Tk tests. They cover
 geometry, atomic edits, readback/ACK, profile failures, capture isolation,
-overflow, timeouts and flash confirmation without opening hardware.
+overflow, timeouts, resolved typography, settings-panel scrolling and flash
+confirmation without opening hardware.
 See [physical evidence and limitations](VALIDATION.md).

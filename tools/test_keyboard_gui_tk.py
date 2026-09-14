@@ -97,12 +97,41 @@ def main():
         if args.screenshot:
             from PIL import ImageGrab
             ImageGrab.grab(xdisplay=os.environ['DISPLAY']).save(args.screenshot)
-        root.geometry('930x820'); root.update()
+        root.geometry('900x700'); root.update()
         assert len(app.items) == 61
-        assert app.apply_button.winfo_rooty()+app.apply_button.winfo_height() < root.winfo_height()
         assert app.footer.winfo_rooty()+app.footer.winfo_height() < root.winfo_height()
+        assert int(app.status_label.cget('wraplength')) <= root.winfo_width()  # status follows the window
+        # The bottom-left settings region scrolls instead of clipping: its
+        # fields, buttons and shortcut reference stay reachable in a small
+        # window, and the scrollbar is only shown while the content overflows.
+        area = app.panel_area
+        assert area.overflowing() and area.showing_scrollbar()
+        assert area.visible(app.details_label) and not area.visible(app.help_label)
+        # Every field, button and the shortcut reference can be scrolled to.
+        for target in (app.apply_button,app.help_label,app.details_label):
+            area.reveal(target); root.update()
+            assert area.visible(target),target
+        area.canvas.yview_moveto(0.0); root.update()
+        assert area.visible(app.details_label) and not area.visible(app.help_label)
+        area.scroll_units(1); root.update()
+        assert area.canvas.yview()[0] > 0.0
+        root.geometry('1180x920'); root.update()
+        assert area.overflowing() and area.showing_scrollbar()  # still taller than the row
+        area.canvas.yview_moveto(1.0); root.update()
+        assert area.visible(app.help_label)
+        # Typography: no silent fallback to Tk's `fixed` bitmap font, and the
+        # canvas uses the resolved families rather than a hard-coded one.
+        from tkinter import font as tkfont
+        import gui_fonts
+        assert app.fonts.sans and app.fonts.mono
+        for family in (app.fonts.sans,app.fonts.mono):
+            assert tkfont.Font(family=family,size=10).actual()['family'].lower() == family.lower(), family
+        assert gui_fonts.pick(('No Such Family 12345',),10) is None
+        assert tkfont.Font(font=app.canvas.itemcget(app.titles[32],'font')).actual()['family'].lower() == app.fonts.sans.lower()
+        assert tkfont.Font(font=app.canvas.itemcget(app.items[32][2],'font')).actual()['family'].lower() == app.fonts.mono.lower()
         app.close(); root = None
-        print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, resize')
+        print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, '
+              'scrollable settings panel, resolved typography, resize')
         device = Device(); device.start()
         transport_patch = patch('keyboard_gui.Connection', side_effect=lambda name: Connection(name, backend_factory=lambda _:device))
         transport_patch.start()
@@ -202,7 +231,8 @@ def main():
             fitted = [app.graph.coords(item) for item in app.graph.find_all()
                       if app.graph.type(item) == 'line' and app.graph.itemcget(item,'fill') == '#7ee787']
             assert len(fitted) == 1 and len(fitted[0]) == 4, fitted
-            assert fitted[0][0] == AXIS_W and fitted[0][3] > fitted[0][1]  # anchored at trigger, downward slant
+            assert fitted[0][0] == app.axis_w and fitted[0][3] > fitted[0][1]  # anchored at trigger, downward slant
+            assert app.axis_w >= AXIS_W  # measured from the resolved mono face
             device.key_cb = None
             app.hold_button.invoke()
             pump_until(lambda:not app.hold_mode.get() and app.connection.stream_mode == 'gui')

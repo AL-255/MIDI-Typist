@@ -10,7 +10,7 @@ Commands and dependencies are in [Building](BUILDING.md).
 | Native C/Python (15 CTest suites) | Shared defaults/alternate-initializer builds, lifecycle and architecture, NKRO, Schmitt/velocity, menus, MIDI, parallel calibration, complete storage snapshots, GUI/SysEx transport, device-flashing adapters, current-only rules and capture framing |
 | Linked Cortex-M33 execution | SDK startup/USB/DMA/I2C paths, descriptor/control transfers, MIDI packets, LED writes, faults, MIDI SysEx, updater entry and storage integration |
 | Original-reference comparison | Selected scan/editor/lighting behavior and flash register transactions; the original fixture is separate and read-only |
-| Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling; no keyboard opened |
+| Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved outline typography and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
 `python3 tools/run_tests.py` runs 19 audit groups, including the 15 native

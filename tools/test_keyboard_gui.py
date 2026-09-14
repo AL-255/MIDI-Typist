@@ -2,6 +2,7 @@
 """Offline GUI model and bidirectional SysEx transport tests (no keyboard access)."""
 import copy
 import os
+from pathlib import Path
 import queue
 from unittest.mock import patch
 import midi_sysex as sx
@@ -463,6 +464,36 @@ class Tests(unittest.TestCase):
             self.assertEqual(len(device.commands),0)
             self.assertFalse(connection.connected)
         finally: self.cleanup(*resources)
+
+
+class PortableTypography(unittest.TestCase):
+    """Fonts and the scrolling settings panel must stay platform-independent."""
+
+    def test_candidates_cover_every_platform(self):
+        import gui_fonts
+        for family in ('Segoe UI','Helvetica Neue','Noto Sans','DejaVu Sans','Latin Modern Sans'):
+            self.assertIn(family,gui_fonts.SANS_FAMILIES)
+        for family in ('Consolas','Menlo','DejaVu Sans Mono','Latin Modern Typewriter'):
+            self.assertIn(family,gui_fonts.MONO_FAMILIES)
+        # Scalable X11 core families matter: a Tk build without Xft has no others.
+        self.assertIn('Nimbus Sans L',gui_fonts.SANS_FAMILIES)
+        self.assertIn('Courier 10 Pitch',gui_fonts.MONO_FAMILIES)
+
+    def test_no_hard_coded_family_tuples(self):
+        # Tk does not substitute a missing family: ('sans', 10) silently
+        # becomes the `fixed` bitmap font, which is what looked pixelated.
+        tools = Path(__file__).resolve().parent
+        for name in ('keyboard_gui.py','keyboard_flash_tab.py'):
+            source = (tools/name).read_text()
+            for generic in ("'sans'",'"sans"',"'monospace'",'"monospace"'):
+                self.assertNotIn(f'font=({generic}',source,name)
+
+    def test_scroll_area_handles_every_wheel_protocol(self):
+        import gui_widgets
+        source = Path(gui_widgets.__file__).read_text()
+        for sequence in ('<MouseWheel>','<Button-4>','<Button-5>'):
+            self.assertIn(sequence,source)
+        self.assertTrue(hasattr(gui_widgets.ScrollArea,'overflowing'))
 
 
 if __name__ == '__main__': unittest.main()
