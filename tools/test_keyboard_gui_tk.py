@@ -65,9 +65,16 @@ def main():
         assert '0.500000 [0–1]' in app.details.get()
         assert app.canvas.itemcget(app.items[32][2],'text') == 'v0.500'
         assert str(app.connect_button['state']) == 'disabled'
-        graph_texts = [app.graph.itemcget(item,'text') for item in app.graph.find_all() if app.graph.type(item) == 'text']
-        for tick in ('0','1000','2000','3000','4000'):  # vertical raw-value axis
-            assert tick in graph_texts
+        graph_items = [item for item in app.graph.find_all() if app.graph.type(item) == 'text']
+        graph_texts = [app.graph.itemcget(item,'text') for item in graph_items]
+        # The raw-value axis labels whatever step fits the plot height: the
+        # scale always starts at 0, reaches the top of the range, and no two
+        # labels are closer than one text row (bitmap faces are taller).
+        rows = {tick:int(app.graph.coords(item)[1]) for item,tick in zip(graph_items,graph_texts) if tick.isdigit()}
+        ticks = sorted(int(tick) for tick in rows)
+        assert ticks[0] == 0 and ticks[-1] >= 3000 and len(ticks) >= 3, ticks
+        positions = sorted(rows[str(tick)] for tick in ticks)
+        assert all(b-a >= app.fonts.linespace(9) for a,b in zip(positions,positions[1:])), positions
         assert 'press 3500' in graph_texts and 'release 3600' in graph_texts
         for key in app.keys:
             rect,_,_ = app.items[key.sensor]
@@ -106,17 +113,17 @@ def main():
         # window, and the scrollbar is only shown while the content overflows.
         area = app.panel_area
         assert area.overflowing() and area.showing_scrollbar()
-        assert area.visible(app.details_label) and not area.visible(app.help_label)
-        # Every field, button and the shortcut reference can be scrolled to.
-        for target in (app.apply_button,app.help_label,app.details_label):
+        # At the minimum window height the panel viewport is short, so every
+        # field, button and the shortcut reference must be scrollable into it.
+        for target in (app.details_label,app.apply_button,app.help_label):
             area.reveal(target); root.update()
             assert area.visible(target),target
-        area.canvas.yview_moveto(0.0); root.update()
-        assert area.visible(app.details_label) and not area.visible(app.help_label)
         area.scroll_units(1); root.update()
         assert area.canvas.yview()[0] > 0.0
         root.geometry('1180x920'); root.update()
         assert area.overflowing() and area.showing_scrollbar()  # still taller than the row
+        area.canvas.yview_moveto(0.0); root.update()
+        assert area.visible(app.details_label) and not area.visible(app.help_label)
         area.canvas.yview_moveto(1.0); root.update()
         assert area.visible(app.help_label)
         # Typography: no silent fallback to Tk's `fixed` bitmap font, and the
@@ -127,6 +134,11 @@ def main():
         for family in (app.fonts.sans,app.fonts.mono):
             assert tkfont.Font(family=family,size=10).actual()['family'].lower() == family.lower(), family
         assert gui_fonts.pick(('No Such Family 12345',),10) is None
+        # On a Tk without fontconfig the widgets must use native bitmap pixel
+        # sizes (negative) from an X11 face, never scaled point sizes.
+        if not app.fonts.antialiased:
+            assert app.fonts.sans in gui_fonts.X11_SANS_FAMILIES, app.fonts.sans
+            assert int(app.canvas.itemcget(app.titles[32],'font').split()[-2]) < 0
         assert tkfont.Font(font=app.canvas.itemcget(app.titles[32],'font')).actual()['family'].lower() == app.fonts.sans.lower()
         assert tkfont.Font(font=app.canvas.itemcget(app.items[32][2],'font')).actual()['family'].lower() == app.fonts.mono.lower()
         app.close(); root = None

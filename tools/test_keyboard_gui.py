@@ -471,13 +471,13 @@ class PortableTypography(unittest.TestCase):
 
     def test_candidates_cover_every_platform(self):
         import gui_fonts
-        for family in ('Segoe UI','Helvetica Neue','Noto Sans','DejaVu Sans','Latin Modern Sans'):
-            self.assertIn(family,gui_fonts.SANS_FAMILIES)
-        for family in ('Consolas','Menlo','DejaVu Sans Mono','Latin Modern Typewriter'):
-            self.assertIn(family,gui_fonts.MONO_FAMILIES)
-        # Scalable X11 core families matter: a Tk build without Xft has no others.
-        self.assertIn('Nimbus Sans L',gui_fonts.SANS_FAMILIES)
-        self.assertIn('Courier 10 Pitch',gui_fonts.MONO_FAMILIES)
+        for family in ('Segoe UI','Helvetica Neue','Noto Sans','DejaVu Sans','Cantarell'):
+            self.assertIn(family,gui_fonts.NATIVE_SANS_FAMILIES)
+        for family in ('Consolas','Menlo','DejaVu Sans Mono','Ubuntu Mono'):
+            self.assertIn(family,gui_fonts.NATIVE_MONO_FAMILIES)
+        # A Tk build without fontconfig needs X11 bitmap faces with real bold.
+        self.assertIn('Lucida',gui_fonts.X11_SANS_FAMILIES)
+        self.assertIn('Terminus',gui_fonts.X11_MONO_FAMILIES)
 
     def test_no_hard_coded_family_tuples(self):
         # Tk does not substitute a missing family: ('sans', 10) silently
@@ -487,6 +487,23 @@ class PortableTypography(unittest.TestCase):
             source = (tools/name).read_text()
             for generic in ("'sans'",'"sans"',"'monospace'",'"monospace"'):
                 self.assertNotIn(f'font=({generic}',source,name)
+
+    def test_native_families_are_the_antialiased_ones(self):
+        import gui_fonts
+        for family in ('DejaVu Sans','Segoe UI','Helvetica Neue','Noto Sans'):
+            self.assertIn(family,gui_fonts.NATIVE_SANS_FAMILIES)
+        for family in ('Lucida','Helvetica','Terminus'):
+            self.assertTrue(family in gui_fonts.X11_SANS_FAMILIES or
+                            family in gui_fonts.X11_MONO_FAMILIES)
+        # The two worlds never overlap: a fontconfig family is not a bitmap one.
+        self.assertFalse(set(gui_fonts.NATIVE_SANS_FAMILIES) & set(gui_fonts.X11_SANS_FAMILIES))
+
+    def test_x11_pixel_sizes_are_native_pixels_only(self):
+        import gui_fonts
+        self.assertTrue(all(size > 0 for size in gui_fonts.X11_PIXEL_SIZES))
+        self.assertIn(gui_fonts.X11_BASE_PIXELS,gui_fonts.X11_PIXEL_SIZES)
+        self.assertIn(gui_fonts.X11_TITLE_PIXELS,gui_fonts.X11_PIXEL_SIZES)
+        self.assertTrue(gui_fonts.X11_TITLE_PIXELS > gui_fonts.X11_BASE_PIXELS)
 
     def test_scroll_area_handles_every_wheel_protocol(self):
         import gui_widgets

@@ -219,13 +219,17 @@ ALSA development headers (`libasound2-dev` on Debian/Ubuntu).
 not serial or raw USB. Linux is the hardware-tested platform; Windows/macOS
 backends, especially large SysEx buffer limits, are not validated.
 
-The GUI resolves its text families at startup and needs no configuration. A
-Python whose Tk lacks fontconfig/Xft (some conda builds) still gets a scalable
-family from the X11 core font path; if only bitmap families exist, the window
-shows a notice. For vector text on Linux use the distribution `python3` with
-`python3-tk` to create `build-gui-venv`. A short window keeps the bottom-left
-settings panel usable: it scrolls with its own scrollbar, and the window
-refuses to shrink below the point where the keyboard, settings and footer fit.
+Text needs no configuration. The GUI resolves the best family its Tk build
+can render and, when that build has no fontconfig/Xft (some conda packages
+are like that), uses X11 bitmap faces at their native pixel sizes so the text
+stays crisp instead of being scaled. Tk cannot antialias without
+fontconfig/Xft, so for the smoothest text use an interpreter whose Tk has it:
+the distribution `python3` with `python3-tk` and `python3-rtmidi` (the venv
+documented above inherits whatever Tk its base interpreter has). Text
+rendering is a property of that interpreter, not of the keyboard firmware.
+A short window keeps the bottom-left settings panel usable: it scrolls with
+its own scrollbar, and the window refuses to shrink below the point where the
+keyboard, settings and footer fit.
 
 Use the port selector for multiple keyboards. Auto-detection chooses only a
 unique paired control port; performance MIDI belongs in the DAW. Linux can

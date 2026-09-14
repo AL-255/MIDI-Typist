@@ -33,13 +33,20 @@ Tiles show raw values, down state and latest velocity. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
 
-Text uses the best outline family the platform's Tk build can really render
-(Windows system UI, macOS system face, Cantarell/Ubuntu/Noto/DejaVu on Linux,
-or a scalable X11 core family when Tk has no fontconfig). Tk does not
-substitute a missing family, so no widget hard-codes a generic `sans` or
-`monospace` name; the plot gutter is measured from the resolved monospace
-face. If only bitmap families exist, the window says so instead of pretending
-the text is smooth.
+Text uses the best family the platform's Tk build can really render: the
+Windows system UI face, the macOS system face, or
+Cantarell/Adwaita/Ubuntu/Noto/DejaVu on a normal Linux desktop, antialiased
+and in point sizes. Tk does not substitute a missing family, so no widget
+hard-codes a generic `sans` or `monospace` name, and the plot gutter is
+measured from the resolved monospace face.
+
+A Tk build without fontconfig (some conda packages) can only use X11 core
+bitmap fonts, and a bitmap is crisp only at its native pixel size. The GUI
+then switches worlds: Lucida for labels and titles, Terminus for numbers and
+other fixed columns, each requested in exact pixels rather than letting Tk
+scale a face it does not have. Antialiased text needs a Tk built against
+fontconfig/Xft, which the distribution `python3` provides.
+See [GUI access and troubleshooting](BUILDING.md#gui-access-and-troubleshooting).
 
 The window opens at the largest comfortable size for the screen and never
 below the size at which the keyboard, settings row and footer still fit. The

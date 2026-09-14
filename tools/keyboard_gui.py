@@ -80,7 +80,7 @@ class App:
             style.configure(name,fieldbackground='#17232d',foreground='#e5f1f5',bordercolor='#354958',arrowcolor='#9cafbc')
             style.map(name,fieldbackground=[('readonly','#17232d')],foreground=[('readonly','#e5f1f5')])
         style.configure('Horizontal.TProgressbar',background='#68d8cf',troughcolor='#17232d',bordercolor='#354958')
-        style.configure('Title.TLabel',font=self.fonts.sans_font(self.fonts.title,weight='bold'))
+        style.configure('Title.TLabel',font=self.fonts.title_font())
         self.notebook = ttk.Notebook(root); self.notebook.pack(fill='both',expand=True)
         outer = ttk.Frame(self.notebook,padding=18)
         self.notebook.add(outer,text='  Keyboard configuration  ')
@@ -122,8 +122,6 @@ class App:
         self.message = tk.StringVar(value='Settings save automatically after release; wait for settings saved before unplugging. Calibration saves after all keys finish.')
         self.footer = ttk.Label(outer,textvariable=self.message,wraplength=890)
         self.footer.pack(side='bottom',anchor='w',pady=(12,0))
-        if self.fonts.advisory:
-            ttk.Label(outer,text=self.fonts.advisory,foreground='#e8c27d',wraplength=1100).pack(side='bottom',anchor='w',pady=(8,0))
         lower = ttk.Frame(outer); lower.pack(fill='both',expand=True)
         # The settings panel is taller than a small window, so it scrolls:
         # the fields and the shortcut reference stay reachable at any size.
@@ -284,9 +282,17 @@ class App:
             self._rate_count = 0; self._rate_at = time.monotonic()
 
     def draw_axis(self,w,h):
-        """Vertical raw-value axis (1..4096 scale) with ticks and gridlines."""
+        """Vertical raw-value axis (1..4096 scale) with ticks and gridlines.
+
+        The step doubles until the labels fit the available height, so a short
+        plot keeps readable numbers instead of stacking them on top of each
+        other (bitmap faces and small windows both make the plot shallow)."""
         self.graph.create_line(self.axis_w,15,self.axis_w,h-15,fill='#354958')
-        for value in range(0,5000,1000):
+        line = self.fonts.linespace(9)+4
+        step = 1000
+        while step < 4000 and (h-30)*step/4096 < line:
+            step *= 2
+        for value in range(0,4096+step,step):
             y = h-15-value/4096*(h-30)
             self.graph.create_line(self.axis_w-4,y,self.axis_w,y,fill='#9cafbc')
             self.graph.create_text(self.axis_w-7,y,anchor='e',text=str(value),fill='#9cafbc',font=self.fonts.mono_font(9))
