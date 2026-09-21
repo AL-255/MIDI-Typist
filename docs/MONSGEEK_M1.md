@@ -3,9 +3,10 @@
 The M1 backend contains scan, lighting, radio-transfer, battery-input, composite USB,
 USB power-down and RTC sleep HALs, clock and wired/battery cold-start
 components, an 82-key application library, a wireless report scheduler,
-transport-menu and power-policy components, and matching GUI geometry. Connected-device access is **read-only factory
-identity inspection**, for internal model **ID2949**. There is no flashable M1
-application or flashing support. The Huntsman image must never be installed on this keyboard. Wireless
+transport-menu and power-policy components, an offline-only development ELF,
+and matching GUI geometry. Connected-device access is **read-only factory
+identity inspection**, for internal model **ID2949**. M1 installation is not
+supported. The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.
 
@@ -83,9 +84,9 @@ than silently changing velocity's timebase. This cadence is not measured yet.
 The shared application is compiled with 82-key storage and the M1 board
 callbacks. Native tests exercise all keys, simultaneous NKRO, the Fn/MIDI menu,
 LED permutation, normalization, incomplete/out-of-order rows and frame drops.
-The ARM build produces static libraries and emulator-only audit ELFs,
-**not** an installable firmware.
-See [build commands](BUILDING.md#monsgeek-m1-libraries).
+The ARM build produces static libraries, emulator-only audit ELFs and an
+offline development ELF, **not** a supported installation artifact.
+See [build commands](BUILDING.md#monsgeek-m1-development-build).
 
 `m1_hal_capture_start(now_us)` uses the same ADC/DMA path for one complete
 six-bank wake-check frame, without starting the periodic timer. Completion
@@ -586,8 +587,8 @@ allocation and delayed attachment, preserve unrelated GPIO/DMA, and exercise
 PLLU/counter/reset/flush faults, cable loss, counter wrap, shutdown/restart and
 the transition through PHY power-down. Counter progression and hardware flags
 are scripted: electrical timing, host enumeration and interrupt delivery remain
-unverified. A complete vector table, runtime coordinator and flashable image
-are still required.
+unverified. The development ELF binds the vector table and foreground loop;
+complete runtime recovery and installation support are still required.
 
 ### Clock, rails and remaining integration
 
@@ -666,7 +667,58 @@ does no further peripheral cleanup and keeps interrupts masked. There is no
 automatic retry, profile erase or factory-data write. Offline tests execute
 the composed HAL/application chain; profile I/O and hardware effects are modeled.
 Runtime cable transitions, host-release/pairing and sleep/wake coordination,
-reset/vector/linker integration and physical validation remain required.
+installation support and physical validation remain required.
+
+### Development ELF and reset entry
+
+`m1_development.elf` links at the actual application addresses for offline
+auditing. **Do not flash it.** The GUI/privileged worker still rejects all M1
+flash actions; no `.bin`, install target or release package is generated.
+
+| Region | Contract |
+| --- | --- |
+| `0x08005000` | Fourteen-byte boot identity `AT32F405 8KMKB`, without a NUL |
+| `0x08005200` | 512-byte vector table; reset plus RTC wake, scan DMA/TMR6 and USB IRQ routes |
+| Remaining application loads | Code, SRAM-writer initializer and data initializer end at/before `0x08027000` |
+| `0x20000000..0x20017fff` | Main SRAM: relocated flash code, data/BSS and the reserved main stack |
+| Profile/factory/boot regions | No load payload; custom slots and stock data are not image sections |
+
+Explicit ELF program headers exclude loader metadata from flash loads: the
+default linker must not prepend a segment covering the bootloader. The stack
+is an aligned, separate NOLOAD reservation of `M1_MAIN_STACK_BYTES` (8192 by
+default), after BSS; its top is the initial MSP. Link assertions reject memory
+overflow and profile overlap. This is a reservation, not a measured worst-case
+stack high-water mark.
+
+Reset masks interrupts, selects privileged MSP, stops inherited SysTick,
+disables/clears the implemented external interrupt banks, clears pending
+SysTick/PendSV, installs VTOR and priority grouping, and copies data plus the
+complete SDK/custom flash-writer section into SRAM before clearing BSS and
+calling main. Unused vectors trap with debugger-visible exception information.
+It does not call the SDK's unbounded `SystemInit` or write any flash record.
+
+Main checks the flash-density register, establishes clocks/time and invokes
+`m1_boot`. PC13 external power selects USB; battery selects
+`M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
+not persisted yet. After handoff it polls `m1_live_service` using independent
+millisecond/microsecond readings. Profile restore and gated autosave are linked;
+live calibration/RESET and physical Fn transport switching remain disabled.
+
+The development loop does **not** implement battery idle/critical shutdown,
+pairing, encoder reports, cable recovery or wake restoration. A cable change
+or device fault stops acquisition/local links and detaches USB, retains rails,
+and latches a terminal diagnostic. It cannot prove release at a wireless host.
+Clock/time faults trap without guessing a safe peripheral recovery sequence.
+`m1_main_state` and `m1_main_detail` expose the failure class and its clock/boot
+code, density, source or device-fault bits to a debugger; there is no automatic reset.
+
+Image tests verify every load segment/vector/RAM-code address and reject
+corrupted identity, vector, bootloader-prefix and profile-overlap fixtures.
+They execute reset from poisoned RAM, including an inherited PSP selection,
+and check exact data/code copies, BSS and untouched gaps. Main-loop tests stub
+component calls to check ordering and terminal branches; the separate cold
+handoff audit executes the actual HAL/application chain. Neither is physical
+startup, interrupt scheduling, full-runtime power or update-path validation.
 
 ### Sleep/wake pin ownership
 

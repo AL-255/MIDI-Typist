@@ -568,6 +568,13 @@ its reset/image contract. The
 [Huntsman flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
 is a separate board-specific tool, not a universal firmware installer.
 
+Check ELF program headers as well as section/symbol addresses: a default load
+segment can include ELF metadata and extend backwards into the bootloader.
+M1's [development link](MONSGEEK_M1.md#development-elf-and-reset-entry) uses
+explicit segments, includes SRAM-code/data load addresses in the flash budget,
+and executes reset-copy tests from poisoned RAM. A correct link alone is not
+permission to enable flashing or claim complete runtime behavior.
+
 The configuration view selects physical geometry from `keyboard_boards.py` by
 build target, and binds host profiles to that target/layout. Register the allowed
 layout/count pairs, HID report length and declared sample rate; all are checked

@@ -35,6 +35,7 @@ def manifest(elf, library, reference, jobs):
     add('test_m1_storage_arm','m1',ROOT/'build-m1-hal/m1_storage_audit.elf')
     add('test_m1_save_arm','m1',ROOT/'build-m1-hal/m1_save_audit.elf')
     add('test_m1_boot_arm','m1',ROOT/'build-m1-hal/m1_boot_audit.elf')
+    add('test_m1_image_arm','m1',ROOT/'build-m1-hal/m1_development.elf')
     for name in ('usb', 'usb_startup', 'usb_chirp'):
         add('test_'+name+'_arm', 'usb', elf)
     add('test_flash_dump_arm', 'dump', elf)

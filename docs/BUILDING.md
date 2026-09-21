@@ -89,11 +89,12 @@ for the hardware boundary. Newlib may emit linker warnings about unimplemented
 final linked image after garbage collection. MIDI SysEx debug output uses the
 application's USB transport, not libc file I/O.
 
-## MonsGeek M1 libraries
+## MonsGeek M1 development build
 
 These commands compile the real shared application with the M1's 82-key layout,
-test its board callbacks natively, and compile its HALs for Cortex-M4.
-They do not produce a flashable application or access a keyboard.
+test its board callbacks natively, and compile its HALs and development ELF for
+Cortex-M4. They never access a keyboard. **Do not flash the M1 development ELF:**
+runtime power/transport recovery and update integration are incomplete.
 
 ```sh
 git submodule update --init third_party/artery
@@ -109,6 +110,7 @@ python tools/test_m1_live_arm.py build-m1-hal/m1_live_audit.elf
 python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
 python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
 python tools/test_m1_boot_arm.py build-m1-hal/m1_boot_audit.elf
+python tools/test_m1_image_arm.py build-m1-hal/m1_development.elf
 ```
 
 The ARM artifacts are `libm1_boot.a`, `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
@@ -118,6 +120,11 @@ no M1 `.bin` to install. `m1_hal_audit.elf`, `m1_usb_audit.elf`,
 `m1_live_audit.elf`, `m1_save_audit.elf`, `m1_boot_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
 or vector table: none is a flash image. Each test
 requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
+`m1_development.elf` and its `.map` use the actual application addresses. The
+link includes a reset/vector table, SRAM-code/data initialization and a basic
+foreground loop. Its separate image audit checks all load ranges, executes the
+reset code and tests main-loop ordering with component calls stubbed. This is
+not end-to-end execution or hardware qualification; there is no packaging/flash target.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
 The cold-handoff audit composes actual startup, scan pause/resume, USB/radio

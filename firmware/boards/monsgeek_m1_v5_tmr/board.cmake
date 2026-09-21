@@ -1,5 +1,5 @@
-# M1 board/application libraries. No flashable image until startup, USB and
-# protected storage are integrated and verified. Native build runs this board
+# M1 libraries and an offline-only development ELF; not enabled for flashing.
+# Runtime transport/power recovery remains incomplete. Native build runs this board
 # against the real shared application; ARM build uses the pinned official SDK.
 add_library(midi_typist_app STATIC ${MT_APP_SOURCES})
 target_include_directories(midi_typist_app PUBLIC firmware/app/include)
@@ -86,6 +86,17 @@ if(CMAKE_CROSSCOMPILING)
     add_library(m1_boot STATIC ${MT_BOARD_DIR}/src/m1_boot.c)
     target_link_libraries(m1_boot PUBLIC m1_live)
     target_compile_options(m1_boot PRIVATE -Wall -Wextra -Werror)
+    # Real-address development link, deliberately no .bin/flash/package target.
+    add_executable(m1_development ${MT_BOARD_DIR}/src/m1_entry.c ${MT_BOARD_DIR}/src/m1_main.c)
+    set_target_properties(m1_development PROPERTIES SUFFIX ".elf")
+    target_link_libraries(m1_development PRIVATE m1_boot)
+    target_compile_options(m1_development PRIVATE -Wall -Wextra -Werror -ffreestanding -fno-builtin)
+    target_link_options(m1_development PRIVATE -nostartfiles --specs=nosys.specs
+        -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
+        -Wl,-L,${CMAKE_SOURCE_DIR} -Wl,-Map,${CMAKE_BINARY_DIR}/m1_development.map
+        -T${MT_BOARD_DIR}/linker/application.ld)
+    set_property(TARGET m1_development APPEND PROPERTY LINK_DEPENDS
+        ${MT_BOARD_DIR}/linker/application.ld ${MT_BOARD_DIR}/linker/storage_ram.ld)
     add_executable(m1_boot_audit tests/m1_hal_audit.c tests/m1_boot_audit.c)
     set_target_properties(m1_boot_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_boot_audit PRIVATE m1_boot)
@@ -131,7 +142,7 @@ if(CMAKE_CROSSCOMPILING)
         m1_wireless_mode m1_wireless_ready m1_wireless_local_idle m1_wireless_healthy)
         target_link_options(m1_save_audit PRIVATE -Wl,--wrap=${symbol})
     endforeach()
-    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_boot m1_boot_audit m1_hal_audit m1_usb_audit m1_live_audit m1_storage m1_storage_audit m1_save m1_save_audit)
+    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_boot m1_development m1_boot_audit m1_hal_audit m1_usb_audit m1_live_audit m1_storage m1_storage_audit m1_save m1_save_audit)
         target_compile_options(${target} PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections)
     endforeach()
 else()

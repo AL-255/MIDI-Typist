@@ -195,8 +195,9 @@ state remain intact. A locally completed neutral radio report is **not** a
 host-delivery acknowledgement, but saving does not switch hosts or shut down
 the peer that may still be delivering that report.
 
-The overall startup/power/transport coordinator, live calibration save/reset,
-startup RAM copy and complete application image remain unfinished. The save
+The development ELF copies the SRAM writer at reset and bounds its actual
+flash load image below the profile slots. Runtime power/transport recovery,
+live calibration save/reset and installation support remain unfinished. The save
 gate audit runs actual scanner/time/battery/LED HALs with scripted transport
 readiness and electrical inputs. Foreground audits script profile I/O and the
 gate; the separate backend audit runs the actual SDK against modeled flash

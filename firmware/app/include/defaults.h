@@ -170,6 +170,14 @@
 #define M1_LED_LATCH_US 1000u
 #define M1_LED_TRANSFER_TIMEOUT_US 10000u
 #define M1_POWER_STAGE_MS 10u
+#define M1_MAIN_STACK_BYTES 8192u
+#define M1_DEFAULT_WIRELESS_TRANSPORT 0u
+#if M1_MAIN_STACK_BYTES < 8192u || M1_MAIN_STACK_BYTES > 32768u || (M1_MAIN_STACK_BYTES % 8u) != 0
+#error "invalid M1 application stack reservation"
+#endif
+#if M1_DEFAULT_WIRELESS_TRANSPORT != 0u && M1_DEFAULT_WIRELESS_TRANSPORT != 1u && M1_DEFAULT_WIRELESS_TRANSPORT != 2u && M1_DEFAULT_WIRELESS_TRANSPORT != 5u
+#error "invalid M1 default wireless transport"
+#endif
 #define M1_SENSOR_SETTLE_MS 1u
 #define M1_COLD_SLEEP_TICKS 25u
 /* Measure the low-speed RTC against TMR2 before using it to bridge sleep.

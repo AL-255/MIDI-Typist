@@ -89,8 +89,10 @@
   implementation or commit original firmware, disassembly, private device
   dumps, serial-number data or credentials.
 - Keep the external MonsGeek M1 firmware-recovery repository read-only too.
-  M1 device access is currently identity-only; HAL/application libraries and
-  the 82-key GUI preview are not a flashable M1 image. Require vendor ID2949, not a shared
+  M1 device access is currently identity-only; its libraries, 82-key GUI preview
+  and `m1_development.elf` are for offline development. Do not flash or package
+  that ELF: runtime power/transport recovery and update integration are incomplete.
+  Require vendor ID2949, not a shared
   USB PID, to identify an application. Never probe its destructive boot-entry
   command. Do not enable M1 flashing or allocate profile pages without proving
   its application/update and factory-calibration boundaries. M1's custom profile

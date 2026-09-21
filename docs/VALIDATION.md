@@ -3,7 +3,7 @@
 This is the common evidence boundary for the complete `huntsman` build. Do not treat modeled hardware as a physical test.
 Commands and dependencies are in [Building](BUILDING.md).
 The separate [M1 backend](MONSGEEK_M1.md#verification-limits) has a physically
-checked read-only identity query, official-SDK ARM library builds, and native
+checked read-only identity query, official-SDK ARM library/development-ELF builds, and native
 82-key application/scanner plus GUI tests. Native tests also cover Fn transport
 controls, USB-only MIDI, the battery curve/filter, sleep-request policy and radio packet codec.
 Linked Cortex-M4 tests execute clock, wired/battery cold-start, battery-input, USB power-down, RTC sleep,
@@ -73,6 +73,12 @@ Sleep-time tests script rates across the supported LICK range and verify
 coherent SDK reads, protected shadow synchronization, independent wraps,
 fractional carry, early-wake deltas and terminal clock/time faults. They do not
 measure physical oscillator rate, drift or sleep duration.
+The development-ELF audit checks exact boot identity, IRQ routes, all physical
+load ranges, SRAM SDK/custom writer placement and stack/BSS bounds. It rejects
+mutated protected-region/vector fixtures and executes the actual reset from
+poisoned RAM to verify copies, BSS clearing, interrupt masks and MSP selection.
+Its main-loop tests stub component calls; they are not full-image peripheral
+execution, a stack high-water measurement or installation approval.
 
 ## Automated checks
 
@@ -85,7 +91,7 @@ measure physical oscillator rate, drift or sleep duration.
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
-`python3 tools/run_tests.py` runs 26 audit groups, including native Huntsman
+`python3 tools/run_tests.py` runs 27 audit groups, including native Huntsman
 and M1 tests, with a 300-second total deadline. It requires the optional original
 reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. The M1 group also compiles the HAL/services against the pinned
@@ -124,7 +130,7 @@ ARM save/reboot. These are offline tests, not a physical unplug/replug check.
 
 M1 physical access is limited to its vendor identity query: ID2949, factory
 v4.08, USB high speed. No M1 configuration, bootloader-entry or flash commands
-have been sent. There is no installable M1 image.
+have been sent. The M1 development ELF is offline-only; installation is unsupported.
 
 Velocity uses each board's declared scan rate, not USB delivery timestamps.
 The GUI's measured capture throughput does not establish the acquisition rate.
