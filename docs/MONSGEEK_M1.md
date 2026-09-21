@@ -173,6 +173,7 @@ recovered implementation and binary are not part of the custom build.
 | MCU | AT32F405, Cortex-M4; exact physical density/package still needs verification |
 | Application | Header `0x08005000`, vectors `0x08005200` |
 | Boot erase range | `[0x08005000, 0x08028000)`, 70 pages of 2048 bytes |
+| Custom profiles | `0x08027000/0x08027800`, reserved inside that application range; erased by bootloader reflashing |
 | Boot request flag | `0x08004800`; not custom profile storage |
 | Factory calibration | 2048-byte records at `0x08032000` and `0x08032800` |
 | Factory key types | Record at `0x08033000`; preserve it |
@@ -182,17 +183,17 @@ recovered implementation and binary are not part of the custom build.
 Entering the factory bootloader is **destructive before an image is sent**:
 the application entry command erases settings, and the bootloader erases its
 application range before USB enumeration. Do not use bootloader entry as an
-identity or connectivity test. No custom storage region is allocated for M1;
-Huntsman storage addresses are not portable to it. The SDK-free profile journal
-is compiled with the distinct `M1P1` identity and a 2048-byte record, and native
-tests round-trip settings, mappings and calibration for all 82 keys. They test
-every byte-cut point using memory callbacks, not an M1 flash writer. The
-foreground application does not load or save these records yet; see
-[device storage](DEVICE_CONFIG_STORAGE.md) for the format and safety contract.
+identity or connectivity test. Huntsman storage addresses are not portable to
+it. M1's distinct `M1P1` journal uses its two reserved application-tail pages,
+not the stock settings/calibration area. Native tests cover all 82 keys and
+every byte-cut point; an ARM audit executes the official SDK and SRAM writer
+against a controller model. The foreground application does not load or save
+these records yet. See [device storage](DEVICE_CONFIG_STORAGE.md#m1-application-tail-backend)
+for the reservation, power/quiescence gate, RAM execution and update-loss contract.
 
 An M1 firmware port still requires verified startup/power behavior, physical
 confirmation of the inferred key/sensor/LED mapping, USB clock/PHY and runtime binding,
-physical verification of factory calibration, safe storage ownership and an independently checked
+physical verification of factory calibration, live storage scheduling and an independently checked
 application update path. In particular, the six-bank acquisition is not the
 Huntsman optical-ASIC path. Shared telemetry is count-aware; each board retains
 its own buffer budget. See the [porting contract](PORTING.md).

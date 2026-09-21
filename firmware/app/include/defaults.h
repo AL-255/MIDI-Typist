@@ -160,6 +160,9 @@
 /* M1 acquisition cadence is a requested custom rate, not a stock measurement. */
 #define M1_SCAN_HZ 8000u
 #define M1_ADC_CALIBRATION_WAIT_LOOPS 1000000u
+/* Finite SDK polling budgets. Physical flash timing still needs validation. */
+#define M1_FLASH_ERASE_WAIT_LOOPS 1000000u
+#define M1_FLASH_PROGRAM_WAIT_LOOPS 100000u
 /* Native ADC baseline range admitted by the factory sample-startup path. */
 #define M1_FACTORY_RELEASE_MIN_RAW 1000u
 #define M1_FACTORY_RELEASE_MAX_RAW 4000u
@@ -215,6 +218,9 @@
 
 #if RAW_DEFAULT_PRESS < 1 || RAW_DEFAULT_PRESS >= RAW_DEFAULT_RELEASE || RAW_DEFAULT_RELEASE >= 4096
 #error "Default Schmitt thresholds must satisfy 1 <= press < release < 4096"
+#endif
+#if M1_FLASH_ERASE_WAIT_LOOPS < 1 || M1_FLASH_PROGRAM_WAIT_LOOPS < 1 || M1_FLASH_ERASE_WAIT_LOOPS > 1000000u || M1_FLASH_PROGRAM_WAIT_LOOPS > 1000000u
+#error "Invalid M1 flash polling budget"
 #endif
 #if M1_LED_LATCH_US < 1 || M1_LED_TRANSFER_TIMEOUT_US < 1 || M1_LED_LATCH_US >= 0x80000000u || M1_LED_TRANSFER_TIMEOUT_US >= 0x80000000u
 #error "M1 LED timing must fit wrapping microsecond comparisons"

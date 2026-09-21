@@ -115,7 +115,8 @@ formats, device identity and bounds validation. The shared application requests
 load/save/clear operations; it cannot erase a flash address. The SDK-free
 `services/device_store` serializer and two-slot journal use board-selected
 record sizes and identities. Huntsman's writer and physical addresses stay in
-its board directory; M1 currently tests the journal with memory callbacks only.
+its board directory. M1 has a separate SDK/SRAM writer library tested against
+a controller model; its foreground coordinator does not yet use it.
 
 ## Scheduling and outputs
 

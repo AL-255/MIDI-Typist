@@ -65,7 +65,7 @@ stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
-`python3 tools/run_tests.py` runs 23 audit groups, including native Huntsman
+`python3 tools/run_tests.py` runs 24 audit groups, including native Huntsman
 and M1 tests, with a 300-second total deadline. It requires the optional original
 reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. The M1 group also compiles the HAL/services against the pinned
@@ -78,8 +78,12 @@ unsupported-schema rejection, controller faults and all 512 byte-cut points
 of a Huntsman inactive-page write. The controller model rejects writes outside
 the two tail slots. M1 runs the same shared-journal native suite for all 82 keys
 and 2048 byte-cut points using memory callbacks, including board identity and
-error-code isolation. It has no integrated custom flash writer or physical
-persistence validation.
+error-code isolation. Its separate linked ARM journal/SDK writer audit models
+controller effects and rejects out-of-slot writes, invalid geometry/context,
+unsafe activity and failed blank/program verification. It checks RAM-only
+transactions, temporary exception vectors, reboot fallback, fault latching and
+stuck-busy fail-stop. Live owner-loop autosave, physical flash timing, power
+qualification and hardware persistence remain unverified.
 
 ## Physical checks
 

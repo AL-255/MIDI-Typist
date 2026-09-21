@@ -93,12 +93,18 @@
   the 82-key GUI preview are not a flashable M1 image. Require vendor ID2949, not a shared
   USB PID, to identify an application. Never probe its destructive boot-entry
   command. Do not enable M1 flashing or allocate profile pages without proving
-  its application/update and factory-calibration boundaries. Huntsman addresses
-  below are not permissions to write another platform.
+  its application/update and factory-calibration boundaries. M1's custom profile
+  reservation is now 0x08027000/0x08027800, the last two application pages; its
+  writer is an audited library, not yet a live autosave backend. Keep the entire
+  load image below 0x08027000 and execute its flash transaction/SDK code from
+  SRAM. Stock settings at/above 0x08028000 and calibration at 0x08032000/0x08032800
+  remain protected. Factory-bootloader reflashing erases both custom slots.
 - Implement only the application. Preserve bootloader, primary settings and
   serial-number storage, factory/security data and secondary-ASIC firmware.
-  Calibration and profile RESET may modify only their two documented storage
-  pages, 0x78000/0x78200 (verified FF inside the original allocator's free block). Do not execute RESET on a user's saved calibration merely to test it.
+  On Huntsman, calibration and profile RESET may modify only 0x78000/0x78200
+  (verified FF inside the original allocator's free block). On M1, only the
+  application-tail reservation above is writable. Do not execute RESET on a
+  user's saved calibration merely to test it.
 - Use the supplied updater, vendored as the `third_party/huntsman_updater`
   submodule, for application flashing; the GUI uses the private
   `tools/device_flash_service.py` worker and selected model adapter.

@@ -5,11 +5,12 @@ The complete application persists settings and calibration in two reserved
 serial-number region at **0x49000..0x49400** is never a write target.
 Bootloader, application image, factory/security/PFR and secondary ASIC storage
 are also outside this writer.
-M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration),
-not a custom profile writer. Its 82-key journal codec is tested with in-memory
-callbacks only. Importing stored bounds does not save keyboard mappings or other
-edits; no M1 profile pages are allocated. The operational instructions below
-apply to the complete Huntsman application.
+M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration)
+and a separate audited application-tail writer library. The latter is not yet
+connected to the foreground application: keyboard mappings and other edits are
+still volatile. The operational instructions below apply to the complete
+Huntsman application; [M1's reservation and writer](#m1-application-tail-backend)
+have a different update-retention contract.
 
 ## What is saved
 
@@ -54,7 +55,7 @@ board callbacks alone own physical addresses and controller operations.
 | Board | Identity | Record size | CRC offset | Integration |
 | --- | --- | --- | --- | --- |
 | Huntsman | MTP2 | 512 | 508 | Application and bounded NXP writer |
-| M1 | M1P1 | 2048 | 2044 | Library and native memory-callback tests only |
+| M1 | M1P1 | 2048 | 2044 | SDK writer library; native and ARM audits, no live autosave |
 
 The distinct identities bind board-local layout numbers to their physical
 namespace. Neither format accepts the other or migrates older records.
@@ -106,7 +107,7 @@ sole good snapshot as a fallback after failure. Interrupted writes recover the
 old or complete new snapshot, not mixed settings/calibration. An interrupted
 first save can leave no valid record and reinitialize defaults.
 
-The adapter uses official NXP SDK registers/status codes and the original
+The Huntsman adapter uses official NXP SDK registers/status codes and the original
 working application's CMD4 erase, 32 CMD8 buffer loads and CMD12 program
 sequence. Code/stack execute from RAM; IRQ state is preserved, cache flushed,
 watchdog serviced and all polls bounded. Slot index, geometry, clock and
@@ -119,6 +120,47 @@ confirmed blank-check success; the diagnostic dumper still reports real
 per-word errors. See [NXP's explanation](https://community.nxp.com/t5/LPC-Microcontrollers-Knowledge/LPC55xx-Erased-Memory-State-0-or-1/ta-p/1135084).
 
 The application-image 1 KiB reservation stays FF and unused.
+
+## M1 application-tail backend
+
+`m1_storage` reserves **0x08027000 and 0x08027800**, two 2048-byte pages inside
+the custom application region. The reference boot erase loop at `0x08000420`
+erases 70 pages from `0x08005000`, stopping before stock settings at `0x08028000`.
+Factory calibration at `0x08032000/0x08032800`, key types, boot flag, bootloader
+and all other stock storage are outside this writer.
+
+**The factory bootloader erases both profiles on every application reflash.**
+This backend does not promise update-time retention or implement backup/restore.
+
+The caller supplies only slot 0/1 and must explicitly confirm adequate power,
+released/drained host outputs and quiescent acquisition/transports. Additional
+guards reject active DMA1/2 channels, ADC1, scan timers or busy LED/radio SPI,
+unexpected controller state, invalid records and non-foreground/unprivileged
+calls. The read-only size register must report the 256 KiB part, matching the
+2 KiB erase geometry; see [Artery's reference manual, §1.3.1](https://www.arterychip.com/download/RM/RM_AT32F402_405_EN_V2.01.pdf)
+and [datasheet, table 19](https://www.arterychip.com/download/DS/DS_AT32F405_402_V2.01_EN.pdf).
+No actual chip-density measurement is claimed by these checks.
+
+The linker must define the real flash load-image end below the first slot,
+including initialized RAM code/data. `linker/storage_ram.ld` places the
+transaction and official SDK flash functions in SRAM, with a separate code
+load address; startup must copy them before use. During erase/program, IRQs
+are masked and a temporary SRAM vector table directs NMI/HardFault to an SRAM
+stop handler. Successful and completed-error paths relock and restore VTOR/IRQ
+state. Erase is blank-verified and each programmed word is checked; the journal
+then compares the whole readback and CRC before accepting the generation.
+
+SDK erase/program polling is bounded by `M1_FLASH_*_WAIT_LOOPS` in `defaults.h`,
+applied through a forced-include configuration without editing vendor source.
+These are iteration budgets, not measured time guarantees. If flash stays busy
+after timeout, returning to flash-resident code is unsafe: stop in SRAM, leave
+IRQs masked, disable SysTick and do not retry. There is no option-byte operation,
+mass erase, protection change or automatic reset.
+
+The owner-loop pause/drain/power gate, live calibration save/reset/autosave,
+startup RAM copy and complete application image remain to be integrated. The
+audit supplies synthetic ownership and power conditions; it cannot prove them
+on a keyboard.
 
 ## Reset, flashing and telemetry
 
@@ -147,7 +189,11 @@ neutral debounce, settings/calibration preservation, corruption, controller
 faults and all 512 byte-cut points in an inactive-page write. The same native
 suite tests all 82 M1 sensors and all 2048 byte-cut points, including calibration
 and mappings, wrong-format records with valid CRCs, and board-specific error
-handling. This does not exercise an M1 flash controller or save on a device.
+handling. A separate M1 ARM audit runs the real journal, SRAM transaction and
+official SDK with modeled controller effects: exact slot targets, IRQ/vector
+restoration, denied contexts/geometry/activity, blank/program verification,
+fault latching, reboot fallback and stuck-busy fail-stop. It does not save on a
+device or qualify physical power-loss behavior.
 Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity/keycodes, reboot,
 blank-ECC initialization, corrupt-page recovery and unsupported-schema rejection.
 The controller model rejects commands outside the tail pages and compares

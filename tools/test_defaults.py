@@ -80,6 +80,8 @@ class DefaultsTests(unittest.TestCase):
                         {'RAW_VELOCITY_WINDOW':1}, {'VELOCITY_MAX_COUNTS_PER_SECOND':0},
                         {'MIDI_WHEEL_RELEASE_RAW':999}, {'CALIBRATION_HOLD_MS':5000},
                         {'M1_LED_LATCH_US':0}, {'M1_LED_TRANSFER_TIMEOUT_US':0},
+                        {'M1_FLASH_ERASE_WAIT_LOOPS':0}, {'M1_FLASH_ERASE_WAIT_LOOPS':1000001},
+                        {'M1_FLASH_PROGRAM_WAIT_LOOPS':0}, {'M1_FLASH_PROGRAM_WAIT_LOOPS':1000001},
                         {'M1_USB_PHY_SETTLE_US':999}, {'M1_USB_INIT_DELAY_LIMIT_MS':24},
                         {'M1_USB_INIT_DELAY_LIMIT_MS':1001}, {'M1_USB_PHY_SETTLE_US':25001},
                         {'M1_RADIO_START_PULSE_US':0}, {'M1_RADIO_TRANSFER_TIMEOUT_US':0},

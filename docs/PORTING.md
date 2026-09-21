@@ -217,8 +217,8 @@ report, including wireless paths. Preserve duplicate-destination ownership.
 Implement durable board/layout-bound storage for this array alongside all
 other settings. The shared journal retains Huntsman's lossless 512-byte format
 and tests a separate 2048-byte M1 format; neither permits borrowing factory
-pages. M1 has runtime and GUI-model coverage but no allocated profile storage
-or installable application yet. Follow the
+pages. M1 reserves two application-tail slots and audits its SDK/SRAM writer,
+but has no live autosave integration or installable application yet. Follow the
 [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
@@ -484,6 +484,11 @@ only slot 0 or 1, never caller-supplied addresses. The writer must own both slot
 blank-verify erasure and program the whole record; reads and erase verification
 must report controller faults. No SDK headers or physical addresses belong in
 the journal. See [record formats and limits](DEVICE_CONFIG_STORAGE.md).
+If a flash operation stalls instruction fetch, keep the transaction, SDK
+callees, literal pools and unmaskable exception path in RAM. Prove the complete
+load-image boundary excludes the slots, including RAM initializers. M1's
+[writer contract](DEVICE_CONFIG_STORAGE.md#m1-application-tail-backend) illustrates
+these checks; its synthetic ELF is not an application linker/startup template.
 
 Huntsman's `device_store` loads whole-profile snapshots through the calibration
 callback, applies settings immediately after `keyboard_app_frame` and before

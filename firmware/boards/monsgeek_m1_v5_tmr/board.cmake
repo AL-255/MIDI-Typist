@@ -34,9 +34,11 @@ if(CMAKE_CROSSCOMPILING)
     endif()
     add_library(at32_sdk STATIC)
     target_sources(at32_sdk PRIVATE ${at32}/libraries/cmsis/cm4/device_support/system_at32f402_405.c)
-    foreach(module adc crm dma gpio spi tmr ertc exint pwc usb)
+    foreach(module adc crm dma gpio spi tmr ertc exint pwc usb flash)
         target_sources(at32_sdk PRIVATE ${at32}/libraries/drivers/src/at32f402_405_${module}.c)
     endforeach()
+    set_source_files_properties(${at32}/libraries/drivers/src/at32f402_405_flash.c
+        PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/firmware/platform/at32f405/include/m1_flash_sdk_config.h")
     foreach(module usb_core usbd_core usbd_sdr usbd_int)
         target_sources(at32_sdk PRIVATE ${at32}/middlewares/usb_drivers/src/${module}.c)
     endforeach()
@@ -47,6 +49,18 @@ if(CMAKE_CROSSCOMPILING)
         ${at32}/middlewares/usb_drivers/inc)
     # SDK family selector; not a claim that this package/density was measured.
     target_compile_definitions(at32_sdk PUBLIC AT32F405RCT7 HEXT_VALUE=12000000)
+    add_library(m1_storage STATIC ${MT_BOARD_DIR}/src/m1_storage.c)
+    target_include_directories(m1_storage PUBLIC ${MT_BOARD_DIR}/include)
+    target_link_libraries(m1_storage PUBLIC midi_typist_services m1_board at32_sdk)
+    target_compile_options(m1_storage PRIVATE -Wall -Wextra -Werror)
+    add_executable(m1_storage_audit tests/m1_storage_audit.c)
+    set_target_properties(m1_storage_audit PROPERTIES SUFFIX ".elf")
+    target_link_libraries(m1_storage_audit PRIVATE m1_storage)
+    target_link_options(m1_storage_audit PRIVATE -nostartfiles --specs=nosys.specs
+        -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
+        -Wl,-L,${CMAKE_SOURCE_DIR} -T${CMAKE_SOURCE_DIR}/tests/m1_storage_audit.ld)
+    set_property(TARGET m1_storage_audit APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_SOURCE_DIR}/tests/m1_storage_audit.ld ${MT_BOARD_DIR}/linker/storage_ram.ld)
     add_library(m1_hal STATIC ${MT_BOARD_DIR}/src/m1_hal.c ${MT_BOARD_DIR}/src/m1_lighting_hal.c
         ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_startup.c ${MT_BOARD_DIR}/src/m1_factory_hal.c
         ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c ${MT_BOARD_DIR}/src/m1_power_gpio.c
@@ -86,7 +100,7 @@ if(CMAKE_CROSSCOMPILING)
         m1_lighting_healthy m1_lighting_errors m1_lighting_offer)
         target_link_options(m1_live_audit PRIVATE -Wl,--wrap=${symbol})
     endforeach()
-    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_hal_audit m1_usb_audit m1_live_audit)
+    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_hal_audit m1_usb_audit m1_live_audit m1_storage m1_storage_audit)
         target_compile_options(${target} PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections)
     endforeach()
 else()
