@@ -41,6 +41,7 @@
 #define MIDI_PRESSURE_PERIOD_MS 10u
 #define MIDI_OCTAVE_BLINK_STEP_MS 60u
 #define MIDI_QUEUE 128u
+#define MIDI_PENDING_STRIKES 5u
 #define KEYBOARD_TEXT_MAX 32u
 #define DEFAULT_MIDI_LEFT_SHIFT_NOTE 60u
 #define JANKO_LEFT_SHIFT 61u
@@ -256,6 +257,9 @@
 #endif
 #if M1_SCAN_QUEUE_FRAMES < 2 || M1_SCAN_QUEUE_FRAMES > 255
 #error "M1 scan queue must fit its bounded counter"
+#endif
+#if MIDI_PENDING_STRIKES < 1 || MIDI_PENDING_STRIKES > 8
+#error "Pending MIDI strikes must fit the per-key slot bitmap"
 #endif
 #if M1_FLASH_ERASE_WAIT_LOOPS < 1 || M1_FLASH_PROGRAM_WAIT_LOOPS < 1 || M1_FLASH_ERASE_WAIT_LOOPS > 1000000u || M1_FLASH_PROGRAM_WAIT_LOOPS > 1000000u
 #error "Invalid M1 flash polling budget"

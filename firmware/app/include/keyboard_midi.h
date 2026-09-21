@@ -7,14 +7,15 @@
 typedef bool (*midi_send_fn)(uint8_t, uint8_t, uint8_t, uint8_t);
 typedef struct {
     uint8_t mapping[RAW_KEY_COUNT], role[RAW_KEY_COUNT], active[RAW_KEY_COUNT], current[RAW_KEY_COUNT], released[RAW_KEY_COUNT];
-    uint8_t pending[RAW_KEY_COUNT][5];
+    uint8_t pending[RAW_KEY_COUNT][MIDI_PENDING_STRIKES];
+    uint8_t pending_mask[RAW_KEY_COUNT]; /* occupied strike slots; zero is the common case */
     bool previous[RAW_KEY_COUNT];
     uint8_t refs[128], pressure[128], sent_pressure[128];
     uint8_t queue[MIDI_QUEUE][3];
     uint16_t head, count, panic;
     uint16_t bend, sent_bend;
     uint8_t modulation, sent_modulation, wheel_sweep;
-    uint8_t profile, mode, phase, pressure_cursor;
+    uint8_t profile, mode, pressure_cursor;
     uint8_t lower_rows[MT_KEY_BITMAP_BYTES]; /* board-described group, independent of mapping */
     bool lower_muted, sustain, janko;
     uint8_t velocity_start; /* 1..10: transmitted-velocity start, 1 = 0%, 10 = 100% */

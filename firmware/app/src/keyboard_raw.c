@@ -215,7 +215,13 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
     unsigned fn=RAW_KEY_COUNT;
     for (unsigned i = 0; i < count; ++i) {
         const bool next = s->down[i] ? raw[i] <= s->release[i] : raw[i] < s->press[i];
-        velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], raw[i] > s->release[i],layout->sample_hz);
+        const bool released=raw[i]>s->release[i];
+        /* Other held keys must not force idle keys through velocity work.
+         * A stable down state has nothing to update once its fit is closed;
+         * a released state may skip only after release arming was recorded. */
+        if(next==s->down[i] && !s->velocity[i].pending &&
+           (!released || s->velocity[i].ready))continue;
+        velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], released,layout->sample_hz);
         pending |= s->velocity[i].pending!=0u;
         if (next == s->down[i]) continue;
         s->down[i] = next;

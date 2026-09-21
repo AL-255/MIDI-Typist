@@ -48,6 +48,12 @@ static void step(void)
     if (action==MENU_SELECT_KEY) assert(keyboard_midi_select_music(&midi,&raw,menu.selection,midi.music.scale));
     if (action==MENU_SELECT_SCALE) assert(keyboard_midi_select_music(&midi,&raw,midi.music.root,menu.selection));
     keyboard_midi_frame(&midi,&raw,lower,upper,frames++/8);
+    for(unsigned i=0;i<raw.count;++i) {
+        unsigned occupied=0;
+        for(unsigned slot=0;slot<MIDI_PENDING_STRIKES;++slot)
+            if(midi.pending[i][slot]!=MIDI_UNMAPPED)occupied|=1u<<slot;
+        assert(midi.pending_mask[i]==occupied);
+    }
 }
 static void drain(void)
 {

@@ -160,13 +160,15 @@ scan are midrange, without near-zero positions, and all six DMA banks retain
 executed private reference instructions. The original startup RAM fallback is
 also instruction-checked. Provisional travel normalization permits neutral
 arming; no stock calibration scale conversion is inferred. With GUI telemetry
-active, a measured 10-second released-key interval consumed exactly 8,000 scans/s
+active, a measured 10-second released-key interval consumed approximately 8,000 scans/s
 with zero additional loss events or HAL errors; input stayed valid and armed,
 all 82 keys stayed up, and MIDI cleanup stayed inactive. Foreground loop mean was
-98 µs during this interval. The one reported gap was the deliberate initial
+81 µs during this interval. The one reported gap was the deliberate initial
 settings-save pause, not an overwritten acquisition. Queue order/wrap/overflow,
 pause invalidation, and released-key fast-path velocity semantics have offline
-tests. These measurements do not establish sustained pressed-key/polyphonic
+tests. The per-key pending-strike bitmap is checked against every occupied slot
+through the native MIDI suite, including retrigger and overflow cleanup. These
+measurements do not establish sustained pressed-key/polyphonic
 performance or worst-case latency. Individual press-to-key mapping, full
 calibration, LED appearance and wireless behavior still require hardware checks.
 See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).

@@ -97,6 +97,9 @@ discard queued frames; startup resumes acquisition only after the application
 has loaded its profile. Battery telemetry uses the newest complete acquisition.
 The shared released-key fast path still copies and validates every sample;
 it skips edge/velocity work only after all keys are released and no fit is pending.
+During held chords, individual unchanged keys also skip velocity work once their
+fit is closed and any release arming has been recorded; active fits still receive
+every sample. MIDI pending-slot bitmaps avoid rescanning empty strike slots.
 Read-only [`runtime stats`](TELEMETRY.md#m1-foreground-timing) measures foreground
 wall time, including interrupts, without changing the timer configuration.
 Only a complete, correctly ordered frame is published. Raw ADC `0…4095` maps
@@ -616,8 +619,8 @@ The save-gate audit executes
 actual scanner/time/battery/LED HALs with scripted power and transport readiness;
 the flash driver has its own controller-model audit. Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
-The runtime power/transport coordinator, verified radio delivery,
-physical persistence and an installable application remain unfinished. Link faults are not
+The runtime power/transport coordinator, verified radio delivery and
+power-cycle persistence remain unfinished in the installable experimental application. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
 ### USB hardware lifecycle

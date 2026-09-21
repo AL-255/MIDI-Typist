@@ -218,8 +218,9 @@ Implement durable board/layout-bound storage for this array alongside all
 other settings. The shared journal retains Huntsman's lossless 512-byte format
 and tests a separate 2048-byte M1 format; neither permits borrowing factory
 pages. M1 reserves two application-tail slots and audits its SDK/SRAM writer,
-and gates foreground autosave through outer-owner safety callbacks; it has no
-installable application yet. Follow the
+and gates foreground autosave through outer-owner safety callbacks. Its
+experimental application has verified flashing, recovery and live GUI telemetry;
+runtime power/transport integration remains incomplete. Follow the
 [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
@@ -433,10 +434,11 @@ the startup owner performs qualification and uses the timed sleep wrapper.
 Bound rate qualification and resume, preserve fractional conversion carry,
 and state the resolution/drift limits instead of promising wall-clock accuracy.
 The [M1 startup HAL](MONSGEEK_M1.md#clock-rails-and-remaining-integration)
-illustrates these contracts without providing an installable image.
-Its [cold application handoff](MONSGEEK_M1.md#cold-application-handoff) pauses
-acquisition before blocking USB initialization, timestamps radio startup only
-after that call, then resumes scanning and binds the restored application.
+implements these contracts in the experimental application.
+Its [cold application handoff](MONSGEEK_M1.md#cold-application-handoff) attaches
+USB before acquisition, retains the first complete real scan, then pauses while
+loading the profile and binding the application. Only then does scanning resume.
+Radio startup uses a fresh timestamp after any blocking USB work.
 Keep cold ownership separate from runtime reconnect/wake: initialization success
 does not establish host readiness or permission to abandon an existing host.
 Never write more than capacity into the arrays. Establish fallback bounds

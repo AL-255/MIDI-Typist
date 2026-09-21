@@ -37,7 +37,7 @@ valid optical frame → raw Schmitt edges and per-key velocity windows
 main loop → queued note/pedal events first → latest wheels → changed pressure → NXP USB IN
 ```
 
-The Huntsman MIDI state is 1540 bytes, with fixed capacities and no dynamic allocation.
+MIDI state uses fixed capacities and no dynamic allocation.
 Other boards select their sensor, light-frame and HID capacities at build time.
 The board has separate 24 KiB SRAMX, 16 KiB USB SRAM and 8 KiB stack budgets;
 the linker reports current usage. Calibration and persistence state use
@@ -197,11 +197,18 @@ does not normalize velocity. A Note On with velocity zero has Note Off semantics
 so the smallest strike is encoded as velocity 1. Release velocity is fixed at
 zero; no release-slope measurement is claimed.
 
-Each sensor has five pending-note slots allocated on press edges. A strike
+Each sensor has `MIDI_PENDING_STRIKES` pending-note slots (default five), allocated on press edges. A strike
 latches its transposed note into the first free slot. Notes are queued when
 that sensor's velocity window closes: at ten samples or on the bottom-out
 condition, not after a fixed delay. The 8000 Hz velocity assumption is not a
 measurement of acquisition cadence.
+
+A per-key occupied-slot bitmap makes the common no-pending-strike check constant
+time; slot allocation, completion and cleanup update it together with the note
+slots. Steady keys skip velocity work only when no fit is pending and no edge or
+release-arming change is needed. Every frame still copies and validates all
+readbacks. Keyboard mode retains MIDI edge history without processing MIDI-only
+controls, and cleanup transmission remains active independently of mode.
 
 A per-key pointer and release-bit mask retain releases that occur before the
 velocity fit completes. Such a short tap emits an ordered Note On followed by
