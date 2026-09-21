@@ -1,5 +1,17 @@
 # Repository rules
 
+## Incremental commits and pushes
+
+- Commit and push meaningful, validated checkpoints as work progresses; do not
+  accumulate an entire implementation in an uncommitted working tree.
+- Use the active feature branch. Do not merge into or push changes to `main`
+  without an explicit request. Never force-push as part of this workflow.
+- Run checks appropriate to each checkpoint and describe unfinished work
+  honestly. Keep generated artifacts, private data and firmware dumps out of
+  commits. Preserve unrelated user changes.
+- Verify the push succeeded and report its branch and commit. If it fails,
+  retain the local commit and report the actual failure.
+
 ## Latest implementation only
 
 - Keep one current custom firmware implementation and its matching GUI. Remove
