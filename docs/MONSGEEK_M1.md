@@ -605,8 +605,9 @@ foreground context and quiescent peripherals/transports. Shared GPIO restoration
 establishes normal pin roles and the encoder baseline before selecting a branch:
 
 - **PC13 low (wired):** PB6 high, 10 ms, PB12 low, 10 ms, PC14 high, 10 ms.
-- **PC13 high (battery):** initialize RTC, reduce the idle USB PHY's power,
-  prepare wake GPIO, wait 10 ms with rails low, sleep for 25 RTC ticks, then
+- **PC13 high (battery):** initialize RTC, begin its rate measurement against
+  the running TMR2 timebase, reduce the idle USB PHY's power and prepare wake
+  GPIO. Once the rate is qualified, wait 10 ms with rails low, sleep for 25 RTC ticks, then
   raise PC14/PB6, initialize the scanner, raise PC6 and settle for 10 µs.
   Complete and discard one bounded six-bank scan; lower PB6/PC14/PC6, raise
   PB6, wait 10 ms, restore GPIO/encoder state, wait 10 ms, raise PC14 and
@@ -619,7 +620,10 @@ uses the custom scanner's complete-frame ownership and timeout instead of the
 reference's unbounded busy wait. No active USB session is allowed, so there is
 no host connection to disconnect during this sequence.
 
-Service takes independent wrapping millisecond/microsecond clocks. Fresh polls
+Start `m1_time` before battery startup. Service takes independent wrapping
+millisecond/microsecond clocks and polls the RTC rate measurement without
+blocking for its window. Its sleep handoff suspends TMR2 and resumes with
+observed RTC elapsed time, including early wakes. Fresh polls
 start settling intervals after potentially blocking initialization or wake;
 the caller must refresh time after service returns. A source change while
 servicing this owner, scan fault or ordinary sleep failure stops owned HALs and
@@ -684,8 +688,8 @@ explicitly discards the previous epoch. Before changing clocks or sleeping,
 use `m1_time_suspend`, then restore the original clocks and pass **measured**
 elapsed microseconds to `m1_time_resume`. It retains fractional milliseconds
 and checks that the stopped counter was preserved. Clock initialization and
-RTC sleep reject a running TMR2. The outer sleep coordinator still needs an
-elapsed-time source; a requested wake interval is not such a measurement.
+RTC sleep reject a running TMR2. The measured RTC bridge below supplies elapsed
+time for battery startup; a requested wake interval is not such a measurement.
 
 ARM tests execute the official timer driver with scripted counter progression,
 including masked intervals, hardware wrap, independent millisecond wrap,
@@ -728,6 +732,36 @@ elapsed time and key wake capture. Clock-restore failure leaves interrupts
 masked and SysTick stopped and returns `M1_SLEEP_CLOCK_FATAL`. Ordinary
 application operation must not resume on that result. There is no automatic
 reset, standby entry, factory-data write or physical sleep test.
+
+### Measured RTC time bridge
+
+`m1_sleep_time_begin/service` measures RTC subsecond progression against TMR2
+over at least `M1_SLEEP_CLOCK_WINDOW_US` (20 ms), with a 1-second qualification
+timeout. It admits the reference manual's 30–60 kHz LICK range with a small
+sampling allowance, rather than assuming a fixed 40 kHz oscillator. Calendar
+ticks run at LICK/64 with the board's 7/7 dividers; subseconds run at LICK/8.
+The fast calendar's day wrap is therefore **not 24 wall-clock hours**.
+
+`m1_sleep_timed_wait` composes the existing sleep HAL with TMR2 suspend/resume.
+It reads SBS before the SDK calendar getter, keeping TIME/DATE locked until
+the final DATE read. After wake, the SDK refreshes shadow registers inside an
+unlock/sync/relock sequence, as required by the
+[reference manual §18.3.2](https://www.arterychip.com/download/RM/RM_AT32F402_405_EN_V2.01.pdf).
+The measured rate converts the observed counter delta into microseconds,
+carrying fractional conversion remainders across sleeps. Early interrupts use
+their actual delta, not the requested wake count. Backward/implausible deltas,
+stale or incompatible RTC configuration, failed synchronization and timer
+ownership faults are rejected. The requested wake bound has a 100-ms default
+clock-restoration allowance, not permission to sleep indefinitely.
+
+Qualification/timing policy lives in `defaults.h`. The bridge never resets the
+backup domain or writes calendar/date/backup data. A failed time handoff returns
+`M1_SLEEP_TIME_ERROR` and latches a fault; failures after suspension leave TMR2
+stopped. Clock restoration failure retains the existing masked fatal behavior.
+Resolution is one RTC subsecond tick, with measurement quantization; drift
+during sleep is not corrected. This is not a precision wall clock or a physical
+oscillator calibration claim. ARM tests script counter progression, including
+independent wraps, fractional carry, early wakes and protected-sync failures.
 
 ### USB power-down helper
 

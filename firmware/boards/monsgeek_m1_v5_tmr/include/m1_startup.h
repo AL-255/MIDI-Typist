@@ -18,7 +18,9 @@ m1_clock_result_t m1_clock_init(void);
  * peripherals quiescent. PC13 selects wired or battery startup and must remain
  * in that state while this owner is serviced. No radio mode is selected here. Begin once, then
  * service with independently wrapping clocks; service may enter RTC sleep on
- * the battery path. Refresh both time readings after it returns from sleep.
+ * the battery path. Start m1_time beforehand: battery startup measures the
+ * RTC against it, then bridges actual sleep time without losing the epoch.
+ * Refresh both time readings after it returns from sleep.
  * A nonfatal failure stops owned HALs/rails; explicitly stop before retrying.
  * If GPIO restoration fails, prepared ownership still blocks a new begin. */
 bool m1_startup_begin(uint32_t now_ms,bool platform_quiescent);

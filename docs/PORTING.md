@@ -415,6 +415,12 @@ and handling microsecond/millisecond wrap independently. M1's
 [foreground timebase](MONSGEEK_M1.md#foreground-timebase) owns 32-bit TMR2;
 it runs through flash but must be suspended before clock changes/deep sleep.
 Resume requires measured elapsed time, never an assumed requested sleep delay.
+M1's [RTC bridge](MONSGEEK_M1.md#measured-rtc-time-bridge) qualifies the low-speed
+counter against the awake timer, uses coherent calendar/subsecond reads and
+refreshes shadow registers after wake. Start TMR2 before its battery startup;
+the startup owner performs qualification and uses the timed sleep wrapper.
+Bound rate qualification and resume, preserve fractional conversion carry,
+and state the resolution/drift limits instead of promising wall-clock accuracy.
 The [M1 startup HAL](MONSGEEK_M1.md#clock-rails-and-remaining-integration)
 illustrates these contracts without providing an installable image.
 Never write more than capacity into the arrays. Establish fallback bounds

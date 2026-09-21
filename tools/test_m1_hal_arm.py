@@ -694,6 +694,8 @@ class SleepArm(StartupArm):
                 elif value==0xff:self.unlocked=False
                 else:raise AssertionError('invalid RTC protection key')
             elif address==RTC+12:
+                if self.rtc_status&32 and not value&32:
+                    assert self.unlocked,'UPDF synchronization requires write access'
                 # W0C event/update flags; IMEN is writable, readiness is modeled
                 # on read. Ones do not manufacture pending hardware events.
                 self.rtc_status=(self.rtc_status&~((~value)&0x7f20)&~128)|(value&128)
@@ -726,6 +728,105 @@ class SleepArm(StartupArm):
         if self.rtc_wake:self.rtc_status|=1<<10
         self.failure=self.resume_failure
         cpu.reg_write(UC_ARM_REG_PC,(address+2)|1)
+
+
+class TimedSleepArm(SleepArm):
+    def __init__(self,elf,failure=None,initialize=True):
+        super().__init__(elf,failure)
+        self.rtc_ticks=0;self.wake_ticks=1;self.read_order=[]
+        self.cpu.hook_add(UC_HOOK_MEM_READ,self.calendar_read,begin=RTC,end=RTC+0x2b)
+        self.set_stamp(0)
+        if initialize:assert self.call('m1_sleep_init')
+        assert self.call('m1_time_start')
+
+    def write(self,cpu,access,address,size,value,user):
+        if TMR2<=address<TMR2+0x100:
+            self.writes.append((address,size,value));return
+        super().write(cpu,access,address,size,value,user)
+        if address==CRM+0x20 and value&1:self.cpu.mem_write(TMR2,bytes(0x100))
+
+    def check_guards(self):
+        StartupArm.check_guards(self)
+        assert bytes(self.cpu.mem_read(RTC+0x50,80))==b'\x79'*80
+        assert self.u32(RTC+4)==0x00245678
+
+    def set_stamp(self,ticks):
+        self.rtc_ticks=ticks%(86400*8)
+        seconds,sub=divmod(self.rtc_ticks,8)
+        h,seconds=divmod(seconds,3600);m,s=divmod(seconds,60)
+        bcd=lambda n:(n//10)*16+n%10
+        self.put(RTC,(bcd(h)<<16)|(bcd(m)<<8)|bcd(s));self.put(RTC+0x28,7-sub)
+
+    def calendar_read(self,cpu,access,address,size,value,user):
+        if address in (RTC,RTC+4,RTC+0x28):self.read_order.append(address)
+
+    def sleep(self,cpu,address,size,user):
+        if bytes(cpu.mem_read(address,2))!=b'\x30\xbf':return
+        assert not self.u32(TMR2)&1
+        super().sleep(cpu,address,size,user)
+        self.set_stamp(self.rtc_ticks+self.wake_ticks)
+
+    def measure(self,ticks=100,start=0):
+        self.put(TMR2+0x24,start)
+        self.set_stamp(86400*8-50)
+        assert self.call('m1_sleep_time_begin')
+        assert not self.call('m1_sleep_time_begin')
+        self.call('m1_sleep_time_service');assert not self.call('m1_sleep_time_ready')
+        self.put(TMR2+0x24,start+D['M1_SLEEP_CLOCK_WINDOW_US'])
+        self.set_stamp(self.rtc_ticks+ticks)
+        self.call('m1_sleep_time_service')
+        return self.call('m1_sleep_time_ready')
+
+
+def sleep_time(elf):
+    window=D['M1_SLEEP_CLOCK_WINDOW_US']
+    for ticks in (75,77,100,150):  # measured LICK 30..60 kHz, plus fractional carry
+        for mask in (0,1):
+            d=TimedSleepArm(elf);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+            assert d.measure(ticks,0xfffffff0)
+            total=0xfffffff0+window;gap=0
+            for request,wake,elapsed in ((25,True,200),(25,False,1),
+                                         (1,False,1),(65536,True,65536*8)):
+                d.rtc_wake=wake;d.wake_ticks=elapsed
+                d.set_stamp(86400*8-5)  # wrap during sleep independently of TMR2
+                writes=len(d.writes)
+                assert d.call('m1_sleep_timed_wait',request,0)==4 and len(d.writes)==writes
+                assert d.call('m1_sleep_timed_wait',0,1)==2 and len(d.writes)==writes
+                d.read_order.clear()
+                assert d.call('m1_sleep_timed_wait',request,1)==(0 if wake else 1)
+                gap+=elapsed*window
+                expected=total+gap//ticks
+                assert d.call('m1_time_now',RGB)
+                assert struct.unpack('<II',d.cpu.mem_read(RGB,8))==(expected&0xffffffff,(expected//1000)&0xffffffff)
+                assert d.u32(TMR2)&1 and not d.call('m1_sleep_time_fault') and not d.unlocked
+                assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+                assert d.read_order==[RTC+0x28,RTC,RTC,RTC+4]*2
+    for ticks in (0,20,200):
+        d=TimedSleepArm(elf);assert not d.measure(ticks)
+        assert d.call('m1_sleep_time_fault') and not d.call('m1_sleep_time_begin')
+    d=TimedSleepArm(elf);assert d.call('m1_sleep_time_begin')
+    d.put(TMR2+0x24,D['M1_SLEEP_CLOCK_TIMEOUT_US']+1)
+    d.call('m1_sleep_time_service');assert d.call('m1_sleep_time_fault')
+    for address,value in ((RTC+8,32),(RTC+8,64),(RTC+8,16),
+            (RTC+16,0x70008),(RTC+0x28,8),(RTC,0x0000001a),(RTC,0x00240000),
+            (RTC,0x00006000),(RTC,0x00400000),(CRM+0x70,0)):
+        d=TimedSleepArm(elf);d.put(address,value);d.writes.clear()
+        assert not d.call('m1_sleep_time_begin') and not d.writes
+    for failure in ('rollback','time ownership','RTC sync','clock fatal'):
+        d=TimedSleepArm(elf);assert d.measure()
+        if failure=='rollback':d.wake_ticks=-1
+        elif failure=='time ownership':d.put(TMR2+0x28,214)
+        elif failure=='RTC sync':d.resume_failure='rtc_sync'
+        else:d.resume_failure='hext'
+        expected=7 if failure=='clock fatal' else 8
+        assert d.call('m1_sleep_timed_wait',25,1,instructions=100000000)==expected,failure
+        assert d.call('m1_sleep_time_fault') and not d.call('m1_sleep_time_ready')
+        if failure!='time ownership':assert not d.u32(TMR2)&1
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==(failure=='clock fatal')
+        assert not d.unlocked
+    d=TimedSleepArm(elf);assert d.measure();d.put(TMR6,1)
+    assert d.call('m1_sleep_timed_wait',25,1)==4 and not d.wakes and d.u32(TMR2)&1
+    print('PASS M1 measured sleep time: RTC/TMR2 ratio, coherent SDK snapshot, wraps/fraction carry, early wake, protected sync and terminal clock/time faults')
 
 
 def sleep_hal(elf):
@@ -1237,10 +1338,11 @@ class UsbPowerArm(M1Arm):
                 self.put(GPIO+0x810,self.u32(GPIO+0x810)&~(1<<13))
 
 
-class BatteryStartupArm(SleepArm):
+class BatteryStartupArm(TimedSleepArm):
     """Compose real startup/sleep/USB/scanner code with scripted hardware flags."""
     def __init__(self,elf,failure=None):
-        super().__init__(elf,failure)
+        super().__init__(elf,failure,False)
+        self.clock_ms=0;self.wake_ticks=D['M1_COLD_SLEEP_TICKS']*8
         self.cpu.mem_map(USB_HS,0x10000)
         self.cpu.hook_add(UC_HOOK_MEM_WRITE,self.write,begin=USB_HS,end=USB_HS+0xffff)
         self.cpu.hook_add(UC_HOOK_MEM_READ,self.read_usb,begin=USB_HS,end=USB_HS+0xffff)
@@ -1249,6 +1351,10 @@ class BatteryStartupArm(SleepArm):
 
     read_usb=UsbPowerArm.read_usb
 
+    def call(self,name,*args,**kwargs):
+        if name=='m1_startup_begin':self.clock_ms=args[0]&0xffffffff
+        return super().call(name,*args,**kwargs)
+
     def write(self,cpu,access,address,size,value,user):
         if address in (CRM+0x78,USB_HS+0x38,USB_HS+0xc,USB_HS+0x804,USB_HS+0xe00):
             assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
@@ -1256,6 +1362,11 @@ class BatteryStartupArm(SleepArm):
         else:super().write(cpu,access,address,size,value,user)
 
     def service(self,ms,us):
+        elapsed=((ms-self.clock_ms)&0xffffffff)*1000
+        self.clock_ms=ms&0xffffffff
+        if self.u32(TMR2)&1:
+            self.put(TMR2+0x24,self.u32(TMR2+0x24)+elapsed)
+        self.set_stamp(self.rtc_ticks+elapsed//200)
         self.call('m1_startup_service',ms,us,instructions=3000000)
 
     def begin_capture(self,start=0,us=0xfffffff0):
@@ -1608,6 +1719,7 @@ def main():
     usb_power(args.elf)
     power_gpio(args.elf)
     sleep_hal(args.elf)
+    sleep_time(args.elf)
     factory(args.elf)
 
 

@@ -4,6 +4,7 @@
 #include "m1_power_gpio.h"
 #include "m1_usb_power.h"
 #include "m1_sleep.h"
+#include "m1_sleep_time.h"
 #include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -67,7 +68,9 @@ bool m1_startup_begin(uint32_t now_ms,bool platform_quiescent)
     pins_owned=true;
     since=now_ms;
     if(battery_path) {
-        if(!m1_sleep_init() || m1_usb_power_down(true)!=M1_USB_POWER_OK ||
+        if(!m1_sleep_init() ||
+           (!m1_sleep_time_ready() && !m1_sleep_time_begin()) ||
+           m1_usb_power_down(true)!=M1_USB_POWER_OK ||
            !m1_power_gpio_prepare(true)) { fail();return false; }
         gpio_owned=true;state=BAT_SLEEP_STAMP;
     } else { gpio_bits_set(GPIOB,GPIO_PINS_6);state=WAIT_PB6; }
@@ -90,7 +93,12 @@ void m1_startup_service(uint32_t now_ms,uint32_t now_us)
         if(!m1_hal_healthy() || !m1_lighting_healthy())fail();
         return;
     }
-    if(state==BAT_SLEEP_STAMP) { since=now_ms;state=BAT_SLEEP;return; }
+    if(state==BAT_SLEEP_STAMP) {
+        m1_sleep_time_service();
+        if(m1_sleep_time_fault()) { fail();return; }
+        if(!m1_sleep_time_ready())return;
+        since=now_ms;state=BAT_SLEEP;return;
+    }
     /* Do not measure settling from timestamps captured before WFI or a
      * bounded ADC-calibration call: start the interval on a fresh poll. */
     if(state==BAT_RAILS) {
@@ -125,7 +133,7 @@ void m1_startup_service(uint32_t now_ms,uint32_t now_us)
     case BAT_SLEEP: {
         gpio_bits_reset(GPIOC,GPIO_PINS_6);gpio_bits_reset(GPIOB,GPIO_PINS_6);
         gpio_bits_reset(GPIOC,GPIO_PINS_14);
-        m1_sleep_result_t result=m1_sleep_wait(M1_COLD_SLEEP_TICKS,true);
+        m1_sleep_result_t result=m1_sleep_timed_wait(M1_COLD_SLEEP_TICKS,true);
         if(result==M1_SLEEP_CLOCK_FATAL) { state=CLOCK_FATAL;return; }
         if(result!=M1_SLEEP_TIMER && result!=M1_SLEEP_OTHER_WAKE) { fail();break; }
         state=BAT_RAILS;break; /* refresh time after wake before raising rails */

@@ -14,7 +14,7 @@
 typedef enum {
     M1_SLEEP_TIMER, M1_SLEEP_OTHER_WAKE, M1_SLEEP_NOT_READY,
     M1_SLEEP_CONTEXT, M1_SLEEP_BUSY, M1_SLEEP_RTC_ERROR,
-    M1_SLEEP_HICK_ERROR, M1_SLEEP_CLOCK_FATAL
+    M1_SLEEP_HICK_ERROR, M1_SLEEP_CLOCK_FATAL, M1_SLEEP_TIME_ERROR
 } m1_sleep_result_t;
 /* Foreground initialization after m1_clock_init. Owns the RTC wake timer,
  * EXINT22 and IRQ3, not the calendar/date or backup registers. Rejects a

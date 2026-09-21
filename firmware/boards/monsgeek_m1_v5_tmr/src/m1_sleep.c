@@ -32,6 +32,15 @@ static bool stop_timer(void)
     NVIC_ClearPendingIRQ(ERTC_WKUP_IRQn);
     return stopped;
 }
+static bool sync_calendar(void)
+{
+    /* UPDF is outside STS[14:8]'s write-protection exemption (RM 18.3.2).
+     * divider_set has already relocked the peripheral before returning. */
+    ertc_write_protect_disable();
+    bool synced=ertc_wait_update()==SUCCESS;
+    ertc_write_protect_enable();
+    return synced;
+}
 bool m1_sleep_ready(void) { return ready; }
 bool m1_sleep_init(void)
 {
@@ -49,7 +58,7 @@ bool m1_sleep_init(void)
     crm_ertc_clock_enable(TRUE);
     NVIC_DisableIRQ(ERTC_WKUP_IRQn);
     if(!stop_timer() || ertc_divider_set(M1_RTC_DIV_A,M1_RTC_DIV_B)!=SUCCESS ||
-       ertc_wait_update()!=SUCCESS) {
+       !sync_calendar()) {
         ertc_write_protect_enable(); __set_PRIMASK(mask); return false;
     }
     ertc_wakeup_clock_set(ERTC_WAT_CLK_CK_B_16BITS);

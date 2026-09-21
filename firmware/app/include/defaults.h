@@ -172,6 +172,18 @@
 #define M1_POWER_STAGE_MS 10u
 #define M1_SENSOR_SETTLE_MS 1u
 #define M1_COLD_SLEEP_TICKS 25u
+/* Measure the low-speed RTC against TMR2 before using it to bridge sleep.
+ * Window/timeout are policy; no assumed 40 kHz oscillator rate is used. */
+#define M1_SLEEP_CLOCK_WINDOW_US 20000u
+#define M1_SLEEP_CLOCK_TIMEOUT_US 1000000u
+#define M1_SLEEP_CLOCK_SLOP_TICKS 2u
+#define M1_SLEEP_CLOCK_RESUME_MARGIN_US 100000u
+#if M1_SLEEP_CLOCK_WINDOW_US < 10000u || M1_SLEEP_CLOCK_TIMEOUT_US < M1_SLEEP_CLOCK_WINDOW_US || M1_SLEEP_CLOCK_TIMEOUT_US > 1000000u || M1_SLEEP_CLOCK_SLOP_TICKS > 8u
+#error "invalid M1 sleep clock measurement window"
+#endif
+#if M1_SLEEP_CLOCK_RESUME_MARGIN_US == 0 || M1_SLEEP_CLOCK_RESUME_MARGIN_US > 1000000u
+#error "invalid M1 sleep clock resume allowance"
+#endif
 #define M1_COLD_SCAN_SETTLE_US 10u
 #define M1_TRANSPORT_SWITCH_TIMEOUT_MS 3000u
 #define M1_RADIO_START_PULSE_US 10000u

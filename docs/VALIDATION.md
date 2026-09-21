@@ -59,9 +59,13 @@ IRQ masking. Foreground tests load those fixtures before exercising USB/radio
 and GUI telemetry. No physical factory data, checksum or travel accuracy has
 been verified; invalid records are not repaired or erased.
 Cold-start tests compose the actual RTC/PHY/GPIO/scanner code, checking rail
-order, fresh settling timestamps, complete warmup-frame discard, timer wrap,
+order, measured RTC/TMR2 handoff, fresh settling timestamps, complete warmup-frame discard, timer wrap,
 scan/PHY/clock failures, cancellation and cable changes. No startup helper is
 stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
+Sleep-time tests script rates across the supported LICK range and verify
+coherent SDK reads, protected shadow synchronization, independent wraps,
+fractional carry, early-wake deltas and terminal clock/time faults. They do not
+measure physical oscillator rate, drift or sleep duration.
 
 ## Automated checks
 

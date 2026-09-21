@@ -6,6 +6,7 @@
 #include "m1_startup.h"
 #include "m1_battery_hal.h"
 #include "m1_sleep.h"
+#include "m1_sleep_time.h"
 #include "m1_radio.h"
 #include "m1_wireless.h"
 #include "m1_power.h"
@@ -70,6 +71,7 @@ const void *const m1_test_exports[]={
     m1_startup_ready,m1_startup_fault,m1_startup_clock_fatal,m1_startup_encoder_phase,
     m1_battery_hal_init,m1_battery_hal_service,m1_test_battery_status,
     m1_sleep_init,m1_sleep_ready,m1_sleep_wait,m1_sleep_irq,
+    m1_sleep_time_begin,m1_sleep_time_service,m1_sleep_time_ready,m1_sleep_time_fault,m1_sleep_timed_wait,
     m1_radio_init,m1_radio_service,m1_radio_ready,m1_radio_healthy,m1_radio_errors,
     m1_radio_data_pending,m1_radio_exchange,m1_radio_take,m1_radio_stop,m1_radio_quiesce,
     m1_wireless_init,m1_wireless_service,m1_wireless_stop,m1_wireless_healthy,
