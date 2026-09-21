@@ -115,10 +115,14 @@ latch the storage fault flag and disable normal input; a deferred gate is not
 an error. These codes do not change the frame layout.
 
 Saved calibration does not imply a writable backend: a set saved bit and clear
-supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses this combination for validated
-factory records (calibration generation 0) or bounds from a valid custom record.
-This calibration flag must not enable calibration writes or imply a durable
-whole profile. M1's `M1P1` journal independently supplies storage flags, slot,
+supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses
+this combination without storage callbacks. With callbacks, idle flags are 6
+and active flags are 7; the GUI and Fn+C can initiate parallel calibration.
+Factory bounds have calibration generation 0; a verified custom calibration
+increments it. The saved bit alone must not imply a durable whole profile.
+The supported bit describes the backend capability, not current permission to
+write: a storage fault disables new calibration entry even with that bit set.
+M1's `M1P1` journal independently supplies storage flags, slot,
 generation and errors; absent/invalid records start at slot 255, generation 0.
 Changes remain pending until the outer safety gate permits a verified save.
 See [device storage](DEVICE_CONFIG_STORAGE.md) for ownership and failure rules.

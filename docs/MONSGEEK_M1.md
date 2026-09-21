@@ -242,8 +242,9 @@ Foreground initialization exposes the factory loader result and rejects
 invalid/missing bounds unless a valid custom profile supplies calibration.
 It does not proceed with invented travel bounds. A calibration-recovery path
 is still required for devices with neither source. The GUI reports imported
-bounds as stored/read-only; this flag is separate from custom profile durability
-and does not enable calibration writes. Tests use synthetic records,
+bounds as stored; this flag is separate from custom profile durability.
+Calibration entry requires the storage owner callbacks described below;
+without them, the bounds are read-only. Tests use synthetic records,
 read-only emulated flash and no connected-device calibration reads.
 
 ## Power and transport components
@@ -503,8 +504,18 @@ Initialization restores the custom journal before accepting the first scan,
 using stored calibration or the validated factory bounds above. Unknown bounds
 are not replaced with ADC rails. Settings save through an explicit
 `m1_live_storage_ops_t` owner gate; pending/saved/fault metadata reaches the GUI.
-Without those callbacks, edits remain pending in RAM. Calibration/RESET commands
-and Fn hints remain disabled until their separate save flow is integrated.
+Without those callbacks, edits remain pending in RAM and calibration entry is
+disabled. With a healthy storage backend, Fn+C and the GUI run the shared
+parallel calibration routine for all 82 keys. RESET remains disabled.
+Calibration completion saves the entire profile through the same power,
+output-drain and pause/resume gate as autosave. Completed physical keys may
+remain held: calibration suppresses their host output. Busy gates retain the
+candidate, without extending the five-second inactivity deadline; cancellation,
+invalid scans and loss still discard it. Active bounds change only after
+verified storage and successful scan resume. Gap publication follows that
+decision and requires fresh neutral input before rearming. A failed resume is
+terminal even if the new record reached flash; check storage status rather than
+assuming the previous record will be selected at reboot.
 The caller selects USB, BT1/2/3 or 2.4 GHz at initialization. A wireless choice
 requires a healthy scheduler configured for that mode, then waits for actual
 peer eligibility before accepting keyboard input. HID state goes only to the
@@ -544,7 +555,10 @@ Acquisition, battery and LED boundaries are scripted, including discontinuities
 and backpressure. Factory loading executes against synthetic read-only flash.
 Profile I/O and the storage pause/resume callbacks are scripted; tests cover
 deferred neutral saves, no-change wear, GUI status, restart restoration, write
-failure latching and terminal gate/resume failure. The save-gate audit executes
+failure latching and terminal gate/resume failure. Calibration tests exercise
+GUI/Fn+C entry, parallel 82-key collection, held-key save, deferred gates,
+whole-profile restoration and cancellation/timeout/scan/USB/storage failures.
+The save-gate audit executes
 actual scanner/time/battery/LED HALs with scripted power and transport readiness;
 the flash driver has its own controller-model audit. Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
@@ -701,8 +715,9 @@ Main checks the flash-density register, establishes clocks/time and invokes
 `m1_boot`. PC13 external power selects USB; battery selects
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
 not persisted yet. After handoff it polls `m1_live_service` using independent
-millisecond/microsecond readings. Profile restore and gated autosave are linked;
-live calibration/RESET and physical Fn transport switching remain disabled.
+millisecond/microsecond readings. Profile restore, gated autosave and parallel
+calibration saves are linked; RESET and physical Fn transport switching remain
+disabled.
 
 The development loop does **not** implement battery idle/critical shutdown,
 pairing, encoder reports, cable recovery or wake restoration. A cable change

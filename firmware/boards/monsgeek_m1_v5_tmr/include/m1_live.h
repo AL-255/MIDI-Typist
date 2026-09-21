@@ -8,7 +8,8 @@
  * outer startup/power coordinator, not implicitly retried here.
  * Init imports validated factory travel bounds read-only. Missing/invalid
  * calibration is rejected unless a valid custom snapshot supplies bounds;
- * it is never replaced with ADC rails. Calibration/RESET entry remains disabled.
+ * it is never replaced with ADC rails. Calibration requires storage ops;
+ * RESET entry remains disabled.
  * The outer owner initializes the chosen USB/radio transport. Wireless init
  * requires a healthy scheduler configured for that exact mode; link readiness
  * may follow later. Optional transport ops must outlive this owner and prove
@@ -19,7 +20,8 @@
  * or automatic link restart happens here. */
 typedef enum { M1_SAVE_DEFER, M1_SAVE_READY, M1_SAVE_FAULT } m1_save_result_t;
 typedef struct {
-    /* Called only after stable neutral input and local output completion.
+    /* Called after local neutral-output completion; autosave additionally
+     * requires stable neutral input. Completed calibration keys may stay held.
      * DEFER leaves hardware unchanged; FAULT is terminal, never retried.
      * READY qualifies supply and quiesces scan/LED/radio DMA. Retain links,
      * rails and USB endpoints/identity: locally drained neutral reports are

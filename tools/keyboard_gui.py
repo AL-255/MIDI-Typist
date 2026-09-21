@@ -648,11 +648,12 @@ class App:
         self.keyboard_entry.configure(state='readonly' if key_usable else 'disabled')
         supported = self.usable(allow_calibration=True) and bool(s.calibration_flags & 4)
         active = supported and bool(s.calibration_flags & 1)
-        self.calibrate_button.configure(state='normal' if supported and not active and not s.performance_mode else 'disabled')
+        self.calibrate_button.configure(state='normal' if supported and not active and not s.performance_mode
+                                        and not s.storage_flags & 4 else 'disabled')
         self.cancel_calibration_button.configure(state='normal' if active else 'disabled')
         if s:
             names = ('Idle','Release all keys','Settling: keep all keys released','Fully hold blue keys for 1 s (parallel)',
-                     'Reserved','Saving','Complete: saved to device','Aborted: discarded','Save failed: previous calibration retained')
+                     'Reserved','Saving','Complete: saved to device','Aborted: discarded','Save failed: check storage status')
             reasons = ('','inactivity timeout','invalid/stale scan or USB reset','cancelled','storage failure')
             label = next((k.label for k in self.keys if k.sensor == s.calibration_selected),'—')
             holding = sum(bool(v & 8) for v in s.velocity_state)

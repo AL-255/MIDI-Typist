@@ -175,6 +175,15 @@ invalidates capture/velocity and requires neutral before rearming. A failed
 resume is terminal; reinitialization cannot silently clear it. No unchanged
 settings are rewritten, and a write failure is not retried in that session.
 
+Fn+C or GUI calibration saves all 82 staged endpoints with the current settings
+through this same gate. It waits for neutral host output, but completed keys may
+stay physically held. Busy gates defer without writes; the shared five-second
+inactivity deadline still applies. Only a verified write and successful resume
+publish the new active bounds. A resume failure can leave a valid new record in
+flash while the application fails closed with its old RAM bounds; the GUI reports
+the error and must not promise rollback. Calibration entry is disabled after a
+latched storage fault. Without storage callbacks, imported bounds remain read-only.
+
 Pass `m1_save_ops()` to `m1_live_init` for the hardware save gate. It requires
 fresh, qualified source/battery status, normal power-pin ownership, idle LED
 and local USB/radio transfers, no other DMA, no USB DMA, and stopped SysTick.
@@ -197,7 +206,7 @@ the peer that may still be delivering that report.
 
 The development ELF copies the SRAM writer at reset and bounds its actual
 flash load image below the profile slots. Runtime power/transport recovery,
-live calibration save/reset and installation support remain unfinished. The save
+profile RESET and installation support remain unfinished. The save
 gate audit runs actual scanner/time/battery/LED HALs with scripted transport
 readiness and electrical inputs. Foreground audits script profile I/O and the
 gate; the separate backend audit runs the actual SDK against modeled flash

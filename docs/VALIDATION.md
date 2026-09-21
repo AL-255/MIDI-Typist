@@ -116,7 +116,11 @@ transactions, temporary exception vectors, reboot fallback, fault latching and
 stuck-busy fail-stop. Foreground tests separately script profile I/O and the
 owner gate, checking pending status, stable neutral autosave, no-change wear,
 restart restoration, failure latching and terminal gate/resume failure at both USB
-packet sizes. The save-gate audit executes real scanner/time/battery/LED HALs,
+packet sizes. Parallel calibration tests cover all 82 endpoints, GUI/Fn+C entry,
+deferred completion while keys remain held, whole-profile restore, intentional
+scan gaps, cancellation, timeout, USB/acquisition loss and failed write/gate/resume.
+The GUI widget audit checks capability flags and disables new calibration after
+a storage fault. The save-gate audit executes real scanner/time/battery/LED HALs,
 checking low/stale/changing power, local drain, retained rails/links, masked
 pause ownership, elapsed-time limits and fresh resume; transport readiness and
 electrical values are scripted. Physical pause/drain scheduling, flash timing, power qualification

@@ -100,7 +100,11 @@ Wheels use fixed 3800…1000 endpoints. Space uses its editable Schmitt pair.
 **Calibrate keys → device flash** starts the keyboard-only routine. Release all
 keys for 500 ms, then fully hold blue keys for one second; parallel holds are
 amber and completed keys green. Completion saves; cancellation/timeout discards
-staged data. Ordinary edits are disabled while collecting. See [calibration](CALIBRATION.md).
+staged data. Ordinary edits are disabled while collecting or waiting to save.
+A latched storage fault disables new calibration; the status includes its error
+code. A failed hardware resume can follow a successful flash write, so the error
+message does not promise rollback to the previous saved record.
+See [calibration](CALIBRATION.md).
 
 ## Flashing from the GUI
 

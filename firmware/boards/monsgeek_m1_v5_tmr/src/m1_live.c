@@ -26,8 +26,10 @@ static const m1_transport_ops_t *transport_ops;
 static m1_factory_result_t factory_result=M1_FACTORY_NOT_LOADED;
 static device_store_t store;
 static const m1_live_storage_ops_t *storage_ops;
-static bool storage_fault;
+static bool storage_fault,storage_gap;
 static uint32_t last_save_attempt;
+static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal);
+static const keyboard_app_ops_t app_ops={.save_calibration=save_calibration};
 
 static uint32_t lock(void) { uint32_t mask=__get_PRIMASK();__disable_irq();return mask; }
 static void unlock(uint32_t mask) { __set_PRIMASK(mask); }
@@ -113,7 +115,8 @@ static bool command(const char *line)
            (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS)return false;
         scan_stream_last_key(threshold,session,sensor);return true;
     }
-    return keyboard_app_command(&app,line,now,source_healthy && usb_ready(),&status.ack,&status.result);
+    return keyboard_app_command(&app,line,now,source_healthy && usb_ready() && !store.fault,
+                                &status.ack,&status.result);
 }
 bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
                   const m1_live_storage_ops_t *storage)
@@ -133,7 +136,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     if(!store.saved && factory_result!=M1_FACTORY_OK)return false;
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
     static const m1_transport_ops_t transport_port={drained,select_transport,NULL};
-    keyboard_app_init(&app,&raw,&midi,&menu,&calibration,NULL);
+    keyboard_app_init(&app,&raw,&midi,&menu,&calibration,storage?&app_ops:NULL);
     /* Bind layout/roles without treating a fabricated sample as acquisition.
      * Restore every setting before any real frame or output can be processed. */
     memset(samples,0,sizeof(samples));
@@ -146,8 +149,9 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
         memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
     }
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
-    seen=source_healthy=light_sent=selection_attempted=transport_fault=false;
-    status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true};
+    seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
+    status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true,
+                                      .calibration_supported=storage!=NULL};
     epoch=m1_usb_generation();scan_stream_init();
     if(!midi_control_init(&port))return false;
     midi_control_command_handler(command);initialized=enabled=true;return true;
@@ -164,12 +168,9 @@ bool m1_live_transport_fault(void) { return transport_fault; }
 bool m1_live_storage_fault(void) { return storage_fault; }
 static uint32_t write_profile(unsigned slot,const uint8_t *page)
 { return m1_storage_write(slot,page,true); }
-static bool persist(bool fresh)
+static bool storage_idle(void)
 {
-    if(!enabled || !fresh)return false;
-    (void)device_store_poll(&store,&app,now,false);
-    if(!store.pending || store.fault || !storage_ops ||
-       (uint32_t)(now-store.changed_at)<SETTINGS_SAVE_QUIET_MS ||
+    if(!enabled || store.fault || !storage_ops ||
        (uint32_t)(now-last_save_attempt)<SETTINGS_CHECK_PERIOD_MS ||
        controls.switching || controls.pending || selection_attempted || !app.sent_valid ||
        !m1_lighting_ready())return false;
@@ -178,26 +179,52 @@ static bool persist(bool fresh)
     if(controls.current==M1_TRANSPORT_USB) {
         if(!usb_ready() || !m1_usb_drained() || midi.panic || midi.count)return false;
     } else if(!radio_mode(controls.current) || !m1_wireless_local_idle())return false;
-    /* An idle opportunity need not coincide with the 20-ms check cadence.
-     * Recheck the entire snapshot before committing; a just-arrived edit
-     * restarts debounce rather than piggybacking on an older pending save. */
-    if(!device_store_poll(&store,&app,now,true))return false;
+    return true;
+}
+static void storage_failure(uint32_t error)
+{ storage_fault=true;enabled=false;store.fault=true;store.error=error; }
+static keyboard_save_result_t commit_profile(const keyboard_calibration_t *cal)
+{
     last_save_attempt=now;
     m1_save_result_t started=storage_ops->begin(storage_ops->context);
-    if(started==M1_SAVE_DEFER)return false;
+    if(started==M1_SAVE_DEFER)return KEYBOARD_SAVE_DEFER;
+    storage_gap=true;
     if(started!=M1_SAVE_READY) {
-        storage_fault=true;enabled=false;store.fault=true;store.error=M1_STORAGE_QUIESCE;
-        scan_stream_lost();++losses;seen=false;cancel_input();return true;
+        storage_failure(M1_STORAGE_QUIESCE);return KEYBOARD_SAVE_FAILED;
     }
-    /* No samples acquired before/during the pause may enter velocity/capture.
-     * begin() owns the actual hardware pause; no new lights/USB work starts. */
-    (void)device_store_update(&store,&app,NULL,m1_storage_read,write_profile);
+    bool saved=device_store_update(&store,&app,cal,m1_storage_read,write_profile);
     bool resumed=storage_ops->end(storage_ops->context);
-    scan_stream_lost();++losses;seen=false;cancel_input();
-    if(!resumed) {
-        storage_fault=true;enabled=false;store.fault=true;store.error=M1_STORAGE_RESUME;
-    }
+    if(!resumed)storage_failure(M1_STORAGE_RESUME);
+    return saved && resumed?KEYBOARD_SAVE_COMPLETE:KEYBOARD_SAVE_FAILED;
+}
+static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal)
+{
+    if(!enabled || !source_healthy || !seen || !app.frame_valid || store.fault ||
+       !storage_ops || (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS)
+        return KEYBOARD_SAVE_FAILED;
+    /* Completed keys may stay held. Only host outputs, not physical samples,
+     * must be neutral. Shared CAL_SAVE retains and validates the candidate
+     * during bounded deferral; no application mutation inside this callback. */
+    if(!storage_idle())return KEYBOARD_SAVE_DEFER;
+    return commit_profile(cal);
+}
+static bool publish_storage_gap(void)
+{
+    if(!storage_gap)return false;
+    storage_gap=false;scan_stream_lost();++losses;seen=false;cancel_input();
     return true;
+}
+static bool persist(bool fresh)
+{
+    if(!enabled || !fresh)return false;
+    (void)device_store_poll(&store,&app,now,false);
+    if(!store.pending || (uint32_t)(now-store.changed_at)<SETTINGS_SAVE_QUIET_MS ||
+       !storage_idle())return false;
+    /* Recheck the entire snapshot: a new edit must restart debounce. Unlike
+     * explicit calibration, autosave also requires all physical keys neutral. */
+    if(!device_store_poll(&store,&app,now,true))return false;
+    (void)commit_profile(NULL);
+    return publish_storage_gap();
 }
 static void snapshot(void)
 {
@@ -223,6 +250,7 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     if(controls.current!=M1_TRANSPORT_USB)
         (void)m1_wireless_battery(m1_battery_hal_status());
     source_healthy=enabled && m1_hal_periodic_active();
+    if(store.fault)menu.disabled_options|=1u<<(MENU_CALIBRATION-1u);
     uint32_t sequence;
     if(source_healthy && m1_hal_frame(samples,&sequence)) {
         if(seen && sequence-scan_sequence!=1u) {
@@ -231,6 +259,9 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
         seen=true;scan_sequence=sequence;
         keyboard_app_frame(&app,samples,M1_KEY_COUNT,M1_PROFILE,lower,upper,
                            controls.switching || output_ready(),now);
+        /* The save callback has now finished publishing/discarding bounds.
+         * Invalidation inside it would destroy the candidate prematurely. */
+        if(publish_storage_gap()) { snapshot();return; }
         scan_stream_push(samples,M1_KEY_COUNT,M1_PROFILE,now_us);
     }
     bool fresh=source_healthy && seen && (uint32_t)(now-app.last_frame)<SCAN_STALE_MS;

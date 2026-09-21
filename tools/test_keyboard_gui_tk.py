@@ -239,6 +239,11 @@ def main():
                 assert '0/82' in app.calibration_status.get()
                 app.cancel_calibration_button.invoke()
                 m1_until(lambda:app.snapshot.calibration_state==7)
+                device.calibration_state=8;device.calibration_flags=6;device.storage_flags=4
+                m1_until(lambda:app.snapshot.storage_flags==4 and 'Save failed: check storage status' in app.calibration_status.get())
+                assert str(app.calibrate_button['state'])=='disabled'
+                assert 'settings SAVE FAILED' in app.calibration_status.get()
+                device.storage_flags=0
                 device.calibration_state=0;device.calibration_flags=2
                 m1_until(lambda:app.snapshot.calibration_flags==2 and 'read-only' in app.calibration_status.get())
                 assert str(app.calibrate_button['state'])=='disabled'

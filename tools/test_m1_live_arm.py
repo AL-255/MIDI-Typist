@@ -206,6 +206,112 @@ def main():
     integration(args.elf)
     wireless_integration(args.elf)
     persistence(args.elf)
+    calibration_persistence(args.elf)
+
+
+def calibration_persistence(path):
+    def bounds(d,name):
+        return struct.unpack('<82H',d.cpu.mem_read(d.symbols[name],164))
+    def state(d,predicate):
+        d.messages.clear()
+        for _ in range(16):
+            s=d.snapshot()
+            if predicate(s):return s
+        raise AssertionError((s.calibration_state,s.calibration_reason,s.calibration_flags,
+                              s.storage_flags,s.calibration_error))
+    def advance(d,ms):
+        step=10 if d.peer_mode==6 else 1
+        for elapsed in range(0,ms,step):
+            if elapsed%D['MIDI_CONTROL_HEARTBEAT_MS']==0:d.send(sx.KEEPALIVE)
+            d.tick(step=step*1000)
+    def start(high=True,fn=False,mode=6):
+        d=Live(path,high,storage=True,mode=mode)
+        if mode!=6:d.run()
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        assert state(d,lambda s:s.calibration_flags==6).count==82
+        d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
+        d.command('cfg clean 3');assert d.snapshot(3).result==2 # RESET still unavailable
+        if fn:d.chord(61)
+        else:
+            d.command('cfg calibrate 4');assert d.snapshot(4).result==1
+        assert state(d,lambda s:s.calibration_state in (1,2)).calibration_flags==7
+        advance(d,D['CALIBRATION_SETTLE_MS']+20)
+        state(d,lambda s:s.calibration_state==3)
+        d.samples=list(range(1000,1082));d.tick()
+        advance(d,D['CALIBRATION_HOLD_MS']+20)
+        s=state(d,lambda s:s.calibration_state==5)
+        assert s.calibration_completed==82 and s.calibration_flags==7
+        assert bounds(d,'lower')==(1000,)*82 and bounds(d,'upper')==(4000,)*82
+        assert not d.call('m1_test_live_storage_count',2) and d.hid==bytes(30)
+        return d
+    for high in (False,True):
+        d=start(high,fn=high)
+        # The explicit save does not require held calibrated keys to release,
+        # but LED backpressure and host output completion still gate it.
+        d.call('m1_test_live_led',0);d.call('m1_test_live_storage_gate',1,1,0)
+        before=d.call('m1_test_live_storage_count',0)
+        advance(d,200)
+        assert d.call('m1_test_live_storage_count',0)==before
+        assert not d.call('m1_test_live_storage_count',2)
+        d.call('m1_test_live_led',1)
+        s=state(d,lambda s:s.calibration_state==6)
+        assert s.calibration_flags==6 and s.calibration_generation==1
+        assert s.storage_flags==1 and s.storage_generation==1 and s.storage_slot==0
+        assert bounds(d,'lower')==tuple(range(1000,1082)) and bounds(d,'upper')==(3900,)*82
+        assert s.press[81]==2700 and s.release[81]==3100 and s.keyboard_mapping[81]==135
+        assert d.call('m1_test_live_storage_count',1)==1 and d.call('m1_test_live_storage_count',2)==1
+        assert d.call('m1_live_scan_losses')==1 and d.hid==bytes(30) and not s.flags&2
+        advance(d,200);assert d.hid==bytes(30) # held samples cannot rearm
+        d.samples=[3900]*82;d.run(5);d.samples[81]=2500;d.tick();assert d.held(135)
+        d.samples[81]=3900;d.tick()
+        # Restoring a fully saved run must not depend on factory validity.
+        d.call('m1_live_stop',d.time//1000);d.run(200)
+        d.cpu.mem_write(FACTORY_UPPER+2047,b'\0')
+        assert d.call('m1_live_init',6,d.ops,d.storage_ops)
+        d.tick();d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY);d.commands=0
+        d.command('stream gui');s=state(d,lambda s:s.calibration_generation==1)
+        assert s.calibration_flags==6 and s.keyboard_mapping[81]==135
+        assert bounds(d,'lower')==tuple(range(1000,1082)) and bounds(d,'upper')==(3900,)*82
+        assert d.call('m1_live_factory_result')==4
+        print(f'PASS M1 {"HS Fn+C" if high else "FS GUI"} parallel calibration: 82 endpoints, deferred LED/power gate, held-key save, atomic settings/bounds, scan gap and restart')
+    for mode in (0,5):
+        d=start(mode=mode,fn=mode==0)
+        d.call('m1_test_live_storage_gate',1,1,0)
+        s=state(d,lambda s:s.calibration_state==6)
+        assert s.calibration_generation==1 and s.storage_flags==1
+        assert bounds(d,'lower')==tuple(range(1000,1082)) and bounds(d,'upper')==(3900,)*82
+        assert d.call('m1_live_transport')==mode and d.call('m1_wireless_ready')
+        assert not any(d.radio_slots) and not any(d.radio_bitmap) and not d.events
+        assert d.call('m1_live_scan_losses')==1 and d.call('m1_test_live_storage_count',2)==1
+    print('PASS M1 BT/2.4GHz calibration: local neutral-output gate, retained transport and no performance MIDI')
+    for failure in ('write','begin','resume','cancel','timeout','scan','usb'):
+        d=start()
+        if failure in ('write','begin','resume'):
+            d.call('m1_test_live_storage_gate',2 if failure=='begin' else 1,
+                   failure!='resume',0x3100b if failure=='write' else 0)
+            s=state(d,lambda s:s.calibration_state==8)
+            assert s.calibration_reason==4 and s.calibration_completed==0 and s.storage_flags&4
+            assert s.calibration_error=={'write':0x3100b,'begin':0x3100e,'resume':0x3100d}[failure]
+            assert d.call('m1_test_live_storage_count',1)==(failure!='begin')
+            assert d.call('m1_test_live_storage_count',2)==(failure!='begin')
+            assert bool(d.call('m1_live_storage_fault'))==(failure!='write')
+            if failure=='write':
+                d.command('cfg calibrate 5');assert d.snapshot(5).result==2
+        else:
+            if failure=='cancel':
+                d.command('cfg calcancel 5');assert d.snapshot(5).result==1
+            if failure=='timeout':advance(d,D['CALIBRATION_IDLE_MS']+20)
+            if failure=='scan':d.sequence+=1;d.tick()
+            if failure=='usb':
+                d.call('m1_test_usb_event',2);d.tick();d.call('m1_test_usb_event',3);d.tick()
+                d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY);d.commands=0;d.command('stream gui')
+            s=state(d,lambda s:s.calibration_state==7)
+            assert s.calibration_reason=={'cancel':3,'timeout':1,'scan':2,'usb':2}[failure]
+            assert not d.call('m1_test_live_storage_count',2)
+        assert bounds(d,'lower')==(1000,)*82 and bounds(d,'upper')==(4000,)*82
+        writes=d.call('m1_test_live_storage_count',2);advance(d,200)
+        assert d.call('m1_test_live_storage_count',2)==writes
+    print('PASS M1 calibration faults: no active-bound publication on failed write/gate/resume, cancellation, timeout, acquisition gap or USB epoch; no automatic retry')
 
 
 def persistence(path):
