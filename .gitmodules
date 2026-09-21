@@ -1,3 +1,6 @@
 [submodule "third_party/huntsman_updater"]
 	path = third_party/huntsman_updater
 	url = git@github.com:AL-255/Huntsman-V3-Pro-Mini-Flasher.git
+[submodule "third_party/artery"]
+	path = third_party/artery
+	url = https://github.com/ArteryTek/AT32F402_405_Firmware_Library.git

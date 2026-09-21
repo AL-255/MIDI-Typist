@@ -272,7 +272,7 @@ def main():
         dev.cpu.mem_write(0x04005000, bytes.fromhex("02 00 01") + bytes(13))
         assert dev.call("usb_keyboard_send", 0x04005000)
         address, length = dev.packet(3)
-        assert length == 16 and bytes(dev.cpu.mem_read(address, 3)) == bytes.fromhex("02 00 01")
+        assert length == 30 and bytes(dev.cpu.mem_read(address, 3)) == bytes.fromhex("02 00 01")
         dev.complete(3)
         print("PASS NKRO report send/completion")
 

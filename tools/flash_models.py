@@ -40,6 +40,7 @@ class FlashAdapter(Protocol):
     default_image: str
     filetypes: tuple
     safety: str
+    inspection_modes: tuple[str, ...]
 
     def discover(self) -> list[ConnectedDevice]: ...
     def identify(self, device: ConnectedDevice, build_hint: str | None = None, control_available: bool = True) -> ConnectedDevice: ...
@@ -52,5 +53,5 @@ class FlashAdapter(Protocol):
 def adapters():
     # Adding a board requires an adapter, not model branches in the Tk view.
     from flash_huntsman import HuntsmanAdapter
-    adapter = HuntsmanAdapter()
-    return {adapter.id: adapter}
+    from flash_monsgeek import MonsGeekAdapter
+    return {adapter.id: adapter for adapter in (HuntsmanAdapter(), MonsGeekAdapter())}

@@ -19,6 +19,11 @@ Cable 0 is performance MIDI; cable 1 is GUI control. An audio IAD groups
 interfaces 1 and 2. The configuration is 184 bytes with two embedded jack
 associations per endpoint. See [SysEx framing](TELEMETRY.md#sysex-envelope).
 
+The keyboard report is 30 bytes: eight modifier bits (E0…E7), one reserved
+byte, a 220-bit bitmap for keyboard/keypad usages 04…DF, and four padding bits.
+Physical-key remapping happens in the shared application before submission;
+the USB driver only transmits the completed report.
+
 ## Memory and control-transfer safety
 
 USB SRAM is Device memory: unaligned halfword/word accesses are unsafe.
@@ -55,9 +60,9 @@ Cortex-M33 startup, vector dispatch, clocks, descriptors, full/high-speed
 control and endpoint paths, reset deferral and aligned copies with modeled
 peripherals. It does not execute the bootloader or model electrical reconnect.
 
-The complete image passes application-only flashing, high-speed enumeration,
-61-key SysEx snapshots, acknowledged edits/readback and loss-detecting capture
-on Linux. Updater HID remains interface 3. Custom writes remain restricted to
-the two tail pages.
+The complete image builds and passes modeled USB, SysEx, remapping and storage
+audits. Its 30-byte HID/MTG3 contract has not been flashed or physically tested.
+Updater HID remains interface 3. Custom writes remain restricted to the two
+tail pages.
 See [validation status](VALIDATION.md).
 These checks are not USB certification or proof of all MIDI/DAW behavior.

@@ -7,8 +7,8 @@
 /* Experimental/non-commercial SysEx namespace, not a registered product ID.
  * USB cable 0 is performance; cable 1 is this independent control port. */
 #define MT_SYSEX_CABLE 1u
-#define MT_SYSEX_VERSION 1u
-#define MT_SYSEX_MAX_PAYLOAD 1152u
+#define MT_SYSEX_VERSION 3u
+#define MT_SYSEX_MAX_PAYLOAD 2292u
 #define MT_SYSEX_WIRE_SIZE(n) (7u + (n) + 14u + (((n) + 20u) / 7u))
 #define MT_SYSEX_MAX_WIRE MT_SYSEX_WIRE_SIZE(MT_SYSEX_MAX_PAYLOAD)
 enum { MT_HELLO=1, MT_READY, MT_COMMAND, MT_ACK, MT_SNAPSHOT,

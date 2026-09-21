@@ -1,4 +1,5 @@
 #include "device_store.h"
+#include "keyboard_layout.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,11 @@ static keyboard_menu_t menu;
 static keyboard_calibration_t cal;
 static keyboard_app_t app;
 static uint16_t lo[65],hi[65];
+static uint8_t expected_code(unsigned profile,unsigned sensor)
+{
+    if(keyboard_key_for_sensor(profile,sensor)==keyboard_layout(profile)->fn)return 0;
+    return sensor%7==0?0:sensor%7==1?0xe7:sensor%7==2?0x87:4+(sensor*13)%228;
+}
 static void boot(device_store_t *s,unsigned profile)
 {
     unsigned count=profile==3?65:60+profile;
@@ -44,7 +50,8 @@ int main(void)
         midi.velocity_start=7;midi.music.root=6;midi.music.scale=4;menu.brightness=8;
         unsigned mapped=0;while(midi.mapping[mapped]==MIDI_UNMAPPED)++mapped;
         const uint8_t note=midi.mapping[mapped]+5;midi.mapping[mapped]=note;
-        for(unsigned i=0;i<raw.count;++i){raw.press[i]=1000+i;raw.release[i]=2000+i;}
+        for(unsigned i=0;i<raw.count;++i){raw.press[i]=1000+i;raw.release[i]=2000+i;
+            raw.keycode[i]=expected_code(profile,i);}
         raw.engine.config.saved_actuation=6;raw.engine.config.saved_rapid=7;
         assert(!device_store_service(&s,&app,2020,read_page,write_page));
         raw.raw[0]=1000;
@@ -58,7 +65,8 @@ int main(void)
         assert(midi.mapping[mapped]==note);
         assert(raw.engine.config.saved_actuation==6 && raw.engine.config.saved_rapid==7);
         assert(!raw.armed && raw.midi_mode);
-        for(unsigned i=0;i<raw.count;++i)assert(raw.press[i]==1000+i && raw.release[i]==2000+i);
+        for(unsigned i=0;i<raw.count;++i){assert(raw.press[i]==1000+i && raw.release[i]==2000+i);
+            assert(raw.keycode[i]==expected_code(profile,i));}
         cal.state=CAL_SAVE;cal.profile=profile;cal.count=raw.count;cal.completed=raw.count;
         for(unsigned i=0;i<raw.count;++i){cal.lower[i]=1000+i;cal.upper[i]=4000-i;}
         assert(device_store_update(&s,&app,&cal,read_page,write_page));
@@ -71,6 +79,7 @@ int main(void)
             boot(&attempt,profile);
             assert(attempt.generation==3 && midi.velocity_start==7 && midi.janko && attempt.saved);
             for(unsigned i=0;i<raw.count;++i)assert(lo[i]==1000+i && hi[i]==4000-i);
+            for(unsigned i=0;i<raw.count;++i)assert(raw.keycode[i]==expected_code(profile,i));
         }
         cut=512;
         midi.velocity_start=9;
@@ -91,6 +100,37 @@ int main(void)
         assert(device_store_clear(&s,read_page,erase_page));assert(!s.ready && !s.valid);
     }
     assert(erases==6);
+    /* Ordered-pair codec: extreme and randomized endpoints, all layouts,
+     * every keyboard destination, reserved MIDI roles and full calibration. */
+    uint32_t rng=12345;
+    for(unsigned profile=1;profile<=3;++profile) {
+        device_store_t s;memset(pages,255,sizeof(pages));boot(&s,profile);
+        for(unsigned round=0;round<64;++round) {
+            uint16_t press[65],release[65],lower[65],upper[65];uint8_t codes[65],notes[65];
+            cal.state=CAL_SAVE;cal.profile=profile;cal.count=raw.count;cal.completed=raw.count;
+            for(unsigned i=0;i<raw.count;++i) {
+                rng=rng*1664525u+1013904223u;
+                release[i]=round==0?2:round==1?4095:2+rng%4094;
+                press[i]=round==1?4094:1+(rng>>12)%(release[i]-1);
+                upper[i]=round<2?4096:513+rng%3584;
+                lower[i]=round==0?1:upper[i]-512;
+                unsigned code=(i+round*65)%229;code=code?code+3:0;
+                if(keyboard_key_for_sensor(profile,i)==keyboard_layout(profile)->fn)code=0;
+                codes[i]=code;raw.keycode[i]=code;
+                notes[i]=midi.mapping[i]==MIDI_UNMAPPED?MIDI_UNMAPPED:(rng>>16)%128;
+                midi.mapping[i]=notes[i];
+                raw.press[i]=press[i];raw.release[i]=release[i];
+                cal.lower[i]=lower[i];cal.upper[i]=upper[i];
+            }
+            assert(device_store_update(&s,&app,&cal,read_page,write_page));
+            boot(&s,profile);
+            for(unsigned i=0;i<raw.count;++i) {
+                assert(raw.press[i]==press[i] && raw.release[i]==release[i]);
+                assert(lo[i]==lower[i] && hi[i]==upper[i]);
+                assert(raw.keycode[i]==codes[i] && midi.mapping[i]==notes[i]);
+            }
+        }
+    }
     /* RESET retires the older journal slot first. */
     device_store_t saved={.saved=true,.slot=0};
     assert(device_store_clear(&saved,read_page,erase_page));

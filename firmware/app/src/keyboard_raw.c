@@ -69,6 +69,16 @@ unsigned keyboard_raw_press_level(unsigned level)
     return RAW_BOTTOM_OUT +
         ((level - 1u) * (RAW_DEFAULT_RELEASE - 1u - RAW_BOTTOM_OUT)) / 9u;
 }
+bool keyboard_raw_map(keyboard_raw_t *s,unsigned sensor,unsigned usage)
+{
+    if(!keyboard_layout_valid(s->profile,s->count) || sensor>=s->count ||
+       !keyboard_keycode_valid(usage) ||
+       keyboard_key_for_sensor(s->profile,sensor)==keyboard_layout(s->profile)->fn)return false;
+    if(s->keycode[sensor]==usage)return true;
+    s->keycode[sensor]=usage; ++s->revision;
+    keyboard_raw_invalidate(s);
+    return true;
+}
 
 bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press)
 {
@@ -175,8 +185,11 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
     if (!keyboard_layout_valid(profile,count)) {
         keyboard_raw_invalidate(s); return;
     }
-    if (s->profile != profile || s->count != count) {
+    if (s->profile != profile || s->count != count || s->keymap_profile != profile) {
         s->profile = profile; s->count = count;
+        s->keymap_profile = profile;
+        for(unsigned i=0;i<count;++i)
+            s->keycode[i]=keyboard_layout(profile)->keymap[keyboard_key_for_sensor(profile,i)];
         keyboard_raw_invalidate(s);
     }
     bool neutral = true;
@@ -203,13 +216,18 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
         if (keyboard_key_for_sensor(profile,i)==keyboard_layout(profile)->fn) fn=i;
     }
     if (s->armed && !s->midi_mode) {
-        bool (*event)(keyboard_engine_t *,uint8_t,bool)=s->menu_managed ?
-            keyboard_application_event : keyboard_engine_event;
         /* Resolve simultaneous chords independently of ASIC sensor order. */
-        if (fn<count) (void)event(&s->engine,keyboard_layout(profile)->fn,s->down[fn]);
+        if (fn<count) {
+            if(s->menu_managed)(void)keyboard_application_event(&s->engine,keyboard_layout(profile)->fn,s->down[fn]);
+            else (void)keyboard_engine_event(&s->engine,keyboard_layout(profile)->fn,s->down[fn]);
+        }
         for (unsigned i=0; i<count; ++i)
             if (changed[i] && i!=fn && !(s->menu_managed && !s->engine.config.mode &&
                 s->engine.config.fn && keyboard_menu_control(profile,keyboard_key_for_sensor(profile,i))))
-                (void)event(&s->engine,keyboard_key_for_sensor(profile,i),s->down[i]);
+                {
+                    const uint8_t key=keyboard_key_for_sensor(profile,i);
+                    if(s->menu_managed)(void)keyboard_application_mapped_event(&s->engine,key,s->down[i],s->keycode[i]);
+                    else (void)keyboard_engine_event(&s->engine,key,s->down[i]);
+                }
     }
 }

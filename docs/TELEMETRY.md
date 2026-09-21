@@ -4,9 +4,13 @@ The GUI uses bidirectional USB-MIDI 1.0 SysEx on **cable 1**, separate from
 musical events on cable 0. No CDC/serial interface exists. USB endpoints remain
 OUT `0x02` and IN `0x82`; the driver exposes two paired MIDI ports.
 
+This describes the complete Huntsman custom application. The GUI's separate
+[M1 factory identity query](MONSGEEK_M1.md#identity-protocol) uses vendor HID,
+not these custom telemetry frames; it exposes no configuration stream.
+
 ## SysEx envelope
 
-`F0 7D 4D 54 01 KIND PACKED_BODY F7`
+`F0 7D 4D 54 03 KIND PACKED_BODY F7`
 
 `7D` is the experimental/non-commercial SysEx namespace; `4D 54` is the
 project tag "MT", not a registered manufacturer ID. Commercial/product
@@ -15,10 +19,10 @@ distribution requires an appropriate registered ID. Do not use another vendor's 
 Before packing, the body is little-endian `session:u32, sequence:u32,
 payload_length:u16, payload, crc32:u32`. CRC-32 uses reflected polynomial
 `0xEDB88320`, initial/final XOR `0xFFFFFFFF`, over bytes
-`7D 4D 54 01 KIND` followed by the unencoded header and payload.
+`7D 4D 54 03 KIND` followed by the unencoded header and payload.
 Each group of up to seven body bytes becomes an MSB bitmask (bit i is byte i's
 high bit), followed by those bytes with their high bits cleared. Unused mask
-bits must be zero. Payloads are at most 1152 bytes; the largest SysEx is 1340 bytes.
+bits must be zero. Payloads are at most 2292 bytes; the largest SysEx is 2643 bytes.
 
 | Kind | Value | Payload and meaning |
 | --- | --- | --- |
@@ -26,7 +30,7 @@ bits must be zero. Payloads are at most 1152 bytes; the largest SysEx is 1340 by
 | READY | 2 | ASCII `build=vVERSION-TARGET git=HASH state=STATE`; confirms session |
 | COMMAND | 3 | One printable ASCII command, at most 96 bytes; no newline/NUL |
 | ACK | 4 | Command dispatched, echoes command sequence; empty except `git`, which returns provenance |
-| SNAPSHOT | 5 | One HKG snapshot, sequence 0 in envelope |
+| SNAPSHOT | 5 | One MTG3 snapshot, sequence 0 in envelope |
 | SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
 | LOG | 7 | Best-effort debug text, sequence 0 |
 | ERROR | 8 | ASCII rejection reason, command sequence |
@@ -43,7 +47,7 @@ a valid session command/heartbeat, streaming stops. Neither close nor expiry
 disables normal keyboard/MIDI performance. Only one GUI owner is supported.
 
 A COMMAND ACK means dispatch, not configuration acceptance or flash completion.
-For `cfg`, the GUI additionally requires matching HKG request ID, accepted
+For `cfg`, the GUI additionally requires matching MTG3 request ID, accepted
 result and applicable readback checks. Timeout is 3000 ms, with no automatic
 retry. Settings may already have applied when a response is lost.
 
@@ -57,7 +61,7 @@ run in main, not in the USB ISR. Buffer/timing defaults live in `defaults.h`.
 
 | Payload | Size | Selection | Delivery |
 | --- | --- | --- | --- |
-| HKG snapshot | 1152 | `stream gui` | latest-only, at most once per 33 ms |
+| MTG3 snapshot | count-dependent | `stream gui` | latest-only, at most once per 33 ms |
 | HKL1 sample | 20 | `stream key THRESHOLD SESSION SENSOR` | every acquisition of the pinned sensor |
 | HBD1 read | 128 | `dump read ID ADDRESS` | diagnostic, one response per request |
 
@@ -66,56 +70,71 @@ but LOG messages have independent framing and can accompany either.
 
 ## GUI snapshot (`stream gui`)
 
-Latest-only: a newer snapshot replaces an unsent one, so gaps are expected and
-only the newest state matters. 1152 bytes, little-endian, no faster than one per
-33 ms. This table is the authoritative layout.
+Latest-only: a newer snapshot replaces an unsent one, so gaps are expected.
+All fields are little-endian. The shared application encoder emits an 80-byte
+header, one 17-byte record per active sensor, the submitted HID report, zero
+padding to a four-byte boundary, and a u32 checksum.
 
-| Offset | Encoding | Meaning |
+Total bytes = `align4(80 + 17 * count + hid_bytes) + 4`: Huntsman ANSI uses
+1152 bytes (61 sensors, 30-byte HID), M1 uses 1508 (82 sensors, 30-byte HID).
+The protocol permits up to 128 sensors and 32 HID bytes (2292 bytes total);
+each board allocates buffers for its own capacity. Huntsman publishes no faster
+than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
+
+| Header offset | Encoding | Meaning |
 | --- | --- | --- |
-| 0 | 4 bytes | `HKG` and a NUL byte: constant frame magic |
-| 4 | u16 | 1152 |
-| 6 | u8 | Fn+V transmitted-velocity start, 1…10 (1 = 0%, 10 = 100%) |
-| 7, 8 | u8 each | profile 0…3, sensor count 0/61/62/65 |
-| 9 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó layout=64 |
-| 10 | u8 | last command result: initial=0, accepted=1, rejected=2 |
-| 11 | u8 | keyboard Fn trigger editor mode 0…2, **not** performance mode |
-| 12 | u32 | snapshot sequence |
-| 16 | u32 | RAM configuration revision |
-| 20 | u32 | ID of the last command this snapshot acknowledges |
-| 24, 28 | u32 each | optical and LED error counts |
-| 32 | 65 × u16 | raw samples, ~3900 released … ~1000 fully pressed |
-| 162 | 65 × u16 | press thresholds |
-| 292 | 65 × u16 | release thresholds |
-| 422 | 9 bytes | sensor-down bitmap |
-| 431 | 16 bytes | last accepted NKRO HID report |
-| 447 | 65 × float32 | normalized device velocity, 0…1, computed on the keyboard |
-| 707 | 65 × u32 | completed velocity-fit counts |
-| 967 | 65 × u8 | velocity ready=1, result valid=2, fit pending=4; calibration hold active=8 |
-| 1032 | u8 | performance mode: keyboard=0, MIDI=1 |
-| 1033 | i8 | octave offset, −10…+10 |
-| 1034 | u8 | MIDI channel, currently always 1 |
-| 1035 | u8 | MIDI cleanup pending, 0 or 1 |
-| 1036 | 65 × u8 | base note per sensor; 255 = unmapped |
-| 1101 | 3 bytes | zero padding |
-| 1104 | u32 | MIDI event-queue or pending-strike overflow count |
-| 1108 | u32 | performance-mode change count |
-| 1112 | 32 bytes | [calibration state, completion bitmap and generation/error](CALIBRATION.md#gui-protocol) |
-| 1144 | u8 flags | whole-profile storage: valid snapshot=1, save pending=2, fault=4 |
-| 1145 | u8 | active storage slot 0/1; 255 means none |
-| 1146 | u16 | low 16 bits of complete-profile generation (wraps) |
-| 1148 | u32 | checksum: sum of the preceding 574 little-endian u16 words |
+| 0 | 4 bytes | `MTG3` |
+| 4 | u16 | total frame size |
+| 6, 7 | u8 each | board-local layout/profile ID, active sensor count |
+| 8 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó=64 |
+| 9 | u8 | last command result: initial=0, accepted=1, rejected=2 |
+| 10 | u8 | keyboard Fn trigger editor mode 0…2, not performance mode |
+| 11 | u8 | transmitted-velocity start 1…10 |
+| 12, 16, 20 | u32 each | snapshot sequence, RAM configuration revision, acknowledged request ID |
+| 24, 28 | u32 each | scan and LED error counts |
+| 32 | u32 | board's configured scan rate in Hz (not a measured rate) |
+| 36 | u8 | submitted HID report length |
+| 37, 38 | u8, i8 | performance mode (keyboard=0, MIDI=1), octave offset −10…+10 |
+| 39, 40 | u8 each | MIDI channel (1), cleanup pending (0/1) |
+| 41, 42, 43 | u8 each | calibration state, completed count, selected sensor (255 none) |
+| 44 | u8 flags | calibration active=1, saved=2, supported=4 |
+| 45 | u8 | calibration reason: none=0, timeout=1, invalid scan/USB=2, cancelled=3, storage=4 |
+| 46, 47 | u8 each | storage flags (valid=1, pending=2, fault=4), slot (0/1/255 none) |
+| 48, 52 | u32 each | MIDI overflow/error count, performance-mode change count |
+| 56, 58 | u16 each | selected calibration hold elapsed ms, inactivity remaining ms |
+| 60, 62 | u16 each | selected calibration candidate upper/lower endpoints, zero if absent |
+| 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
+| 76 | u16 | header size, 80 |
+| 78 | 2 bytes | zero reserved |
 
-Unused sensor slots are zero, including MIDI mapping padding; **active** unmapped
-slots are 255. Frames carry no version number: the constant magic and size
-identify the layout, and the build identity below records which application
-produced them. The decoder validates magic, size, checksum, reserved bytes,
-value ranges and padding. The enclosing SysEx message supplies framing and protocol version;
-CRC or payload validation errors fail the connection.
+Each sensor record begins at `80 + 17 * sensor`:
+
+| Record offset | Encoding | Meaning |
+| --- | --- | --- |
+| 0, 2, 4 | u16 each | raw value, press threshold, release threshold |
+| 6 | IEEE-754 float32 | device-computed normalized velocity, 0…1 |
+| 10 | u32 | completed velocity-fit count |
+| 14 | u8 flags | velocity ready=1, result valid=2, fit pending=4, calibration hold=8, key down=16, calibration done=32 |
+| 15 | u8 | base MIDI note; 255 means unmapped |
+| 16 | u8 | base keyboard/keypad usage: 0 disabled, 04…DF key, E0…E7 modifier; physical Fn stays 0 |
+
+The HID report begins at `80 + 17 * count`. Padding follows it. The final
+u32 is the sum of all preceding little-endian u16 words. There are no unused
+sensor records or fixed-size bitmaps. Layout/count zero represents no valid
+scan layout and requires rate zero; otherwise the layout/rate/count/HID length
+must match the target announced by READY. The GUI rejects an unknown target,
+cross-board layout, invalid value, reserved bit, padding, size or checksum.
+SysEx version 3 and `MTG3` are the only supported wire contract.
 
 `cfg` commands are acknowledged **in this stream**, not as text: the snapshot
-carries the request ID in field 20 and accepted/rejected in field 10, and only
+carries the request ID in field 20 and accepted/rejected in field 9, and only
 the latest acknowledgment is retained. A host therefore needs `stream gui`
 active to observe a command result, and must serialize commands.
+`cfg key ID SENSOR USAGE` changes one base-layer keyboard mapping; arguments
+are decimal. Fn and all physical Fn combinations remain fixed. Invalid sensor,
+reserved usage (1…3), out-of-range usage, calibration or an active trigger
+editor rejects the request. Accepted edits release output and require neutral;
+the GUI verifies record byte 16 before considering the edit applied.
 `cfg clean` requires a valid scan younger than 100 ms; acceptance confirms only
 the bounded, CMD5-verified erase. Settings ACKs otherwise mean applied in RAM;
 wait for storage valid with neither pending nor fault before unplugging.
@@ -128,8 +147,8 @@ switching to a capture stream.
 
 Loss-detecting 20-byte records at the hardware scan rate for one selected sensor, used
 for keystroke capture and to reproduce the firmware's velocity fit on the host.
-The velocity calculation assumes 8000 Hz; actual acquisition cadence must be
-measured and is not specified by the packet format.
+The host uses the board's configured scan rate from its preceding MTG3 snapshot
+for velocity calculations; actual acquisition cadence still needs measurement.
 
 | Offset | Encoding | Meaning |
 | --- | --- | --- |

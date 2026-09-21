@@ -25,7 +25,7 @@ enum
 
 #define USB_FS_BULK_PACKET 64u
 #define USB_HS_BULK_PACKET 512u
-#define USB_KEYBOARD_PACKET 16u
+#define USB_KEYBOARD_PACKET 30u
 
 extern usb_device_class_struct_t g_keyboardClass;
 extern usb_device_class_struct_t g_updaterClass;

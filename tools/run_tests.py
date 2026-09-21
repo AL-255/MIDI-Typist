@@ -24,10 +24,13 @@ class Test:
 def manifest(elf, library, reference, jobs):
     """One entry per independent audit: no repeated dependency chains."""
     tests = [Test('native', 'native', ('ctest', '--preset', 'host-tests', '-j', str(jobs)))]
+    tests.append(Test('m1-native','m1',('ctest','--test-dir','build-m1-host','--output-on-failure')))
 
     def add(name, group, *args):
         tests.append(Test(name, group, (sys.executable, '-B', '-u', str(ROOT/'tools'/f'{name}.py'), *map(str,args))))
 
+    add('test_m1_hal_arm','m1',ROOT/'build-m1-hal/m1_hal_audit.elf')
+    add('test_m1_usb_arm','m1',ROOT/'build-m1-hal/m1_usb_audit.elf')
     for name in ('usb', 'usb_startup', 'usb_chirp'):
         add('test_'+name+'_arm', 'usb', elf)
     add('test_flash_dump_arm', 'dump', elf)
@@ -80,7 +83,7 @@ def main():
     parser.add_argument('--library', type=Path, default=ROOT/'build-host/libkeyboard_logic.so')
     parser.add_argument('--reference', type=Path, default=REFERENCE)
     parser.add_argument('--group', action='append', choices=('native','usb','dump','keyboard','lighting',
-                        'calibration','menu','reference-keyboard','reference-lighting','gui'))
+                        'calibration','menu','reference-keyboard','reference-lighting','gui','m1'))
     args = parser.parse_args()
     if args.jobs < 1 or not 0 < args.timeout < float('inf'):
         parser.error('jobs and timeout must be positive and finite')
@@ -106,6 +109,17 @@ def main():
                                     ('build', ('cmake','--build','--preset',preset,'-j',str(args.jobs)))):
                 if not report(execute(Test(action+'-'+preset,'build',command), deadline, logs)):
                     return 1
+        if 'm1' in groups:
+            for build_dir, extra in (
+                    ('build-m1-host', ('-DCMAKE_BUILD_TYPE=Debug',)),
+                    ('build-m1-hal', ('-DCMAKE_BUILD_TYPE=Release',
+                                     '-DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake'))):
+                for action,command in (
+                    ('configure',('cmake','-S','.','-B',build_dir,'-G','Ninja',
+                                  '-DMT_BOARD=monsgeek_m1_v5_tmr',*extra)),
+                    ('build',('cmake','--build',build_dir,'-j',str(args.jobs)))):
+                    if not report(execute(Test(action+'-'+build_dir,'build',command),deadline,logs)):
+                        return 1
     # Each audit owns its emulator/PTY; only immutable artifacts are shared.
     # Native CTest dispatches its independent cases in parallel too.
     failures = 0

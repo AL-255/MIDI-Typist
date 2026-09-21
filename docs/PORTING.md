@@ -12,8 +12,9 @@ owns acquisition, key identity, LED wiring, MCU startup, transport and storage.
 The same shared C11 application supplies typing, MIDI, menus, thresholds,
 velocity, calibration and effect composition.
 
-The repository contains one physical port, Huntsman V3 Pro Mini/LPC5528, and
-one SDK-free reference port. Another keyboard is not ready to flash until its
+The repository contains the complete Huntsman V3 Pro Mini/LPC5528 port,
+the [M1 HAL/application libraries](MONSGEEK_M1.md), and an SDK-free reference
+port. Another keyboard is not ready to flash until its
 board implementation and hardware checks are complete. This guide does not
 authorize overwriting an unknown bootloader or factory data.
 
@@ -151,15 +152,15 @@ Select consistent capacities for every object that includes public headers:
 | --- | ---: | ---: |
 | `MT_KEY_CAPACITY` | 128 | 65 |
 | `MT_LIGHT_FRAME_BYTES` | 3 × capacity | 204 |
-| `MT_HID_USAGE_MAX` | 0xDF | 0x73 |
+| `MT_HID_USAGE_MAX` | 0xDF | 0xDF |
 
 Counts must be nonzero and no greater than capacity; capacity must be below
 255. Modifier usages E0…E7 are handled separately. Match your HID descriptor
-to `KEYBOARD_NKRO_REPORT_BYTES`; do not reuse the Huntsman descriptor when
-choosing the wider default report. Arrays are fixed-capacity, not allocated
+to `KEYBOARD_NKRO_REPORT_BYTES`; do not reuse a descriptor with a different
+report budget. Arrays are fixed-capacity, not allocated
 per interrupt. Inspect the linker map and stack margins for your own MCU.
-The allowed HID upper usage is 0x73…0xDF: Huntsman reports 16 bytes, and the
-default wider report is 30 bytes. No Report ID byte is included in
+The allowed HID upper usage is 0x73…0xDF; current platforms use DF and
+30-byte reports. No Report ID byte is included in
 `keyboard_report_t`. A hardware FPU is not required by the API, but
 software-float velocity calculation needs a measured execution budget.
 Transport serialization owns byte order; GUI telemetry specifically requires
@@ -184,8 +185,9 @@ Implement the functions declared in
 | `keyboard_actuation_pair(config, key, press, release)` | Normalized 8-bit press/release levels, using `config->profile` |
 | `keyboard_travel_level(lower, upper, raw)` | Increasing travel 0…255, consistent with editor comparisons |
 
-Descriptors need nonzero count and scan rate, and both eleven-entry level
-tables (indices 1…10 are used). Layout and action pointers must remain stable.
+Descriptors need nonzero count and scan rate, both eleven-entry level
+tables (indices 1…10 are used), and a 256-entry `keymap` indexed by physical
+key ID. Layout and action pointers must remain stable.
 Queries are called frequently: use bounded lookups, not I/O or allocation.
 
 Key IDs 0 and 255 are reserved. Use unique nonzero IDs, independently of
@@ -195,11 +197,28 @@ USB HID usages. A plain keyboard action uses type 2, modifier bits in
 0x11 with arg0 0x70 (trigger) or 0x71 (rapid), as the example demonstrates.
 Other action types are consumed/unmapped, not guessed as keyboard reports.
 
-The application maps MIDI notes and control roles from base HID semantics.
-Its musical selector tables are independent of custom note mappings.
-Choose `compact_navigation=true` only if the board should replace Right
-Alt/Menu/Right Ctrl/Right Shift with arrows in keyboard mode; a full-size
-board can leave it false. The Huntsman enables it.
+Every board provides `config/keymap.def`, with `KEYMAP(physical_id, hid_usage)`
+entries compiled into that descriptor's immutable default keyboard map. HID
+Keyboard/Keypad usages E0…E7 represent modifiers; 00 emits no keyboard key.
+Keep Fn's entry zero. The application resolves physical events through this
+mapping step before constructing reports; scanner and USB code do not choose
+base-layer destinations. Huntsman's four right-side arrow defaults live here,
+while M1 retains its ordinary modifiers and dedicated arrows.
+
+Physical `keyboard_action` semantics remain separate: they identify Fn/menu
+controls, text-label keys and MIDI roles. Fn-layer actions never read the base
+keyboard map, and MIDI note mappings are independent. `keyboard_raw_t.keycode`
+holds runtime overrides initialized from the board file. `keyboard_raw_map`
+and `cfg key` validate usage/sensor, reject Fn, release outputs and require
+neutral. Use the shared GUI dropdown and telemetry field, not a board-specific
+remapping command. All output transports must consume the resulting mapped
+report, including wireless paths. Preserve duplicate-destination ownership.
+
+Implement durable board/layout-bound storage for this array alongside all
+other settings. Huntsman's lossless 512-byte format is board-specific, not
+permission to truncate another board or borrow factory pages. M1 has runtime
+and GUI-model coverage but no allocated profile storage or complete USB/wireless
+application yet. Follow the [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
 differs. A keyboard missing a menu letter cannot show that letter or offer
@@ -330,6 +349,22 @@ void application_poll(void)
 ```
 
 Call start after board initialization and poll from the single owner.
+
+Boards with additional system controls may bind `keyboard_app_t.system_input`,
+`system_lights` and `system_context` after initialization. The input hook runs
+after raw-frame processing and before the shared Fn menu; return true to consume
+that frame's shared menu input. Invalidate raw output when consuming a chord,
+and require neutral keys before rearming. The lighting hook runs after shared
+menu rendering. Both hooks must be nonblocking and use the same owner context;
+their context objects must outlive the application. The M1 transport menu is an
+example, not a dependency of USB-only boards.
+
+For wireless backends, enforce the MIDI permission at input processing, not
+just by hiding a menu hint: restored settings must not enable MIDI on a transport
+that cannot carry it. A transport change must release the old host's keys/notes,
+wait for physical delivery rather than queue acceptance, and then establish a
+neutral baseline on the new host. Radio/power handshakes belong to the board;
+never perform them in the shared application or its lighting renderer.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.
@@ -364,7 +399,7 @@ callbacks own physical pages, checksums, rollback, identity and power-failure
 handling. They must not modify unrelated bootloader, serial, security or
 factory data. No callback means unavailable storage; calibration must report
 failure instead of claiming a persistent save. The simulator saves only in
-its process RAM. Huntsman's writer and MTP1 whole-profile journal are examples for that board,
+its process RAM. Huntsman's writer and MTP2 whole-profile journal are examples for that board,
 not a universal flash layout.
 
 | `keyboard_app_ops_t` callback | Board responsibility |
@@ -402,14 +437,21 @@ safe by implication for an MCU executing from the bank being erased.
 USB exposes NKRO HID and two-cable USB-MIDI through the platform's stack:
 performance on cable 0, bidirectional GUI SysEx on cable 1. Preserve the
 separate control port, envelope framing/CRC, bounded command mailbox and
-main-context dispatch. The portable codec is `midi_sysex.c`; NXP endpoint
-ownership and session handling are in `midi_control.c`. A new platform must
-provide equivalent reset/lease handling and update host port discovery.
+main-context dispatch. The portable codec is `midi_sysex.c`. Shared `firmware/services` owns session,
+lease, command mailbox and stream queues. Initialize `midi_control` with a
+persistent `midi_control_port_t`: monotonic millisecond clock, USB-ready query,
+copy-on-accept USB event writer, interrupt lock and prior-state restore.
+Only framing runs in the receive ISR; call service from the application owner.
+On disconnect/reset, notify both services and invalidate the application.
+Endpoint ownership and descriptors remain platform responsibilities.
 The Huntsman additionally retains its updater HID at interface 3.
 Feed newline-stripped configuration commands to `keyboard_app_command`;
 it implements get/set/all/enable/MIDI/velocity/clean/calibrate/cancel validation and ACK
-semantics. Board diagnostics, telemetry serialization and the MCU's firmware
-update path remain in the port. Never copy the Huntsman reset cookie or flash
+semantics. Use `keyboard_telemetry_encode` for count-aware MTG3 snapshots; supply
+board fault/storage status with `keyboard_telemetry_status_t`. Feed its returned
+length to `scan_stream_gui_push`. Allocate using `MT_GUI_SIZE` for the selected
+capacity/HID report, not the protocol maximum. Board diagnostics and the MCU's
+firmware update path remain in the port. Never copy the Huntsman reset cookie or flash
 addresses to an unrelated bootloader.
 
 The MIDI callback receives CIN, status and two data bytes. USB-MIDI 1.0
@@ -424,13 +466,19 @@ its reset/image contract. The
 [Huntsman flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
 is a separate board-specific tool, not a universal firmware installer.
 
-The configuration view understands Huntsman wire formats and physical
-geometry. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
+The configuration view selects physical geometry from `keyboard_boards.py` by
+build target, and binds host profiles to that target/layout. Register the allowed
+layout/count pairs, HID report length and declared sample rate; all are checked
+before accepting telemetry. MTG3 supports up to 128 sensors, with no fixed
+Huntsman-sized bitmaps. The GUI uses the same declared rate for capture velocity. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
 implement and register a separate adapter for each product, with its discovery,
 image checks, supported transitions and protected write boundary. Do not reuse
-Huntsman addresses for another platform. Reusing the configuration wire
-formats requires matching their layout/size contracts; a different host
-presentation can call the same common configuration command engine.
+Huntsman addresses for another platform. Preserve the shared SysEx/MTG3 contract;
+a different host presentation can call the same common configuration command engine.
+Adapters declare `inspection_modes` separately from flash actions; identity-only
+support must also reject flashing in the privileged worker, not just hide a
+button. The [M1 adapter](MONSGEEK_M1.md) demonstrates this boundary while its
+custom firmware is unavailable.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,
 not necessarily accepted. Inspect the ACK ID/result and serialize requests.

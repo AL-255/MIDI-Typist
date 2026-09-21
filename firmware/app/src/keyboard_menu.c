@@ -250,6 +250,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     /* Menu edges retain their own Schmitt history when preview entry clears
      * raw.down[]. A still-held key must not become a fresh press afterward. */
     for (unsigned i=0;i<MENU_OPTION_COUNT;++i) {
+        if(i+1u==MENU_MODE && s->midi_blocked)continue;
         if(!(options[i].modes & (raw->midi_mode?OPTION_MIDI:OPTION_KEYBOARD))) continue;
         unsigned sensor=sensors[i];
         if (sensor<raw->count && (s->previous & (1u<<i) ?
@@ -260,6 +261,9 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     s->previous=held;
     if (!raw->valid || !raw->enabled || calibration || raw->engine.config.mode) {
         keyboard_menu_cancel(s); return MENU_NONE;
+    }
+    if(s->midi_blocked && s->pending==MENU_MODE) {
+        keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     if(s->music_page) return music_page_frame(s,raw,now);
     if(s->press_page) return press_page_frame(s,raw);
@@ -448,14 +452,15 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
                 if (keyboard_shortcut_usage(s->profile,s->keys[i])) color(s->profile,i,frame,COLOR_CONFIRM);
         }
         for(unsigned i=0;i<MENU_OPTION_COUNT;++i)
-            if(options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) {
+            if((options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) &&
+               !(i+1u==MENU_MODE && s->midi_blocked)) {
                 /* The active Jankó layout uses a yellow hint. */
                 const bool active = (i+1u)==MENU_JANKO && janko;
                 if(active) color(s->profile,s->option_sensors[i],frame,COLOR_JANKO);
                 else color(s->profile,s->option_sensors[i],frame,COLOR_WHITE);
             }
         if(midi) color(s->profile,s->enter,frame,COLOR_CONFIRM);
-        else color(s->profile,s->enter,frame,COLOR_MIDI);
+        else if(!s->midi_blocked) color(s->profile,s->enter,frame,COLOR_MIDI);
         if (brightness<MENU_DIM_PWM) brightness=MENU_DIM_PWM; /* keep brightness-up discoverable */
     }
     if (brightness!=255u)

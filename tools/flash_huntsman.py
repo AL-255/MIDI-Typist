@@ -17,6 +17,7 @@ RESTORE = FlashAction('restore','Restore Razer firmware','razer','Install a Raze
 class HuntsmanAdapter:
     id = 'razer-huntsman-v3-pro-mini'
     name = 'Razer Huntsman Pro Mini V3'
+    inspection_modes = ('custom', 'razer')
     default_image = str(backend.REPO_ROOT/'build-huntsman/huntsman_firmware.bin')
     filetypes = (('Application / Razer resources','*.bin *.hex *.resources'),('All files','*'))
     safety = ('Application only · 128 KiB. Bootloader, Razer settings/serial, security data '

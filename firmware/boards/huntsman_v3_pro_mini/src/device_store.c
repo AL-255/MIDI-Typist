@@ -13,66 +13,156 @@ uint32_t calibration_crc32(const uint8_t *p, unsigned n)
     return ~crc;
 }
 
-enum { SENSOR_OFFSET=33, SENSOR_BYTES=7, CRC_OFFSET=508 };
-_Static_assert(SENSOR_OFFSET+CAL_KEYS*SENSOR_BYTES<=CRC_OFFSET,"snapshot exceeds page");
+enum { GLOBAL_OFFSET=14, SENSOR_OFFSET=19, CRC_OFFSET=508, GENERATION_OFFSET=6, CAL_GENERATION_OFFSET=10 };
+_Static_assert(CAL_KEYS<=65,"review snapshot capacity for a new board");
 _Static_assert(CAL_SLOT_A==0x78000 && CAL_SLOT_B==0x78200,"review storage addresses before changing");
+_Static_assert(MIDI_SCALE_COUNT<=16 && MIDI_OCTAVE_LIMIT<=10,"snapshot global field capacity");
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static void put32(uint8_t *p,uint32_t v) { for(unsigned i=0;i<4;++i) p[i]=v>>(8*i); }
-/* Two canonical 1..4096 samples in three bytes; zero represents 1. */
-static void pair_put(uint8_t *p,unsigned a,unsigned b)
-{ --a; --b; p[0]=a; p[1]=(a>>8)|(b<<4); p[2]=b>>4; }
-static unsigned first(const uint8_t *p) { return 1u+(p[0]|(unsigned)(p[1]&15)<<8); }
-static unsigned second(const uint8_t *p) { return 1u+((p[1]>>4)|(unsigned)p[2]<<4); }
-static bool mapping_valid(unsigned profile,unsigned sensor,unsigned note)
+static uint32_t getbits(const uint8_t *p,unsigned *position,unsigned count)
 {
-    if(note>127 && note!=MIDI_UNMAPPED) return false;
+    uint32_t value=0; unsigned shift=0;
+    while(count) {
+        unsigned offset=*position&7u,n=8u-offset;
+        if(n>count)n=count;
+        value|=((p[*position/8u]>>offset)&((1u<<n)-1u))<<shift;
+        *position+=n; count-=n; shift+=n;
+    }
+    return value;
+}
+static void putbits(uint8_t *p,unsigned *position,unsigned count,uint32_t value)
+{
+    while(count) {
+        unsigned offset=*position&7u,n=8u-offset;
+        if(n>count)n=count;
+        unsigned mask=((1u<<n)-1u)<<offset;
+        p[*position/8u]=(p[*position/8u]&~mask)|((value<<offset)&mask);
+        *position+=n; count-=n; value>>=n;
+    }
+}
+/* Rank the ordered pair 1 <= a < b <= 4096. There are fewer than 2^23
+ * possible pairs; this saves a bit without quantizing either endpoint. */
+static uint32_t pair_code(unsigned a,unsigned b)
+{ return (b-1u)*(b-2u)/2u+a-1u; }
+static bool pair_decode(uint32_t code,unsigned *a,unsigned *b)
+{
+    if(code>=4096u*4095u/2u)return false;
+    unsigned lo=2,hi=4096;
+    while(lo<hi) {
+        unsigned mid=(lo+hi+1u)/2u;
+        if((mid-1u)*(mid-2u)/2u<=code)lo=mid;else hi=mid-1u;
+    }
+    *b=lo; *a=code-(lo-1u)*(lo-2u)/2u+1u;
+    return true;
+}
+/* Physical MIDI roles stay reserved even if their keyboard output is remapped. */
+static unsigned role(unsigned profile,unsigned sensor)
+{
     const uint8_t key=keyboard_key_for_sensor(profile,sensor);
+    if(key==keyboard_layout(profile)->fn)return 0;
     const keyboard_action_t *a=keyboard_action(profile,key,0);
-    const bool control=key==keyboard_layout(profile)->fn || (a && a->type==2 &&
-        (a->arg0==1 || a->arg0==4 || a->arg0==8 || a->arg0==16 || a->arg0==64 || a->arg1==0x2c));
-    return !control || note==MIDI_UNMAPPED;
+    return a && a->type==2 && (a->arg0==1 || a->arg0==4 || a->arg0==8 ||
+        a->arg0==16 || a->arg0==64 || a->arg1==0x2c)?1u:2u;
+}
+static unsigned map_bits(unsigned role) { return role==0?0u:role==1?8u:15u; }
+static unsigned sensor_end(unsigned profile,unsigned count)
+{
+    unsigned bits=SENSOR_OFFSET*8u;
+    for(unsigned i=0;i<count;++i)bits+=46u+map_bits(role(profile,i));
+    return bits;
+}
+static const uint8_t global_widths[]={1,1,1,5,4,4,4,5,1,4,4,1,1};
+static void globals_get(const uint8_t *p,uint8_t g[13])
+{
+    unsigned pos=GLOBAL_OFFSET*8u;
+    for(unsigned i=0;i<13;++i)g[i]=getbits(p,&pos,global_widths[i]);
+    g[7]=(uint8_t)(g[7]-10);
+}
+static bool sensor_get(const uint8_t *p,unsigned *pos,unsigned r,
+                       unsigned *press,unsigned *release,unsigned *lower,unsigned *upper,
+                       unsigned *note,unsigned *keycode)
+{
+    uint32_t thresholds=getbits(p,pos,23),calibration=getbits(p,pos,23);
+    unsigned mapping=getbits(p,pos,map_bits(r));
+    if(!pair_decode(thresholds,press,release) || *release>=4096)return false;
+    if(p[5]) {
+        if(!pair_decode(calibration,lower,upper) || *upper<*lower+CALIBRATION_MIN_SPAN_RAW)return false;
+    } else {
+        if(calibration)return false;
+        *lower=*upper=0;
+    }
+    *note=MIDI_UNMAPPED; *keycode=0;
+    if(r==1)*keycode=mapping;
+    else if(r==2) {
+        if(mapping>=229u*129u)return false;
+        unsigned index=mapping/129u;
+        *keycode=index?index+3u:0;
+        *note=mapping%129u;
+        if(*note==128)*note=MIDI_UNMAPPED;
+    }
+    return keyboard_keycode_valid(*keycode);
 }
 static void seal(uint8_t *p) { put32(p+CRC_OFFSET,calibration_crc32(p,CRC_OFFSET)); }
 bool device_record_valid(const uint8_t *p)
 {
-    if(memcmp(p,"MTP1",4) || p[4]!=1 || !keyboard_layout_valid(p[5],p[6]) ||
-       p[6]>CAL_KEYS || p[7]>1 || u32(p+12)!=0x3150544d ||
-       u32(p+CRC_OFFSET)!=calibration_crc32(p,CRC_OFFSET)) return false;
-    const uint8_t *g=p+16;
-    if(g[0]>1 || g[1]>1 || g[2]>1 || g[3]>19 || g[4]<1 || g[4]>10 ||
-       g[5]>11 || g[6]>=MIDI_SCALE_COUNT || (int8_t)g[7]<-MIDI_OCTAVE_LIMIT || (int8_t)g[7]>MIDI_OCTAVE_LIMIT ||
-       g[8]>1 || g[9]<1 || g[9]>10 || g[10]<1 || g[10]>10 || g[11]>1 || g[12]>1) return false;
-    if(!p[7] && u32(p+29)) return false;
-    for(unsigned i=0;i<p[6];++i) {
-        const uint8_t *k=p+SENSOR_OFFSET+i*SENSOR_BYTES;
-        if(first(k)>=second(k) || second(k)>=4096 || !mapping_valid(p[5],i,k[6])) return false;
-        if(p[7] ? second(k+3)<first(k+3)+CALIBRATION_MIN_SPAN_RAW : (k[3] || k[4] || k[5])) return false;
+    unsigned count=keyboard_layout_count(p[4]);
+    if(memcmp(p,"MTP2",4) || !count || count>CAL_KEYS || p[5]>1 ||
+       sensor_end(p[4],count)>CRC_OFFSET*8u ||
+       u32(p+CRC_OFFSET)!=calibration_crc32(p,CRC_OFFSET))return false;
+    uint8_t g[13];globals_get(p,g);
+    if(g[3]>19 || g[4]<1 || g[4]>10 || g[5]>11 || g[6]>=MIDI_SCALE_COUNT ||
+       (int8_t)g[7]<-MIDI_OCTAVE_LIMIT || (int8_t)g[7]>MIDI_OCTAVE_LIMIT ||
+       g[9]<1 || g[9]>10 || g[10]<1 || g[10]>10 || (p[18]&0xf0u)!=0xf0u)return false;
+    if(!p[5] && u32(p+CAL_GENERATION_OFFSET))return false;
+    unsigned pos=SENSOR_OFFSET*8u;
+    for(unsigned i=0;i<count;++i) {
+        unsigned press,release,lower,upper,note,keycode;
+        if(!sensor_get(p,&pos,role(p[4],i),&press,&release,&lower,&upper,&note,&keycode))return false;
     }
-    for(unsigned i=SENSOR_OFFSET+p[6]*SENSOR_BYTES;i<CRC_OFFSET;++i) if(p[i]!=255) return false;
+    while(pos<CRC_OFFSET*8u)if(!getbits(p,&pos,1))return false;
     return true;
 }
-static void capture(uint8_t *p,const device_store_t *s,const keyboard_app_t *app,
+static bool capture(uint8_t *p,const device_store_t *s,const keyboard_app_t *app,
                     const keyboard_calibration_t *cal)
 {
     const keyboard_raw_t *r=app->raw; const keyboard_midi_t *m=app->midi;
     const keyboard_config_t *c=&r->engine.config;
-    memset(p,255,CAL_PAGE_SIZE); memcpy(p,"MTP1",4); p[4]=1;p[5]=r->profile;p[6]=r->count;
-    p[7]=cal!=NULL || s->saved; put32(p+8,s->generation+1u);put32(p+12,0x3150544d);
+    if(!keyboard_layout_valid(r->profile,r->count) || sensor_end(r->profile,r->count)>CRC_OFFSET*8u)
+        return false;
+    memset(p,255,CAL_PAGE_SIZE); memcpy(p,"MTP2",4);p[4]=r->profile;p[5]=cal!=NULL || s->saved;
+    put32(p+GENERATION_OFFSET,s->generation+1u);
+    put32(p+CAL_GENERATION_OFFSET,s->calibration_generation+(cal!=NULL));
     const uint8_t globals[]={m->mode,m->janko,m->lower_muted,app->menu->brightness,m->velocity_start,
-        m->music.root,m->music.scale,(uint8_t)m->octave,r->enabled,c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked};
-    memcpy(p+16,globals,sizeof(globals)); put32(p+29,s->calibration_generation+(cal!=NULL));
-    for(unsigned i=0;i<r->count;++i) {
-        uint8_t *k=p+SENSOR_OFFSET+i*SENSOR_BYTES;
-        pair_put(k,r->press[i],r->release[i]); k[6]=m->mapping[i];
-        if(cal) pair_put(k+3,cal->lower[i],cal->upper[i]);
-        else if(s->saved) memcpy(k+3,s->record+SENSOR_OFFSET+i*SENSOR_BYTES+3,3);
-        else memset(k+3,0,3);
+        m->music.root,m->music.scale,(uint8_t)(m->octave+10),r->enabled,
+        c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked};
+    unsigned pos=GLOBAL_OFFSET*8u;
+    for(unsigned i=0;i<13;++i) {
+        if(globals[i]>=(1u<<global_widths[i]))return false;
+        putbits(p,&pos,global_widths[i],globals[i]);
     }
+    pos=SENSOR_OFFSET*8u;
+    unsigned previous=pos;
+    for(unsigned i=0;i<r->count;++i) {
+        unsigned kind=role(r->profile,i),usage=r->keycode[i],note=m->mapping[i];
+        if(!keyboard_keycode_valid(usage) || (note>127 && note!=MIDI_UNMAPPED) ||
+           (kind<2 && note!=MIDI_UNMAPPED) || (!kind && usage) ||
+           !r->press[i] || r->press[i]>=r->release[i] || r->release[i]>=4096)return false;
+        putbits(p,&pos,23,pair_code(r->press[i],r->release[i]));
+        previous+=23;
+        uint32_t calibration=s->saved?getbits(s->record,&previous,23):0;
+        if(!s->saved)previous+=23;
+        previous+=map_bits(kind);
+        if(cal)calibration=pair_code(cal->lower[i],cal->upper[i]);
+        putbits(p,&pos,23,calibration);
+        unsigned mapping=kind==1?usage:(usage?usage-3u:0)*129u+(note==MIDI_UNMAPPED?128u:note);
+        putbits(p,&pos,map_bits(kind),mapping);
+    }
+    return true;
 }
 static void accept(device_store_t *s,const uint8_t *p,unsigned slot)
 {
-    memcpy(s->record,p,CAL_PAGE_SIZE); s->slot=slot;s->valid=true;s->saved=p[7];
-    s->generation=u32(p+8);s->calibration_generation=u32(p+29);
+    memcpy(s->record,p,CAL_PAGE_SIZE); s->slot=slot;s->valid=true;s->saved=p[5];
+    s->generation=u32(p+GENERATION_OFFSET);s->calibration_generation=u32(p+CAL_GENERATION_OFFSET);
     s->pending=s->cold=s->fault=false;s->error=0;
 }
 void device_store_load(device_store_t *s,uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi,cal_read_fn read)
@@ -84,13 +174,17 @@ void device_store_load(device_store_t *s,uint8_t profile,uint8_t count,uint16_t 
         /* Only invalid content/ECC is recoverable by initializing our owned
          * slots. Timeouts, geometry and other controller faults never erase. */
         if(error && error!=116u) { fault=error; continue; }
-        if(error || !device_record_valid(p) || p[5]!=profile || p[6]!=count) continue;
-        if(!s->valid || (int32_t)(u32(p+8)-s->generation)>0) accept(s,p,slot);
+        if(error || !device_record_valid(p) || p[4]!=profile || keyboard_layout_count(p[4])!=count) continue;
+        if(!s->valid || (int32_t)(u32(p+GENERATION_OFFSET)-s->generation)>0) accept(s,p,slot);
     }
     s->error=fault;s->fault=fault!=0;
-    if(s->saved) for(unsigned i=0;i<count;++i) {
-        const uint8_t *k=s->record+SENSOR_OFFSET+i*SENSOR_BYTES+3;
-        lo[i]=first(k);hi[i]=second(k);
+    if(s->saved) {
+        unsigned pos=SENSOR_OFFSET*8u;
+        for(unsigned i=0;i<count;++i) {
+            unsigned press,release,lower,upper,note,keycode;
+            (void)sensor_get(s->record,&pos,role(profile,i),&press,&release,&lower,&upper,&note,&keycode);
+            lo[i]=lower;hi[i]=upper;
+        }
     }
     s->cold=!s->valid;
 }
@@ -99,10 +193,13 @@ bool device_store_apply(device_store_t *s,keyboard_app_t *app)
     if(!s->ready || s->applied || app->midi->profile!=app->raw->profile) return false;
     s->applied=true;
     if(!s->valid) return false;
-    const uint8_t *g=s->record+16;keyboard_raw_t *r=app->raw;keyboard_midi_t *m=app->midi;
+    uint8_t g[13];globals_get(s->record,g);
+    keyboard_raw_t *r=app->raw;keyboard_midi_t *m=app->midi;
+    unsigned pos=SENSOR_OFFSET*8u;
     for(unsigned i=0;i<r->count;++i) {
-        const uint8_t *k=s->record+SENSOR_OFFSET+i*SENSOR_BYTES;
-        r->press[i]=first(k);r->release[i]=second(k);m->mapping[i]=k[6];
+        unsigned press,release,lower,upper,note,keycode;
+        (void)sensor_get(s->record,&pos,role(r->profile,i),&press,&release,&lower,&upper,&note,&keycode);
+        r->press[i]=press;r->release[i]=release;m->mapping[i]=note;r->keycode[i]=keycode;
     }
     m->mode=g[0];m->janko=g[1];m->lower_muted=g[2];app->menu->brightness=g[3];m->velocity_start=g[4];
     m->music=(midi_music_config_t){g[5],g[6]};m->octave=(int8_t)g[7];r->enabled=g[8];
@@ -121,7 +218,7 @@ bool device_store_update(device_store_t *s,keyboard_app_t *app,const keyboard_ca
        cal->completed!=cal->count || !calibration_bounds_valid(cal->profile,cal->count,cal->lower,cal->upper))) {
         s->error=0x20001;return false;
     }
-    capture(p,s,app,cal);
+    if(!capture(p,s,app,cal)) { s->error=0x20001;return false; }
     seal(p);
     if(!device_record_valid(p)) { s->error=0x20001; return false; }
     unsigned slot=s->slot<2 ? s->slot^1u : 0u;
@@ -138,11 +235,12 @@ bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,cal
     if(!s->ready || !s->applied || s->fault || app->reset_pending || !app->frame_valid) return false;
     if((uint32_t)(now-s->checked_at)<SETTINGS_CHECK_PERIOD_MS) return false;
     s->checked_at=now;
-    uint8_t p[CAL_PAGE_SIZE];capture(p,s,app,NULL);
+    uint8_t p[CAL_PAGE_SIZE];
+    if(!capture(p,s,app,NULL)) { s->error=0x20001;s->fault=true;return false; }
     /* Exclude generation/checksum: unchanged settings must not wear flash. */
-    bool changed=!s->valid || memcmp(p+16,s->record+16,CRC_OFFSET-16);
+    bool changed=!s->valid || memcmp(p+GLOBAL_OFFSET,s->record+GLOBAL_OFFSET,CRC_OFFSET-GLOBAL_OFFSET);
     if(!changed) {s->pending=false;return false;}
-    const uint32_t crc=calibration_crc32(p+16,CRC_OFFSET-16);
+    const uint32_t crc=calibration_crc32(p+GLOBAL_OFFSET,CRC_OFFSET-GLOBAL_OFFSET);
     if(!s->pending || crc!=s->pending_crc) {s->pending=true;s->pending_crc=crc;s->changed_at=now;}
     const keyboard_menu_t *menu=app->menu;
     if((uint32_t)(now-s->changed_at)<SETTINGS_SAVE_QUIET_MS || calibration_active(app->cal) ||

@@ -20,15 +20,17 @@ def main():
     s=snapshot(dev);assert s.performance_mode==1 and s.flags&64 and s.storage_flags==1
     assert snapshot(dev,'cfg all 901 2300 3100').result==1
     assert snapshot(dev,'cfg velocity 902 8').result==1
+    assert snapshot(dev,f'cfg key 903 {labels.index("A")} 135').result==1
     dev.service(350);s=snapshot(dev)
     assert s.storage_flags==1 and not s.calibration_error
     generation=s.storage_generation
     saved={a:bytes(p) for a,p in dev.flash.pages.items()}
-    assert all(p[:4]==b'MTP1' for p in saved.values())
+    assert all(p[:4]==b'MTP2' for p in saved.values())
     reboot=Live(args.elf,args.reference,saved);reboot.service(750)
     s=snapshot(reboot,'stream gui')
     assert s.performance_mode==1 and s.flags&64 and s.press==(2300,)*61 and s.release==(3100,)*61
     assert s.velocity_start==8 and s.storage_generation==generation and s.storage_flags==1
+    assert s.keyboard_mapping[labels.index('A')]==135
     assert not reboot.flash.touched and not any(any(p) for p in reboot.reports)
     # Partial/CRC-invalid newest page must fall back; both invalid initialize.
     newest=SLOTS[s.storage_slot]

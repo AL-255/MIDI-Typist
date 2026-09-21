@@ -351,7 +351,9 @@ build-gui-venv/bin/python tools/keyboard_gui.py --demo
 Your user needs access to ALSA MIDI. Select the dedicated control port in the
 GUI; use the first, performance port in your DAW. Only one GUI should connect.
 Linux may truncate the control name to `Huntsman V3 Pro Mini MIDI MIDI-`;
-the GUI recognizes cable 1 automatically. No serial port is exposed. The GUI supports ANSI editing only.
+the GUI recognizes cable 1 automatically. No serial port is exposed. Live editing
+supports Huntsman ANSI; the [M1 layout preview](docs/MONSGEEK_M1.md#board-and-gui-layout)
+does not yet support configuration of connected M1 factory firmware.
 
 ### Read the screen
 
@@ -369,6 +371,21 @@ then **Apply to selected key**, or confirm **Apply thresholds to all keys**.
 The GUI checks command acknowledgment and actual readback. Invalid pairs change
 nothing. Release all keys after an edit; remember to re-enable output.
 
+### Remap a keyboard key
+
+Select a key in the drawing, choose its output from the **Keyboard** dropdown,
+and click **Apply keycode**. Choose **Disabled** to send nothing, or select a
+letter, function/navigation/keypad key or modifier. Uncommon keyboard usages
+are listed by hexadecimal code; the operating system determines their meaning.
+
+Physical labels stay fixed. **Fn and every Fn combination are not remappable**:
+for example, remapping Y still leaves physical Fn+Y as Insert. Keyboard remaps
+do not change MIDI notes, thresholds or calibration. Two keys can share an
+output; it remains held until both are released.
+
+Release all keys after editing and wait for **settings saved**. The keyboard
+then keeps the mapping in its own flash and works without the GUI after unplugging.
+
 ### Assign a MIDI note
 
 Choose a note number 0…127, note name (sharps/flats accepted), or Off.
@@ -377,7 +394,7 @@ Changing a mapping releases held output and waits for neutral.
 
 ### Save and load a host profile
 
-JSON export/import stores thresholds and MIDI assignments, not calibration or
+JSON export/import stores thresholds and keyboard/MIDI assignments, not calibration or
 all menu settings. It is optional: device saves are automatic.
 Import temporarily disables output, checks each edit, then restores output
 on success. It is not atomic; a failed batch may leave confirmed edits applied.

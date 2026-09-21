@@ -4,19 +4,20 @@ from firmware_defaults import DEFAULTS as D, initializer
 import struct
 import math
 import re
-from keyboard_labels import sensor_labels
+from keyboard_boards import Key, ansi_geometry, get_board, boards, DEFAULT_TARGET
+from keyboard_keycodes import keycode_name
 
-SIZE = 1152
+HEADER_SIZE, RECORD_SIZE, MAX_KEYS, MAX_HID = 80, 17, 128, 32
+MAX_SIZE = HEADER_SIZE + MAX_KEYS*RECORD_SIZE + MAX_HID + 4
 MIDI_CONTROLS = {'Fn':'mode', 'RAl':'oct−', 'RCt':'oct+',
                  'LCt':'bend−', 'LAl':'bend+', 'LGu':'mod', 'Spc':'sustain'}
-# Constant frame magic: the telemetry layout carries no version number. The
-# build identity (version and target) comes from the SysEx READY handshake.
-MAGIC = b'HKG\x00'
+# Current count-aware wire format. Board identity comes from SysEx READY.
+MAGIC = b'MTG3'
 # Build identity answered by the `version` command: project version plus the
 # board model the firmware targets, e.g. v0.1.0-RZ03-0499.
 BUILD_RE = re.compile(r'build=(v(\d+\.\d+\.\d+)-([A-Za-z0-9_.-]+) '
                       r'git=([0-9a-f]{40}|[0-9a-f]{64}|unknown) state=(clean|dirty|unknown))\r?\n')
-KNOWN_TARGETS = {'RZ03-0499':'Huntsman V3 Pro Mini'}
+KNOWN_TARGETS = {target:board.name for target,board in boards().items()}
 FLAG_JANKO = 64  # the built-in Jankó note layout is active
 def note_name(note):
     return 'Off' if note == 255 else f'{("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")[note%12]}{note//12-1}'
@@ -73,7 +74,9 @@ class Snapshot:
     calibration_error: int = 0
     storage_flags: int = 0  # valid snapshot, pending save, fault
     storage_slot: int = 255
-    storage_generation: int = 0  # low 16 bits of whole-profile generation
+    storage_generation: int = 0
+    sample_hz: int = 0
+    keyboard_mapping: tuple = ()
 
 
 def parse_build(text):
@@ -85,66 +88,65 @@ def parse_build(text):
     return match[1],match[2],match[3]
 
 
+def frame_size(count, hid_bytes):
+    return ((HEADER_SIZE + count*RECORD_SIZE + hid_bytes+3)&~3) + 4
+
+
 def decode(data):
-    if len(data) != SIZE or data[:4] != MAGIC:
+    if not HEADER_SIZE+4 <= len(data) <= MAX_SIZE or len(data)%4 or data[:4] != MAGIC:
         raise ValueError('bad GUI frame size/magic')
-    size, velocity_start, profile, count, flags, result, mode = struct.unpack_from('<H6B',data,4)
-    if size != SIZE or mode > 2 or flags & ~127 or result > 2 or not 1 <= velocity_start <= 10:
+    size,profile,count,flags,result,mode,velocity_start = struct.unpack_from('<H6B',data,4)
+    sample_hz = struct.unpack_from('<I',data,32)[0]
+    hid_bytes,performance_mode,octave,channel,cleanup = struct.unpack_from('<BBbBB',data,36)
+    if (size != len(data) or count > MAX_KEYS or not 2 <= hid_bytes <= MAX_HID or
+            size != frame_size(count,hid_bytes) or mode > 2 or flags & ~127 or
+            result > 2 or not 1 <= velocity_start <= 10 or
+            struct.unpack_from('<H',data,76)[0] != HEADER_SIZE):
         raise ValueError('unsupported GUI header')
-    if (profile,count) not in ((0,0),(1,61),(2,62),(3,65)):
-        raise ValueError('invalid GUI layout')
+    if (not count and (profile or sample_hz or flags & 4)) or (count and (not profile or not sample_hz)):
+        raise ValueError('invalid GUI layout/rate')
     if sum(struct.unpack_from(f'<{(size-4)//2}H',data)) & 0xffffffff != struct.unpack_from('<I',data,size-4)[0]:
         raise ValueError('GUI checksum mismatch')
-    padding = data[1101:1104]+data[1134:1136]
-    if any(padding) or data[430] & 0xfe:
+    end = HEADER_SIZE+count*RECORD_SIZE
+    if any(data[78:80]) or any(data[end+hid_bytes:size-4]):
         raise ValueError('invalid GUI padding')
     sequence,revision,ack,scan_errors,light_errors = struct.unpack_from('<5I',data,12)
-    arrays = [struct.unpack_from('<65H',data,offset) for offset in (32,162,292)]
-    if any(any(a[count:]) for a in arrays): raise ValueError('invalid sensor padding')
-    raw,press,release = [a[:count] for a in arrays]
+    records = tuple(struct.iter_unpack('<HHHfIBBB',data[HEADER_SIZE:end]))
+    raw,press,release,velocity,captures,bits,mapping,keycodes = tuple(zip(*records)) if count else ((),)*8
     if any(not 1 <= p < r < 4096 for p,r in zip(press,release)):
         raise ValueError('invalid threshold readback')
     if flags & 4 and any(not 1 <= v <= 4096 for v in raw):
         raise ValueError('valid flag contradicts raw values')
-    bits = int.from_bytes(data[422:431],'little')
-    if bits >> count: raise ValueError('invalid pressed bitmap')
-    velocity = struct.unpack_from('<65f',data,447)
-    captures = struct.unpack_from('<65I',data,707)
-    states = tuple(data[967:1032])
-    if any(velocity[count:]) or any(captures[count:]) or any(states[count:]):
-        raise ValueError('invalid velocity padding')
-    if any(s & ~15 for s in states) or any(not math.isfinite(v) or not 0.0 <= v <= 1.0 for v in velocity):
+    if any(s & ~63 for s in bits) or any(not math.isfinite(v) or not 0.0 <= v <= 1.0 for v in velocity):
         raise ValueError('invalid velocity data')
-    velocity,captures,states = velocity[:count],captures[:count],states[:count]
-    performance_mode,octave,channel,cleanup = struct.unpack_from('<BbBB',data,1032)
-    mapping = tuple(data[1036:1036+count])
-    if performance_mode > 1 or not -10 <= octave <= 10 or channel != 1 or cleanup > 1 or any(data[1036+count:1101]):
+    states = tuple(s & 15 for s in bits)
+    down = tuple(bool(s & 16) for s in bits)
+    done = tuple(bool(s & 32) for s in bits)
+    if performance_mode > 1 or not -10 <= octave <= 10 or channel != 1 or cleanup > 1:
         raise ValueError('invalid MIDI state')
     if any(n > 127 and n != 255 for n in mapping): raise ValueError('invalid MIDI mapping')
-    errors,changes = struct.unpack_from('<II',data,1104)
-    state,completed,selected,cflags,hold,idle = struct.unpack_from('<4BHH',data,1112)
-    done = int.from_bytes(data[1120:1129],'little')
-    reason = data[1129]
-    upper,lower = struct.unpack_from('<HH',data,1130)
-    generation,error = struct.unpack_from('<II',data,1136)
-    storage_flags,storage_slot,storage_generation = struct.unpack_from('<BBH',data,1144)
+    if any(k!=0 and not 4<=k<=0xe7 for k in keycodes): raise ValueError('invalid keyboard mapping')
+    errors,changes = struct.unpack_from('<II',data,48)
+    state,completed,selected,cflags,reason,storage_flags,storage_slot = struct.unpack_from('<7B',data,41)
+    hold,idle,upper,lower = struct.unpack_from('<4H',data,56)
+    generation,error,storage_generation = struct.unpack_from('<III',data,64)
     if storage_flags & ~7 or storage_slot not in (0,1,255):
         raise ValueError('invalid storage state')
     if (state > 8 or state == 4 or completed > count or selected != 255 and selected >= count or
         cflags & ~7 or bool(cflags & 1) != (1 <= state <= 5) or hold > D['CALIBRATION_HOLD_MS'] or idle > D['CALIBRATION_IDLE_MS'] or
-        done >> count or done.bit_count() != completed or reason > 4 or upper > 4096 or lower > 4096):
+        sum(done) != completed or reason > 4 or upper > 4096 or lower > 4096):
         raise ValueError('invalid calibration state')
-    if any(v & 8 and (state != 3 or done & (1<<i)) for i,v in enumerate(states)):
+    if any(v & 8 and (state != 3 or done[i]) for i,v in enumerate(states)):
         raise ValueError('invalid calibration hold bitmap')
     cal = dict(calibration_state=state,calibration_completed=completed,calibration_selected=selected,
                calibration_flags=cflags,calibration_hold=hold,calibration_idle=idle,
-               calibration_done=tuple(bool(done & (1<<i)) for i in range(count)),calibration_reason=reason,
+               calibration_done=done,calibration_reason=reason,
                calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error,
-               storage_flags=storage_flags,storage_slot=storage_slot,storage_generation=storage_generation)
+               storage_flags=storage_flags,storage_slot=storage_slot,storage_generation=storage_generation,
+               sample_hz=sample_hz,keyboard_mapping=keycodes)
     return Snapshot(profile,count,flags,result,sequence,revision,ack,scan_errors,light_errors,
-                    raw,press,release,tuple(bool(bits & (1<<i)) for i in range(count)),bytes(data[431:447]),mode,
+                    raw,press,release,down,bytes(data[end:end+hid_bytes]),mode,
                     velocity,captures,states,velocity_start,performance_mode,octave,mapping,bool(cleanup),errors,changes,**cal)
-
 
 class Decoder:
     def __init__(self):
@@ -155,42 +157,11 @@ class Decoder:
         while len(self.buffer) >= 6:
             if self.buffer[:4] != MAGIC: raise ValueError('bad GUI frame magic')
             size = struct.unpack_from('<H',self.buffer,4)[0]
-            if size != SIZE: raise ValueError('bad GUI frame size')
+            if not HEADER_SIZE+4 <= size <= MAX_SIZE or size%4: raise ValueError('bad GUI frame size')
             if len(self.buffer) < size: break
             result = decode(self.buffer[:size])
             del self.buffer[:size]
             yield result
-
-
-@dataclass(frozen=True)
-class Key:
-    sensor: int
-    label: str
-    x: float
-    y: float
-    width: float
-
-
-def ansi_geometry():
-    """Standard 15-unit ANSI 60% key sizes; sensor IDs come from recovered maps."""
-    rows = [
-        [('Esc',1)] + [(s,1) for s in '1234567890-='] + [('BkS',2)],
-        [('Tab',1.5)] + [(s,1) for s in 'QWERTYUIOP[]'] + [('\\',1.5)],
-        [('Cap',1.75)] + [(s,1) for s in "ASDFGHJKL;'"] + [('Ent',2.25)],
-        [('LSh',2.25)] + [(s,1) for s in 'ZXCVBNM,./'] + [('RSh',2.75)],
-        [('LCt',1.25),('LGu',1.25),('LAl',1.25),('Spc',6.25),
-         ('Fn',1.25),('RAl',1.25),('Mnu',1.25),('RCt',1.25)],
-    ]
-    labels = sensor_labels()[61]
-    keys = []
-    for y,row in enumerate(rows):
-        x = 0
-        for label,width in row:
-            keys.append(Key(labels.index(label),label,x,y,width))
-            x += width
-        assert x == 15
-    assert sorted(k.sensor for k in keys) == list(range(61))
-    return keys
 
 
 def validate_pair(press,release):
@@ -199,32 +170,38 @@ def validate_pair(press,release):
     return press,release
 
 
-def profile_from_snapshot(snapshot):
-    if snapshot.profile != 1 or snapshot.count != 61:
-        raise ValueError('This GUI supports the connected ANSI 61-key board only.')
-    labels = sensor_labels()[61]
-    return {'version':2,'layout':'ansi','keys':[
+def profile_from_snapshot(snapshot, target=DEFAULT_TARGET):
+    board = get_board(target)
+    if not board.accepts(snapshot):
+        raise ValueError('Snapshot does not match the selected board layout.')
+    labels = board.labels()
+    return {'version':4,'target':target,'layout':board.profile,'keys':[
         {'sensor':i,'label':labels[i],'press':snapshot.press[i],'release':snapshot.release[i],
-         'midi':snapshot.midi_mapping[i]}
-        for i in range(61)]}
+         'midi':snapshot.midi_mapping[i], 'keyboard':snapshot.keyboard_mapping[i]}
+        for i in range(board.count)]}
 
 
-def validate_profile(data):
-    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') != 2 or data.get('layout') != 'ansi':
-        raise ValueError('Expected an ANSI profile, version 2.')
+def validate_profile(data, target=DEFAULT_TARGET):
+    board = get_board(target)
+    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') != 4:
+        raise ValueError('Expected a board-specific profile, version 4.')
+    if data.get('target') != target or type(data.get('layout')) is not int or data.get('layout') != board.profile:
+        raise ValueError('Profile targets a different keyboard or layout.')
     keys = data.get('keys')
-    if not isinstance(keys,list) or len(keys) != 61: raise ValueError('Profile must contain all 61 keys.')
-    labels = sensor_labels()[61]
+    if not isinstance(keys,list) or len(keys) != board.count: raise ValueError(f'Profile must contain all {board.count} keys.')
+    labels = board.labels()
     result = {}
     for key in keys:
         if not isinstance(key,dict): raise ValueError('Invalid profile key.')
         index = key.get('sensor')
-        if type(index) is not int or not 0 <= index < 61 or index in result or key.get('label') != labels[index]:
+        if type(index) is not int or not 0 <= index < board.count or index in result or key.get('label') != labels[index]:
             raise ValueError('Profile sensor/label mismatch or duplicate.')
         result[index] = validate_pair(key.get('press'),key.get('release'))
         note = key.get('midi')
         if type(note) is not int or not (0 <= note <= 127 or note == 255): raise ValueError('Invalid MIDI note.')
         if labels[index] in MIDI_CONTROLS and note != 255: raise ValueError('Reserved MIDI control key.')
+        keycode_name(key.get('keyboard'))
+        if labels[index]=='Fn' and key['keyboard']!=0: raise ValueError('Fn cannot be remapped.')
     return result
 
 
@@ -257,7 +234,7 @@ class KeystrokeCapture:
         self.points = []
         self.prev_down = None  # None: adopt the next frame as baseline, never trigger
         self.fit = None      # (captures, velocity) of the keystroke's fit, if any
-        self.velocity = None # host-computed raw counts/s (8 ksps captures)
+        self.velocity = None # host-computed raw counts/s (board-declared rate)
         self.captures0 = None
         self.done = False
         self.armed = True
@@ -287,11 +264,11 @@ class KeystrokeCapture:
         return True
 
     def feed_sample(self, raw, press, release):
-        """Consume one full-rate (8 ksps) key-stream sample.
+        """Consume one full-rate key-stream sample.
 
         The down state uses the selected key's Schmitt pair; every sample is
         appended to an active capture for the bottom-out/ten-point device
-        velocity window. Its timebase assumes 8 kHz, not a measured cadence.
+        velocity window. Its timebase is the board-declared rate, not a measured cadence.
         """
         down = (raw < press) if not self.prev_down else (raw <= release)
         return self.feed(raw, down)

@@ -35,7 +35,8 @@ def main():
         from flash_models import ConnectedDevice, FirmwareImage
         tab=app.flash_tab
         assert len(app.notebook.tabs())==2
-        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3']
+        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3',
+                                                'MonsGeek M1 V5 TMR (identity only)']
         with patch.object(tab.adapter,'discover',side_effect=AssertionError('demo accessed USB')):
             app.notebook.select(tab);root.update()
         assert str(tab.flash_button['state'])=='disabled'
@@ -58,6 +59,16 @@ def main():
             from dataclasses import replace
             tab.show_device(replace(device,mode=mode));tab.set_options()
             assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
+        huntsman_name=tab.model.get()
+        tab.model.set('MonsGeek M1 V5 TMR (identity only)')
+        for mode in ('candidate','factory','unverified_bootloader'):
+            tab.show_device(replace(device,model=tab.adapter.id,mode=mode,version='v4.08'))
+            tab.set_options()
+            assert not tab.action_widgets and tab.option is None
+            assert str(tab.flash_button['state'])=='disabled'
+            assert str(tab.inspect_button['state'])==('disabled' if mode=='unverified_bootloader' else 'normal')
+            assert tab.identity['Firmware'].get()=='v4.08'
+        tab.model.set(huntsman_name);tab.device=None;tab.set_options()
         app.demo=True;app.notebook.select(0);root.update()
         assert len(app.items) == 61 and len(app.canvas.find_all()) == 244
         assert app.usable() is False
@@ -94,7 +105,7 @@ def main():
         assert app.device.get() == '/dev/fake' and 'Detected' in app.message.get()
         with patch('keyboard_gui.find_midi_device',return_value=None):
             app.detect()
-        assert app.device.get() == '' and 'No USB 1532:02b0' in app.message.get()
+            assert app.device.get() == '' and 'No unique MIDI-Typist control port' in app.message.get()
         app.hold_button.invoke()
         assert app.hold_mode.get() and app.capture.armed
         root.update()
@@ -144,6 +155,95 @@ def main():
         app.close(); root = None
         print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, '
               'scrollable settings panel, resolved typography, resize')
+        from keyboard_boards import M1_TARGET, DEFAULT_TARGET
+        root=tk.Tk(); app=App(root,demo=True,board_target=M1_TARGET);root.update()
+        assert app.board.count==82 and len(app.items)==82 and app.snapshot.count==82
+        assert len(app.canvas.find_all())==328
+        for width,height in ((1180,920),(900,700)):
+            root.geometry(f'{width}x{height}');root.update()
+            for key in app.keys:
+                x1,y1,x2,y2=app.canvas.coords(app.items[key.sensor][0])
+                assert 0 <= x1 < x2 <= app.canvas.winfo_width(),key
+                assert 0 <= y1 < y2 <= app.canvas.winfo_height(),key
+                app.select(key.sensor)
+                assert key.label in app.key_title.get()
+                assert app.press.get()=='3500'
+            assert str(app.apply_button['state'])=='disabled'
+        app.select(81);root.update()
+        assert 'Right' in app.key_title.get() and 'Sensor:' in app.details.get()
+        app.set_board(DEFAULT_TARGET);root.update()
+        assert len(app.items)==61 and app.board.count==61
+        app.set_board(M1_TARGET);root.update()
+        assert len(app.items)==82 and app.selected==45
+        app.close();root=None
+        print('PASS Tk M1: 82 keys, six physical rows, all selections, resize, target switching; no device access')
+        device = Device(board_target=M1_TARGET); device.start()
+        try:
+            with patch('keyboard_gui.Connection',side_effect=lambda name: Connection(name,backend_factory=lambda _:device)):
+                root=tk.Tk();app=App(root,device='Fake M1 Control')
+                app.toggle_connection()
+                def m1_until(predicate,seconds=5):
+                    deadline=time.monotonic()+seconds
+                    while time.monotonic()<deadline:
+                        root.update()
+                        if predicate(): return
+                        time.sleep(.01)
+                    raise AssertionError('M1 GUI condition timed out')
+                m1_until(app.usable)
+                assert app.board.target==M1_TARGET and len(app.items)==82
+                app.select(81);app.press.set('2500');app.release.set('2800')
+                app.apply_button.invoke()
+                m1_until(lambda:app.snapshot.press[81]==2500 and app.snapshot.release[81]==2800)
+                assert 'Right' in app.key_title.get()
+                app.midi_note.set('C4');app.midi_button.invoke()
+                m1_until(lambda:app.snapshot.midi_mapping[81]==60)
+                from keyboard_keycodes import keycode_name
+                app.keyboard_code.set(keycode_name(0x87));app.keyboard_button.invoke()
+                m1_until(lambda:app.snapshot.keyboard_mapping[81]==0x87)
+                app.select(77);app.update()
+                assert str(app.keyboard_button['state'])=='disabled'
+                assert str(app.keyboard_entry['state'])=='disabled'
+                app.select(81);app.update()
+                # Entire board-sized profiles include all three per-key
+                # settings. Verify the actual UI queues a complete batch.
+                import json
+                from keyboard_gui_model import profile_from_snapshot
+                profile=profile_from_snapshot(app.snapshot,M1_TARGET)
+                queued=[]
+                with patch('keyboard_gui.filedialog.askopenfilename',return_value='mock.json'), \
+                     patch('keyboard_gui.Path.read_text',return_value=json.dumps(profile)), \
+                     patch('keyboard_gui.messagebox.askyesno',return_value=True), \
+                     patch.object(app.connection,'submit',side_effect=lambda *args:queued.append(args)):
+                    app.load_profile()
+                assert queued[0]==('enable',0) and queued[-1]==('enable',1)
+                assert len([q for q in queued if q[0]=='key'])==81
+                assert ('key',81,0x87) in queued
+                assert not any(q[:2]==('key',77) for q in queued)
+                assert len(queued)<app.connection.requests.maxsize
+                with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                    app.apply_all_button.invoke()
+                m1_until(lambda:app.snapshot.press==(2500,)*82 and app.snapshot.release==(2800,)*82)
+                app.hold_button.invoke()
+                m1_until(lambda:app.connection.stream_mode=='key' and app.capture.armed)
+                assert app.connection.key_sensor==81
+                device.key_raw=2000
+                m1_until(lambda:app.capture.done)
+                assert len(app.capture.points)==CAPTURE_POINTS
+                assert set(app.capture.points)=={2000}
+                app.hold_button.invoke()
+                m1_until(lambda:app.connection.stream_mode=='gui' and app.usable())
+                m1_until(lambda:str(app.calibrate_button['state'])=='normal')
+                with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                    app.calibrate_button.invoke()
+                m1_until(lambda:app.snapshot.calibration_state==3)
+                assert '0/82' in app.calibration_status.get()
+                app.cancel_calibration_button.invoke()
+                m1_until(lambda:app.snapshot.calibration_state==7)
+                app.close();root=None
+                assert device.error is None
+        finally:
+            device.stop_event.set();device.join(1)
+        print('PASS Tk M1+SysEx mock: identity-selected geometry, sensor 81 edits/capture, all 82 thresholds, calibration')
         device = Device(); device.start()
         transport_patch = patch('keyboard_gui.Connection', side_effect=lambda name: Connection(name, backend_factory=lambda _:device))
         transport_patch.start()

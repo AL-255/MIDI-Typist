@@ -23,7 +23,7 @@ def keyboard_mapping_tests(args):
     def usages():
         report=dev.reports[-1]
         assert report[0]==0, report
-        return {u for u in range(4,116) if report[2+(u-4)//8] & (1<<((u-4)%8))}
+        return {u for u in range(4,224) if report[2+(u-4)//8] & (1<<((u-4)%8))}
     set_keys(RAl=500,Mnu=500,RCt=500,RSh=500)
     assert usages()=={0x50,0x51,0x4f,0x52}, usages()
     set_keys(RAl=3900,Mnu=3900,RCt=3900,RSh=3900)
@@ -46,7 +46,7 @@ def keyboard_mapping_tests(args):
         for label in order: set_keys(**{label:500})
         report=dev.reports[-1]
         assert report[0]==0x02, (order,bytes(report))
-        pressed={u for u in range(4,116) if report[2+(u-4)//8] & (1<<((u-4)%8))}
+        pressed={u for u in range(4,224) if report[2+(u-4)//8] & (1<<((u-4)%8))}
         assert pressed=={expected}, (order,pressed)
         set_keys(LSh=3900,Fn=3900,Esc=3900)
         assert not usages(), order
@@ -60,6 +60,22 @@ def keyboard_mapping_tests(args):
         set_keys(Y=3900); assert not usages()
     set_keys(Fn=3900)
     assert not dev.reset_requests and not dev.midi_packets
+    # SysEx edits reach actual linked reports, including the extended bitmap.
+    s=snapshot(dev,'stream gui')
+    assert s.keyboard_mapping==tuple(__import__('keyboard_boards').get_board().default_keycodes())
+    for label in ('A','Y'):
+        assert snapshot(dev,f'cfg key 901 {labels.index(label)} 135').result==1
+    set_keys(A=500,Y=500);assert usages()=={0x87}
+    set_keys(A=3900);assert usages()=={0x87}
+    set_keys(Y=3900);assert not usages()
+    set_keys(Fn=500,Y=500);assert usages()=={0x49}
+    set_keys(Fn=3900);assert not usages()
+    set_keys(Y=3900,A=500);assert usages()=={0x87}
+    s=snapshot(dev,f'cfg key 902 {labels.index("A")} 225')
+    assert s.result==1 and not any(s.report) and not s.flags&2
+    set_keys(A=3900);set_keys(A=500);assert dev.reports[-1][0]==2
+    set_keys(A=3900)
+    assert snapshot(dev,f'cfg key 903 {labels.index("Fn")} 4').result==2
     print('PASS ARM keyboard: four NKRO arrows without modifiers, all 20 Fn shortcuts, both release orders, Fn-held repeats, green I2C hints')
 
 
@@ -696,7 +712,7 @@ def main():
         dev.call('scan_stream_init'); dev.call('scan_stream_gui')
         def push(sequence):
             dev.cpu.mem_write(0x2003d000,packet(sequence=sequence))
-            dev.call('scan_stream_gui_push',0x2003d000)
+            dev.call('scan_stream_gui_push',0x2003d000,len(packet(sequence=sequence)))
         push(0); dev.call('debug_service'); dev.call('debug_service')
         address,length = dev.packet(5); pending = bytes(dev.cpu.mem_read(address,length))
         for i in range(1,100): push(i)
@@ -708,11 +724,11 @@ def main():
         dev.call('scan_stream_last_key',3600,77,5)
         key_push(dev,[3500]*61)
         assert bytes(dev.cpu.mem_read(address,length)) == pending
-        assert list(KeyDecoder(3600,77).feed(drain(dev, 6))) == [3500]
+        assert list(KeyDecoder(3600,77,65).feed(drain(dev, 6))) == [3500]
         key_push(dev,[3400]*61); dev.call('debug_service'); dev.call('debug_service')
         dev.call('scan_stream_gui'); push(101)
         assert [v.sequence for v in Decoder().feed(drain(dev, 5))] == [101]
-        print(f'PASS {"HS" if hs else "FS"} GUI: stable pending transfer, latest-only replacement, 1152-byte framing')
+        print(f'PASS {"HS" if hs else "FS"} GUI: stable pending transfer, latest-only replacement, count-aware MTG3 framing')
 
 
 if __name__ == '__main__': main()

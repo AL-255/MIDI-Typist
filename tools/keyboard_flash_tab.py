@@ -14,6 +14,8 @@ from flash_models import ConnectedDevice, adapters
 
 class FlashTab(ttk.Frame):
     MODES = {'custom':'MIDI-TYPIST', 'razer':'RAZER FIRMWARE',
+             'candidate':'MODEL NOT VERIFIED', 'factory':'FACTORY FIRMWARE · ID VERIFIED',
+             'unverified_bootloader':'SHARED BOOTLOADER · MODEL UNKNOWN',
              'bootloader':'BOOTLOADER · READY TO RECOVER', 'unknown':'UNRECOGNIZED APPLICATION'}
 
     def _font(self, size=None, weight='normal', mono=False):
@@ -120,7 +122,7 @@ class FlashTab(ttk.Frame):
         for widget in (self.refresh_button,self.browse_button,self.entry,self.confirm_check,*self.action_widgets):
             widget.configure(state='disabled' if self.busy else 'normal')
         self.model_picker.configure(state='disabled' if self.busy else 'readonly')
-        self.inspect_button.configure(state='normal' if self.device and self.device.mode in ('custom','razer') and not self.busy and not self.app.demo else 'disabled')
+        self.inspect_button.configure(state='normal' if self.device and self.device.mode in self.adapter.inspection_modes and not self.busy and not self.app.demo else 'disabled')
         self.validate_button.configure(state='normal' if self.option and self.path.get().strip() and not self.busy else 'disabled')
         ready=bool(self.device and self.option and self.image and self.confirm_model.get() and not self.busy and not self.app.demo)
         self.flash_button.configure(state='normal' if ready else 'disabled')
@@ -170,7 +172,7 @@ class FlashTab(ttk.Frame):
     def choose_action(self):
         option=self.option
         self.option_note.set(option.description if option else 'No safe flashing action is available.')
-        self.path.set(self.paths.get(option.destination,self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
+        self.path.set(self.paths.get((self.adapter.id, option.destination),self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
         self.safety.set(self.adapter.safety)
         self.sync()
 
@@ -240,7 +242,10 @@ class FlashTab(ttk.Frame):
             if kind=='discovery':
                 self.busy=False
                 if len(payload)==1:
-                    self.show_device(payload[0]);self.status.set('Device identified. Select a destination and validate an image.')
+                    self.show_device(payload[0])
+                    self.status.set('Device identified. Select a destination and validate an image.'
+                                    if self.adapter.actions(payload[0]) else
+                                    'No flashing action available. Read firmware details when supported.')
                 else:
                     self.device=None;self.badge.set('NO DEVICE' if not payload else 'MULTIPLE DEVICES')
                     for value in self.identity.values():value.set('—')
@@ -250,7 +255,7 @@ class FlashTab(ttk.Frame):
             elif kind=='image':
                 self.busy=False;epoch,image=payload
                 if epoch==self.epoch:
-                    self.image=image;self.paths[image.destination]=image.path
+                    self.image=image;self.paths[(self.adapter.id,image.destination)]=image.path
                     self.image_info.set(f'{len(image.data):,} bytes · {image.destination.upper()}\nSHA-256\n{image.digest}\n\n{image.description}')
                     self.status.set('Image validated. Confirm the model, then review the flash plan.')
             elif kind=='device':

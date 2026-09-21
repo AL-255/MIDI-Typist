@@ -27,16 +27,30 @@ def record(gen=1):
     """Current whole-profile fixture with calibrated endpoints."""
     from firmware_defaults import DEFAULTS as D
     p=bytearray(b'\xff'*512)
-    struct.pack_into('<4s4BII',p,0,b'MTP1',1,1,61,1,gen,0x3150544d)
-    p[16:29]=bytes((0,0,0,D['DEFAULT_BRIGHTNESS_LEVEL'],D['DEFAULT_MIDI_VELOCITY_START'],
-                   D['DEFAULT_MIDI_ROOT'],D['DEFAULT_MIDI_SCALE'],0,1,
-                   D['DEFAULT_ACTUATION_LEVEL'],D['DEFAULT_RAPID_LEVEL'],
-                   D['DEFAULT_RAPID_ENABLED'],D['DEFAULT_PROFILE_LOCKED']))
-    struct.pack_into('<I',p,29,1)
-    def pair(a,b):return ((a-1)|((b-1)<<12)).to_bytes(3,'little')
-    for sensor in range(61):
-        offset=33+sensor*7
-        p[offset:offset+7]=pair(D['RAW_DEFAULT_PRESS'],D['RAW_DEFAULT_RELEASE'])+pair(1000,4000)+b'\xff'
+    struct.pack_into('<4sBBII',p,0,b'MTP2',1,1,gen,1)
+    bit=14*8
+    def put(value,width):
+        nonlocal bit
+        assert 0<=value<1<<width
+        for i in range(width):
+            offset,shift=divmod(bit,8)
+            p[offset]=(p[offset]&~(1<<shift)) | (((value>>i)&1)<<shift)
+            bit+=1
+    values=(0,0,0,D['DEFAULT_BRIGHTNESS_LEVEL'],D['DEFAULT_MIDI_VELOCITY_START'],
+            D['DEFAULT_MIDI_ROOT'],D['DEFAULT_MIDI_SCALE'],10,1,
+            D['DEFAULT_ACTUATION_LEVEL'],D['DEFAULT_RAPID_LEVEL'],
+            D['DEFAULT_RAPID_ENABLED'],D['DEFAULT_PROFILE_LOCKED'])
+    for value,width in zip(values,(1,1,1,5,4,4,4,5,1,4,4,1,1)):put(value,width)
+    bit=19*8
+    def pair(a,b):return (b-1)*(b-2)//2+a-1
+    from keyboard_boards import get_board
+    from keyboard_gui_model import MIDI_CONTROLS
+    for label,code in zip(get_board().labels(),get_board().default_keycodes()):
+        put(pair(D['RAW_DEFAULT_PRESS'],D['RAW_DEFAULT_RELEASE']),23)
+        put(pair(1000,4000),23)
+        if label=='Fn':continue
+        if label in MIDI_CONTROLS:put(code,8)
+        else:put((code-3 if code else 0)*129+128,15)
     struct.pack_into('<I',p,508,zlib.crc32(p[:508]))
     return bytes(p)
 
@@ -188,7 +202,7 @@ def live_tests(args):
     assert s.calibration_state==6 and s.calibration_flags==6 and s.calibration_generation==1
     assert sum(cmd==4 for cmd,_ in dev.flash.commands)==1
     assert sum(cmd==12 for cmd,_ in dev.flash.commands)==1
-    assert bytes(dev.flash.pages[SLOTS[0]])[:4]==b'MTP1'
+    assert bytes(dev.flash.pages[SLOTS[0]])[:4]==b'MTP2'
     assert dev.flash.touched=={SLOTS[1]},dev.flash.touched
     reboot=Live(args.elf,args.reference,dev.flash.pages); reboot.service(400)
     s=snapshot(reboot,'stream gui'); assert s.calibration_flags==6 and s.calibration_generation==1

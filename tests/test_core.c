@@ -18,7 +18,9 @@ static void test_keyboard(void)
     assert(report.modifiers == 0x02u);
     assert(keyboard_report_set_usage(&report, 0xe1u, false));
     assert(!keyboard_report_get_usage(&report, 0xe1u));
-    assert(!keyboard_report_set_usage(&report, 0x74u, true));
+    assert(keyboard_report_set_usage(&report, 0xdfu, true));
+    assert(keyboard_report_get_usage(&report, 0xdfu));
+    assert(!keyboard_report_set_usage(&report, 0xe8u, true));
 }
 
 static void test_updater(void)

@@ -1,9 +1,10 @@
 # MIDI and GUI protocol
 
 MIDI event encoding and `cfg` command validation belong to the shared
-application. USB interface numbers, endpoints, GUI telemetry serialization and ANSI
-JSON geometry below describe the Huntsman port. Other platforms must provide
-their own transport/host adapter; see [porting](PORTING.md).
+application. SysEx sessions and count-aware GUI telemetry are shared services;
+JSON profiles bind to board identity and layout. USB interface numbers and
+endpoints below describe the complete Huntsman port. Other platforms provide
+their own USB integration and geometry; see [porting](PORTING.md).
 
 ## USB-MIDI 1.0
 
@@ -95,10 +96,9 @@ before deciding whether to apply again.
 
 ## GUI telemetry
 
-The application emits one 1152-byte telemetry layout, including MIDI fields,
-calibration status and per-key parallel-hold bits. Frames carry no version
-number: a constant magic and the fixed size identify them, while the SysEx READY
-build identity records which application produced them. The complete field
+The shared application emits count-aware MTG3 telemetry, including MIDI fields,
+calibration status and per-key parallel-hold bits. SysEx version 3 identifies
+the protocol; READY binds each snapshot to a board target and build identity. The complete field
 table, the other streams and the text replies are documented in
 [device telemetry](TELEMETRY.md); the calibration fields additionally appear in
 [calibration](CALIBRATION.md).
@@ -115,12 +115,15 @@ Version 1 remains threshold-only. Version 2 adds integer `midi` to every one of
 the 61 ANSI key objects:
 
 ```json
-{"sensor": 32, "label": "A", "press": 3500, "release": 3600, "midi": 60}
+{"sensor": 32, "label": "A", "press": 3500, "release": 3600, "midi": 60, "keyboard": 4}
 ```
 
-The surrounding object has `version: 2`, `layout: "ansi"`, and `keys` containing
-all 61 unique, correctly labelled sensors. Notes are 0…127 or 255; reserved
-control keys must use 255. Invalid pairs, boolean numeric fields, duplicates,
+The surrounding object has `version: 4`, a board `target` (for example
+`"RZ03-0499"`), numeric `layout: 1`, and `keys` containing every unique, correctly
+labelled sensor for that board (61 on Huntsman ANSI, 82 on M1). Notes are 0…127 or 255; reserved
+control keys must use 255. `keyboard` is a keyboard/keypad usage (0 or 4…231);
+Fn must use 0. Invalid pairs, boolean numeric fields, duplicates,
 wrong labels, missing entries and invalid MIDI values are rejected before
-commands are queued. The GUI accepts only version-2 JSON. Mode, octave and calibration
+commands are queued. The GUI accepts only version-4 JSON bound to the exact board
+target and layout. Mode, octave and calibration
 persist in the complete device snapshot but are not included in host JSON.

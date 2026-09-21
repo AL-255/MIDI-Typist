@@ -337,8 +337,55 @@ static void fn_layer_modifier_test(void)
     puts("PASS Fn layer: Left Shift keeps its modifier (Fn+Shift+Esc = tilde), Right Shift keeps its Up-arrow remap");
 }
 
+static void remapping_tests(void)
+{
+    keyboard_raw_init(&s);s.menu_managed=true;
+    for(unsigned i=0;i<61;++i)raw[i]=3900;
+    frame();
+    unsigned fn=0,y=0;
+    for(unsigned i=0;i<61;++i) {
+        unsigned key=keyboard_key_for_sensor(1,i);
+        if(key==keyboard_layout(1)->fn)fn=i;
+        const keyboard_action_t *base=keyboard_action(1,key,0);
+        if(base && base->arg1==0x1c)y=i;
+    }
+    assert(fn && y && s.keycode[32]==4);
+    assert(!keyboard_raw_map(&s,fn,4));
+    assert(!keyboard_raw_map(&s,61,4));
+    for(unsigned usage=0;usage<=256;++usage) {
+        bool valid=usage==0 || (usage>=4 && usage<=0xe7);
+        assert(keyboard_raw_map(&s,32,usage)==valid);
+        if(!valid)continue;
+        frame();raw[32]=2000;frame();
+        assert(usage?keyboard_report_get_usage(&s.engine.report,usage):!a());
+        /* Changing a held source sends neutral, never its replacement. */
+        assert(keyboard_raw_map(&s,32,usage==4?5:4));
+        frame();assert(!a() && !s.armed && !s.engine.report.modifiers);
+        raw[32]=3900;frame();assert(s.armed);
+    }
+    /* Two physical sources may share either an ordinary key or a modifier. */
+    for(unsigned usage=4;usage<=0xe1;usage+=0xdd) {
+        assert(keyboard_raw_map(&s,32,usage) && keyboard_raw_map(&s,y,usage));frame();
+        raw[32]=raw[y]=2000;frame();
+        raw[32]=3900;frame();assert(keyboard_report_get_usage(&s.engine.report,usage));
+        raw[y]=3900;frame();assert(!keyboard_report_get_usage(&s.engine.report,usage));
+    }
+    /* Y's base mapping does not alter physical Fn+Y -> Insert. */
+    assert(keyboard_raw_map(&s,y,0x87));frame();
+    raw[fn]=raw[y]=2000;frame();
+    assert(keyboard_report_get_usage(&s.engine.report,0x49));
+    assert(!keyboard_report_get_usage(&s.engine.report,0x87));
+    raw[fn]=3900;frame();
+    assert(!keyboard_report_get_usage(&s.engine.report,0x49));
+    assert(!keyboard_report_get_usage(&s.engine.report,0x87));
+    raw[y]=3900;frame();raw[y]=2000;frame();
+    assert(keyboard_report_get_usage(&s.engine.report,0x87));
+    puts("PASS every keyboard usage, disabled/modifier mappings, held edits, duplicate destinations, immutable Fn shortcuts");
+}
+
 int main(void)
 {
+    remapping_tests();
     velocity_tests();
     velocity_history_oracle();
     velocity_clamp_tests();

@@ -50,5 +50,6 @@ the shared application to another board. These pages describe the latest build.
    :caption: Development
 
    Porting guide <docs/PORTING>
+   MonsGeek M1 identity and port boundaries <docs/MONSGEEK_M1>
    Documentation and Pages CI <docs/DOCUMENTATION>
    Contributor rules <AGENTS>

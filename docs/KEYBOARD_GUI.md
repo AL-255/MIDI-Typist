@@ -1,7 +1,9 @@
 # Keyboard configuration GUI
 
-The Linux/POSIX Tk GUI targets the Huntsman ANSI layout and the complete
-`huntsman` firmware. It edits thresholds/mappings, displays per-key velocity,
+The Linux/POSIX Tk GUI selects board geometry from the device's build target.
+Live configuration supports the complete Huntsman ANSI firmware; the M1's
+82-key 75% layout is available as an offline preview with
+`--demo --board MG-M1V5TMR`. It edits thresholds/mappings, displays per-key velocity,
 starts parallel calibration, exports JSON profiles and can explicitly flash
 an application. ISO/JIS editing is rejected rather than mislabelling keys.
 
@@ -25,7 +27,8 @@ cable. Use the first, performance cable in the DAW. No serial node is exposed.
 Only one GUI owner is supported; a fresh handshake replaces the previous
 session. MIDI access does not normally need root on a desktop session.
 Confirmed flashing uses raw USB and may request PolicyKit authorization.
-Linux is hardware-tested; other RtMidi backends are not validated.
+Current GUI/firmware integration is tested offline on Linux; physical USB and
+other RtMidi backends are not qualified. See [validation limits](VALIDATION.md).
 
 Connect and select a key. The drawing uses recovered sensor identities and
 60% key geometry, with Fn immediately right of Space and Right Alt next.
@@ -68,6 +71,18 @@ taller than the window, so nothing is clipped in a small window.
 - Fn, Left Ctrl/Windows/Alt, Right Alt/Ctrl and Space are reserved MIDI controls.
   Other keys accept note numbers 0…127, names (including flats), or Off.
 
+For keyboard mode, select a physical tile, choose the **Keyboard** keycode
+dropdown, then **Apply keycode**. It offers Disabled, keyboard/keypad usages
+04…DF, and modifiers E0…E7; uncommon usages have hexadecimal labels. Host OS
+support determines how a usage is interpreted. Consumer-page/media controls
+and macros are not keyboard keycodes and are not offered.
+Fn is locked. All Fn shortcuts/settings remain attached to their physical keys,
+even if the base output is disabled or remapped. MIDI mappings and calibration
+are independent. Duplicate destinations are supported: releasing one source
+does not release an output still held by another. Edits release outputs and
+wait for neutral. Check the device-confirmed mapping in the selected-key panel,
+then wait for **settings saved** before unplugging.
+
 Disable output while tuning if desired, enter values and apply to one key or
 confirm **Apply thresholds to all keys**. The MCU all-key operation is atomic.
 The GUI verifies matching request ID, success result and readback. Stale,
@@ -94,6 +109,8 @@ MIDI-Typist or a supplied Razer application, validate the image and review the
 confirmation. It supports application and bootloader states, including custom
 reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
+The **MonsGeek M1 V5 TMR (identity only)** model option provides a read-only
+factory query, not configuration or flashing. See [M1 support](MONSGEEK_M1.md).
 
 Initialize the updater submodule first:
 
@@ -160,7 +177,9 @@ Host JSON exports thresholds and mappings, not calibration or all menu settings.
 Import validates the entire file before sending commands, temporarily disables
 output and checks each edit. The batch is not atomic: a failure can leave
 already-confirmed changes and disabled output. Inspect and retry deliberately.
-Only version-2 profiles containing thresholds and MIDI mappings are accepted.
+Only version-4 profiles containing the exact board `target`, numeric `layout`,
+and complete per-key thresholds/keyboard/MIDI mappings are accepted. Cross-board imports
+and earlier profile formats are rejected before any commands are sent.
 
 ## MIDI SysEx protocol
 
@@ -175,8 +194,8 @@ SysEx message types and can coexist without corrupting one another.
 Commands have one outstanding nonzero decimal ID; snapshots carry the latest
 ACK/result. Malformed IDs receive no ACK. See [commands and JSON](MIDI_PROTOCOL.md).
 
-The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines 1152-byte
-latest-only snapshots, at most one per 33 ms. GUI gaps are expected.
+The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines count-aware MTG3
+latest-only snapshots (Huntsman: at most one per 33 ms). GUI gaps are expected.
 After initial synchronization, framing/checksum errors fail the connection.
 Pinned `stream key THRESHOLD SESSION SENSOR` uses 20-byte HKL1 records and
 requires continuity; stream changes discard the previous unsent session.

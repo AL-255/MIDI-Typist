@@ -1,8 +1,9 @@
 # Building and testing MIDI-Typist from a fresh checkout
 
 Use `huntsman` for the complete physical keyboard or `simulator` for the
-SDK-free desktop reference. Only the Huntsman cross build needs Arm GNU and
-the pinned NXP components. For another keyboard/MCU, follow the
+SDK-free desktop reference. The Huntsman build uses Arm GNU and the pinned NXP
+components; the M1 HAL libraries use Arm GNU and the pinned Artery submodule.
+For another keyboard/MCU, follow the
 [porting guide](PORTING.md), including its board-manifest and lifecycle examples.
 
 ## Prerequisites
@@ -82,11 +83,41 @@ endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.
 
 The complete application builds without the updater, extraction or private
-device data. The 15 native suites pass. See [validation status](VALIDATION.md)
+device data. See [validation status](VALIDATION.md)
 for the hardware boundary. Newlib may emit linker warnings about unimplemented
 `_close`, `_lseek`, `_read` and `_write`; those functions are absent from the
 final linked image after garbage collection. MIDI SysEx debug output uses the
 application's USB transport, not libc file I/O.
+
+## MonsGeek M1 libraries
+
+These commands compile the real shared application with the M1's 82-key layout,
+test its board callbacks natively, and compile its HALs for Cortex-M4.
+They do not produce a flashable application or access a keyboard.
+
+```sh
+git submodule update --init third_party/artery
+cmake -S . -B build-m1-host -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-m1-host
+ctest --test-dir build-m1-host --output-on-failure
+cmake -S . -B build-m1-hal -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-m1-hal
+python tools/test_keyboard_boards.py
+python tools/test_m1_hal_arm.py build-m1-hal/m1_hal_audit.elf
+python tools/test_m1_usb_arm.py build-m1-hal/m1_usb_audit.elf
+```
+
+The ARM artifacts are `libm1_hal.a`, `libm1_board.a`, `libat32_sdk.a` and shared
+application objects, plus `libmidi_typist_services.a`. Native CTest passes an
+actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
+no M1 `.bin` to install. `m1_hal_audit.elf` and `m1_usb_audit.elf` have synthetic
+emulator-only memory maps and no boot header or vector table: neither is a flash image. Each test
+requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
+The USB audit covers the composite class/GUI path and guarded hardware startup,
+reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
+The SDK package selector
+enables AT32F405 family headers; it does not establish the physical chip's exact
+package/density. See [M1 contracts and verification limits](MONSGEEK_M1.md).
 
 ## Build provenance
 
@@ -168,8 +199,8 @@ plus Tk and Xvfb, then run:
 python3 tools/run_tests.py
 ```
 
-This configures/builds the native and complete `huntsman` targets, then runs
-19 independent audit jobs (including all 15 native CTest suites) with up to
+This configures/builds native tests, the complete `huntsman` target, and the M1
+host/ARM libraries, then runs 22 independent audit jobs with up to
 eight workers. It includes original-reference comparisons, linked ARM USB,
 optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated MIDI peers.
 The total deadline, including builds, is **300 seconds**; failures, missing
@@ -238,7 +269,7 @@ Only one GUI control session is supported. A new handshake replaces a previous
 owner; it is not an OS-level exclusive lock.
 
 If the GUI rejects telemetry, use the matching GUI from this checkout: the
-1152-byte layout is a fixed contract with no version field, and the device
+count-aware MTG3 layout requires SysEx version 3, and the device
 reports its build identity (`version`) for the record. If waiting for neutral,
 release every key; inspect threshold/raw values without repeatedly resetting
 the keyboard. A MIDI cleanup-pending indicator means the host has not yet

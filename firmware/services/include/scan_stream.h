@@ -2,11 +2,16 @@
 #define SCAN_STREAM_H
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
+#include "keyboard_telemetry.h"
+#include "defaults.h"
 #define SCAN_STREAM_KEY_SIZE 20u
-#define SCAN_STREAM_GUI_SIZE 1152u
+#define SCAN_STREAM_GUI_SIZE MT_GUI_SIZE(MT_KEY_CAPACITY,KEYBOARD_NKRO_REPORT_BYTES)
+#define SCAN_STREAM_BATCH_SIZE (MIDI_CONTROL_SAMPLE_BATCH * SCAN_STREAM_KEY_SIZE)
+#define SCAN_STREAM_PAYLOAD_SIZE (SCAN_STREAM_GUI_SIZE > SCAN_STREAM_BATCH_SIZE ? SCAN_STREAM_GUI_SIZE : SCAN_STREAM_BATCH_SIZE)
 void scan_stream_gui(void);
 bool scan_stream_gui_enabled(void);
-void scan_stream_gui_push(const uint8_t report[SCAN_STREAM_GUI_SIZE]);
+bool scan_stream_gui_push(const uint8_t *report,size_t size);
 void scan_stream_last_key(uint16_t threshold, uint32_t session, uint8_t sensor);
 /* GUI selects one sensor, streamed every scan without resampling. */
 void scan_stream_init(void);

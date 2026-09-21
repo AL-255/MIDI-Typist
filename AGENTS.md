@@ -43,6 +43,29 @@
   timing, sensor counts and host protocols. Update the porting guide when a
   public board contract changes, and check its examples against current headers.
 
+## Physical-key mapping contract
+
+- Every platform must provide a repository-owned default keyboard mapping
+  configuration, indexed by its physical key/sensor identity and layout. Do
+  not scatter default transmitted keycodes through scan, USB or GUI code.
+- Keep a distinct mapping step between physical key detection and outgoing
+  keyboard reports. Scan geometry, calibration, thresholds, physical labels
+  and MIDI note assignments must not change when a keyboard key is remapped.
+- The GUI must offer a keycode drop-down for each remappable key and verify
+  device ACK/readback. Device-local flash persistence, not a host background
+  process, makes the mapping survive unplug/replug. ACK alone is not proof
+  that a setting was saved.
+- Fn itself and all Fn-layer combinations/system controls remain immutable.
+  Resolve them from physical key identity before considering a user mapping.
+  Remapping a base-layer key must not move its Fn action or alter its label.
+- Support duplicate destinations without releasing a transmitted key while
+  another physical source still holds it. Mapping edits must release prior
+  outputs and require neutral before rearming; do not leave stale keycodes held.
+- Store mappings with the complete board/layout-bound configuration using
+  checked, atomic snapshots and verified storage ownership. Do not allocate
+  extra flash pages, truncate settings or overwrite factory data to make a new
+  mapping format fit. Validate capacity for every supported layout.
+
 ## Firmware and data boundaries
 
 - Define factory settings and tunable thresholds, timings, normalization,
@@ -53,6 +76,13 @@
 - Keep the original extraction read-only. Do not consult the broken sibling
   implementation or commit original firmware, disassembly, private device
   dumps, serial-number data or credentials.
+- Keep the external MonsGeek M1 firmware-recovery repository read-only too.
+  M1 device access is currently identity-only; HAL/application libraries and
+  the 82-key GUI preview are not a flashable M1 image. Require vendor ID2949, not a shared
+  USB PID, to identify an application. Never probe its destructive boot-entry
+  command. Do not enable M1 flashing or allocate profile pages without proving
+  its application/update and factory-calibration boundaries. Huntsman addresses
+  below are not permissions to write another platform.
 - Implement only the application. Preserve bootloader, primary settings and
   serial-number storage, factory/security data and secondary-ASIC firmware.
   Calibration and profile RESET may modify only their two documented storage
@@ -65,7 +95,8 @@
   Manual forced bootloader recovery is not a routine test strategy.
 - The GUI is the only supported PC application. Use versioned MIDI SysEx on the
   dedicated control cable; do not add serial interfaces or standalone device CLIs.
-- Use the pinned official NXP SDK sources for USB and peripheral integration.
+- Use pinned official vendor SDKs for USB and peripheral integration: NXP for
+  LPC55, Artery for AT32F405. Keep SDK selection out of shared application code.
 - Preserve build-time Git provenance: refresh it on incremental builds, mark
   dirty/unversioned sources honestly, and never substitute the host checkout's
   current commit for the connected firmware's identity.

@@ -38,15 +38,15 @@ class LatestOnlyTests(unittest.TestCase):
         from keyboard_capture import KeyDecoder, StreamError
         packet = struct.pack('<4sIIHBBH', b'HKL1', 42, 0, 3000, 5, 1, 3500)
         packet += struct.pack('<H', sum(struct.unpack('<9H', packet)) & 65535)
-        self.assertEqual(list(KeyDecoder(3500, 42).feed(packet)), [3000])
+        self.assertEqual(list(KeyDecoder(3500, 42,65).feed(packet)), [3000])
         for data, session in ((b'junk'+packet, 42), (packet, 43)):
             with self.assertRaises(StreamError):
-                list(KeyDecoder(3500, session).feed(data))
+                list(KeyDecoder(3500, session,65).feed(data))
 
     def test_only_current_host_profile(self):
         from keyboard_gui_model import validate_profile
-        for version in (0, 1, 3):
-            with self.assertRaisesRegex(ValueError, 'version 2'):
+        for version in (0, 1, 2, 3, 5):
+            with self.assertRaisesRegex(ValueError, 'version 4'):
                 validate_profile({'version':version, 'layout':'ansi', 'keys':[]})
 
 

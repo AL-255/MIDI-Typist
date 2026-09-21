@@ -5,7 +5,9 @@ selected board ports. A port is a firmware build, not a universal binary:
 MCU startup, USB descriptors, pins, scan transport, LEDs, flash ownership and
 updater entry must match the actual hardware.
 
-The supported physical port is the Razer Huntsman V3 Pro Mini/LPC5528.
+The complete supported physical port is the Razer Huntsman V3 Pro Mini/LPC5528.
+The [M1 backend](MONSGEEK_M1.md) provides HAL/application libraries and an
+82-key GUI preview, but no installable M1 image yet.
 The desktop synthetic port exercises a different layout and acquisition model;
 it is not evidence that another commercial keyboard is ready to flash.
 Use the [porting guide](PORTING.md) for a build-manifest pattern, a lifecycle
@@ -27,14 +29,21 @@ firmware/
     synthetic/
       board.cmake                native build without NXP or extraction
       include/ + src/            104-key/7-key reference port and CLI simulator
+    monsgeek_m1_v5_tmr/
+      board.cmake                native tests and ARM libraries, no flash image
+      include/ + src/            82-key wiring/layout, ADC scanner and SPI LED HALs
+  services/
+    include/ + src/              portable SysEx sessions and scan-stream queues
   platform/
-    nxp_lpc55/                   NXP USB/MIDI SysEx integration and silicon workarounds
+    nxp_lpc55/                   NXP USB integration and silicon workarounds
+    at32f405/                    official Artery driver configuration
 third_party/nxp/                 unmodified pinned official SDK components
+third_party/artery/              pinned official AT32F402/405 SDK submodule
 tools/                          host tools and offline hardware audits
 tests/                          native behavior and portability tests
 ```
 
-Both boards compile the same `MT_APP_SOURCES`. The `midi_typist_app`
+All board targets compile the same `MT_APP_SOURCES`. The `midi_typist_app`
 object target sees only `firmware/app/include`, standard C headers and its
 compile-time capacity definitions. A CTest architecture check rejects leaked
 board headers and hardware symbols. The SDK-free reference build independently
@@ -44,6 +53,12 @@ The NXP integration is selected by the Huntsman board, not by the application.
 Its existing USB descriptors, updater protocol, interrupt ownership and MCU
 initialization sequence remain hardware-specific. A different MCU uses its
 own vendor-supported stack; it need not implement an NXP compatibility shim.
+
+The GUI's `keyboard_boards.py` registry selects physical geometry and profile
+identity by the firmware build target. It reads the M1 key definitions directly
+from the same table compiled by C. A key count is a validation field, not a board
+identifier. Flashing adapters remain separate from live configuration backends;
+read-only M1 discovery does not imply a working custom USB application.
 
 ## Application ownership
 
@@ -97,7 +112,7 @@ before submission. Board code must not apply that global scale a second time.
 [keyboard_app.h](../firmware/app/include/keyboard_app.h) defines the lifecycle
 and storage hooks. Storage callbacks own erase sizes, slot addresses, record
 formats, device identity and bounds validation. The shared application requests
-load/save/clear operations; it cannot erase a flash address. Huntsman's MTP1 whole-profile
+load/save/clear operations; it cannot erase a flash address. Huntsman's MTP2 whole-profile
 serializer and two-page journal remain entirely inside its board directory.
 
 ## Scheduling and outputs
@@ -106,7 +121,8 @@ serializer and two-page journal remain entirely inside its board directory.
 board acquisition / DMA completion
   → canonical complete frame + layout + valid/ready state
   → keyboard_app_frame
-      → Schmitt + velocity → menu action → calibration → MIDI state
+      → Schmitt + velocity → physical/Fn routing → keyboard mapping → report
+      → menu action → calibration → MIDI state
   → keyboard_app_lights → board LED transfer
 
 owner loop/task
@@ -127,17 +143,27 @@ or taking immutable ownership; busy output is retried. A new board must
 implement the transport completion rules, not another note/keyboard queue.
 See [scheduling and FreeRTOS](SCHEDULING.md).
 
+Each board's `config/keymap.def` supplies default physical-key-to-keycode
+mapping through its layout descriptor. It changes normal keyboard destinations,
+not physical labels, sensor identity, fixed Fn actions or MIDI note assignments.
+The raw-key state owns one runtime usage per sensor. `cfg key` validates edits,
+releases output and requires neutral before rearming. The engine records outputs
+by physical source and rebuilds their union, so duplicate destinations release
+only when the last source releases. GUI dropdowns verify telemetry readback;
+Huntsman's whole-profile journal saves these mappings alongside calibration.
+
 ## Compatibility boundary
 
-The Huntsman port retains the 16-byte NKRO report, MIDI channel/packet encoding,
-GUI telemetry, HKG/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
-record format and flash limits. Its existing host tools remain board-specific:
-the GUI's physical drawing is ANSI Huntsman, not an inferred layout for an
-unknown keyboard. A port's diagnostic/telemetry framing is part of its host
-integration; shared `cfg` behavior is available regardless of transport.
+The Huntsman port uses a 30-byte NKRO report, MIDI channel/packet encoding,
+GUI telemetry, MTG3/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
+record format and flash limits. Shared MTG3 telemetry and SysEx sessions serve
+both board capacities; the GUI selects verified board geometry instead of
+inferring it from sensor count. Unknown targets are rejected. Firmware-update
+and flash-dump operations remain board-specific.
 
 Generic builds default to 128 sensor slots and a wider NKRO usage bitmap.
-The Huntsman selects 65 slots, its 204-byte LED frame and the existing HID
-usage limit. Up to 254 sensors fit the current opaque 8-bit ID/count interface;
-larger devices require a deliberate interface extension. USB descriptors must
+The Huntsman selects 65 slots, its 204-byte LED frame and HID usages through DF
+plus modifiers E0…E7. Up to 254 sensors fit the current opaque 8-bit ID/count interface;
+larger devices require a deliberate interface extension. MTG3 telemetry supports
+up to 128 sensors. USB descriptors must
 always match the selected report size.

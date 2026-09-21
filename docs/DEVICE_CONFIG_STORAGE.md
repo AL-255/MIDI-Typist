@@ -10,7 +10,7 @@ are also outside this writer.
 
 Each complete snapshot includes keyboard/MIDI mode, Jankó, lower-row mute,
 brightness, velocity start, root, scale, octave, output enable, committed
-trigger/rapid levels, and every sensor's thresholds, MIDI mapping and completed
+trigger/rapid levels, and every sensor's thresholds, keyboard and MIDI mappings, and completed
 calibration bounds. Held keys, sounding notes, wheels, sustain, velocities,
 editor previews and incomplete calibration are not saved.
 
@@ -32,7 +32,7 @@ First installation or two invalid/incompatible snapshots initializes defaults
 and automatically erases/programs/verifies a fresh snapshot in the owned tail
 area. One valid snapshot is sufficient for recovery; a bad peer never causes
 the good snapshot to be erased. Compatible application updates retain settings.
-Only the current MTP1 schema and matching layout are accepted. Unsupported
+Only the current MTP2 schema and matching layout are accepted. Unsupported
 records are invalid input, not migration sources; current valid saves survive
 application updates.
 
@@ -42,32 +42,43 @@ Save failures latch for the session, avoiding infinite retries and wear.
 
 ## Complete snapshot format
 
-One little-endian MTP1 record occupies one page.
+One little-endian MTP2 record occupies one page.
 
 | Offset | Field |
 | --- | --- |
-| 0 | Magic MTP1 |
-| 4 | Format 1 |
-| 5, 6 | Optical profile, sensor count |
-| 7 | Calibration present, 0/1 |
-| 8 | u32 whole-profile generation |
-| 12 | u32 schema identity 0x3150544d |
-| 16–28 | Thirteen global bytes (below) |
-| 29 | u32 calibration generation |
-| 33 | Up to 65 seven-byte sensor entries |
-| After last sensor through 507 | FF padding |
+| 0 | Magic MTP2 |
+| 4 | Optical profile; sensor count derived from the board layout |
+| 5 | Calibration present, 0/1 |
+| 6 | u32 whole-profile generation |
+| 10 | u32 calibration generation |
+| 14–18 | Thirteen packed global fields (below); high four bits of byte 18 are 1 |
+| 19 | Packed sensor bitstream, in scan order |
+| After last sensor through 507 | All unused bits are 1 |
 | 508 | CRC-32 of bytes 0…507 |
 
 Globals: performance mode, Jankó, lower mute, brightness (0…19), velocity start
-(1…10), root (0…11), scale ID, signed octave (−10…10), output enable, saved
+(1…10), root (0…11), scale ID, octave + 10 (0…20), output enable, saved
 actuation, saved rapid, rapid enable and lock.
+Their respective bit widths are `1,1,1,5,4,4,4,5,1,4,4,1,1`.
+Fields are packed least-significant bit first, starting at byte 14.
 
-Sensor entries: two packed 12-bit thresholds in three bytes, two packed 12-bit
-calibration endpoints in three bytes, then a MIDI mapping byte (0…127 or 255).
-Samples 1…4096 encode as value minus one; first/second values occupy bits
-0…11/12…23 of a little-endian 24-bit pair. Thresholds satisfy press < release
-< 4096; calibration lower/upper have at least 512 counts of separation.
-Absent calibration uses three zero bytes. Reserved MIDI controls are unmapped.
+Each sensor stores two ordered pairs, each in 23 bits: thresholds then
+calibration endpoints. For `1 <= a < b <= 4096`, encode the pair losslessly as
+`(b-1)*(b-2)/2 + a-1`. Threshold release must be below 4096; calibration span
+must be at least 512. Absent calibration uses 23 zero bits.
+
+Mapping fields follow, according to immutable physical role:
+
+- Fn: no mapping bits; keyboard disabled and MIDI unmapped implicitly.
+- Six MIDI controls (LCtrl, LGUI, LAlt, RCtrl, RAlt, Space): an eight-bit
+  keyboard usage; MIDI remains unmapped.
+- Other keys: 15 bits encoding `keyboard_index*129 + note_index`.
+  Keyboard index is 0 for disabled, otherwise usage minus 3 (usages 04…E7).
+  Note index is 0…127 or 128 for unmapped.
+
+Role selection never uses the user mapping. Including header and CRC, ANSI,
+ISO and JIS require 481, 489 and 512 bytes respectively. No endpoint precision
+or settings are discarded, and no additional flash pages are reserved.
 
 ## Atomic replacement and controller safety
 
@@ -105,8 +116,8 @@ a fresh valid scan. Its ACK confirms erase, not the neutral gate. Neither
 path touches Razer data. Recover deleted calibration by recalibrating or using
 a private backup.
 
-GUI offsets 1144…1147 report valid/pending/fault flags, slot and low 16 bits of
-whole-profile generation; 1136/1140 retain calibration generation/error.
+MTG3 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
+reports the full 32-bit profile generation, and 64/68 calibration generation/error.
 See [telemetry](TELEMETRY.md). GUI flashing preserves compatible records by default; confirmed Fn+R
 explicitly clears them. Stock firmware may
 reclaim this custom tail space.
@@ -116,7 +127,7 @@ reclaim this custom tail space.
 Native tests cover all layouts, packed fields, unchanged-state wear,
 neutral debounce, settings/calibration preservation, corruption, controller
 faults and all 512 byte-cut points in an inactive-page write.
-Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity, reboot,
+Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity/keycodes, reboot,
 blank-ECC initialization, corrupt-page recovery and unsupported-schema rejection.
 The controller model rejects commands outside the tail pages and compares
 erase/program transactions against executed original code, separately

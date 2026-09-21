@@ -15,7 +15,7 @@ typedef struct {
     void (*log)(const char *message);
 } keyboard_app_ops_t;
 typedef bool (*keyboard_send_fn)(const keyboard_report_t *report);
-typedef struct {
+typedef struct keyboard_app {
     /* Separate allocations permit MCU-specific RAM placement without adding
      * section attributes or device headers to shared application code. */
     keyboard_raw_t *raw;
@@ -26,6 +26,12 @@ typedef struct {
     keyboard_report_t sent;
     uint32_t last_frame,last_report;
     bool sent_valid,loaded,reset_pending,frame_valid;
+    /* Optional board system controls. Input runs after raw acquisition and
+     * before the shared Fn menu; true consumes this frame's menu input.
+     * Lighting runs last. Serialized with every other application method. */
+    bool (*system_input)(struct keyboard_app *app,void *context,uint32_t now);
+    void (*system_lights)(struct keyboard_app *app,void *context,uint8_t *frame,uint32_t now);
+    void *system_context;
 } keyboard_app_t;
 
 /* All methods run serially from one cooperative loop or one RTOS owner task.

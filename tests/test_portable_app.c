@@ -175,6 +175,15 @@ static void commands(void)
     assert(result==1 && midi.mapping[103]==70);
     assert(keyboard_app_command(&app,"cfg midi 13 3 70",now,true,&ack,&result));
     assert(result==2 && midi.mapping[SYN_SPACE]==255);
+    assert(keyboard_app_command(&app,"cfg key 14 103 135",now,true,&ack,&result));
+    assert(result==1 && raw.keycode[103]==135 && !raw.armed);
+    const char *badmap[]={"cfg key 14","cfg key 14 103","cfg key 14 104 4",
+                         "cfg key 14 103 3","cfg key 14 103 232","cfg key 14 103 256",
+                         "cfg key 14 103 4294967296","cfg key 14 103 4 junk"};
+    for(unsigned i=0;i<sizeof(badmap)/sizeof(badmap[0]);++i) {
+        assert(keyboard_app_command(&app,badmap[i],now,true,&ack,&result));
+        assert(result==2 && raw.keycode[103]==135);
+    }
     const char *bad[]={"cfg set 14","cfg set 14 3","cfg set 14 3 3000",
                       "cfg set 14 104 3000 3200","cfg set 14 103 3200 3000",
                       "cfg all 14 3000 4096","cfg all 14 3000 3200 x"};

@@ -9,10 +9,13 @@
 #define BATCH MIDI_CONTROL_SAMPLE_BATCH
 _Static_assert(BATCH * SCAN_STREAM_KEY_SIZE <= MT_SYSEX_MAX_PAYLOAD, "capture batch fits SysEx");
 _Static_assert(RECORDS * SCAN_STREAM_KEY_SIZE >= SCAN_STREAM_GUI_SIZE, "shared buffer fits snapshot");
+_Static_assert(SCAN_STREAM_GUI_SIZE <= MT_SYSEX_MAX_PAYLOAD,"snapshot fits SysEx");
 enum { OFF, GUI, KEY, DUMP };
 static uint8_t s_records[RECORDS*SCAN_STREAM_KEY_SIZE];
-static uint8_t s_packet[SCAN_STREAM_GUI_SIZE];
+static uint8_t s_packet[SCAN_STREAM_PAYLOAD_SIZE];
+_Static_assert(SCAN_STREAM_PAYLOAD_SIZE>=128u,"payload buffer fits flash response");
 static unsigned s_head,s_tail,s_count,s_mode;
+static size_t s_gui_size;
 static uint32_t s_sequence,s_dropped,s_session;
 static bool s_enabled,s_first,s_fault,s_fault_sent;
 static volatile bool s_reset;
@@ -29,10 +32,12 @@ void scan_stream_stop(void) { s_enabled=false;s_mode=OFF;s_dropped+=s_count;s_he
 void scan_stream_start(void) { s_enabled=s_mode!=OFF && midi_control_ready(); }
 void scan_stream_gui(void) { scan_stream_stop();s_mode=GUI;scan_stream_start(); }
 bool scan_stream_gui_enabled(void) { return s_mode==GUI && s_enabled; }
-void scan_stream_gui_push(const uint8_t report[SCAN_STREAM_GUI_SIZE])
+bool scan_stream_gui_push(const uint8_t *report,size_t size)
 {
-    if(!scan_stream_gui_enabled() || !midi_control_ready())return;
-    memcpy(s_records,report,SCAN_STREAM_GUI_SIZE);s_count=1;
+    if(!scan_stream_gui_enabled() || !midi_control_ready() || !report ||
+       size<MT_GUI_HEADER_SIZE+4u || size>SCAN_STREAM_GUI_SIZE || size%4u ||
+       memcmp(report,"MTG3",4) || (report[4]|(unsigned)report[5]<<8)!=size)return false;
+    memcpy(s_records,report,size);s_gui_size=size;s_count=1;return true;
 }
 void scan_stream_last_key(uint16_t threshold,uint32_t session,uint8_t sensor)
 {
@@ -80,7 +85,7 @@ bool scan_stream_service(void)
     }
     if(!s_count)return false;
     unsigned count=s_mode==KEY?(s_count<BATCH?s_count:BATCH):1;
-    unsigned size=s_mode==KEY?SCAN_STREAM_KEY_SIZE:s_mode==GUI?SCAN_STREAM_GUI_SIZE:128u;
+    unsigned size=s_mode==KEY?SCAN_STREAM_KEY_SIZE:s_mode==GUI?s_gui_size:128u;
     for(unsigned i=0;i<count;++i)
         memcpy(s_packet+i*size,s_records+(s_mode==KEY?(s_tail+i)%RECORDS:0)*size,size);
     if(!midi_control_publish(s_mode==KEY?MT_SAMPLES:s_mode==GUI?MT_SNAPSHOT:MT_DUMP,s_packet,count*size))return false;

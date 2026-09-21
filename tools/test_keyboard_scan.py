@@ -10,7 +10,7 @@ from test_optical_key import State as KeyState, Config
 
 
 class Engine(C.Structure):
-    _fields_ = [('config', Editor), ('report', C.c_uint8 * 16)] + [
+    _fields_ = [('config', Editor), ('report', C.c_uint8 * 30)] + [
         (name, C.c_uint8 * 256) for name in ('pressed', 'fn_at_press', 'modifiers', 'usages')]
 
 

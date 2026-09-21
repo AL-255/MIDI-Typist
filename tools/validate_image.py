@@ -105,8 +105,8 @@ def validate_usb_descriptors(symbols: dict[str, bytes]) -> None:
     for interface, (class_code, addresses) in expected.items():
         if interfaces[interface][0] != class_code or endpoints[interface] != addresses:
             raise SystemExit(f"USB interface {interface} does not match composite contract")
-    if b"\x95\x70\x81\x02" not in keyboard_report:
-        raise SystemExit("NKRO HID report does not contain its 112-bit bitmap")
+    if b"\x19\x04\x29\xdf" not in keyboard_report or b"\x95\xdc\x81\x02\x75\x01\x95\x04\x81\x01" not in keyboard_report:
+        raise SystemExit("NKRO HID report must have usages 04..DF and four padding bits")
     if b"\x95\x5a\x09\x01\xb1\x02" not in updater_report:
         raise SystemExit("updater HID report is not a 90-byte feature report")
     for index in range(8):

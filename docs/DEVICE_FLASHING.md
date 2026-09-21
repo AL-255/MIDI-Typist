@@ -6,8 +6,11 @@ to detect a Razer keyboard or its bootloader.
 
 ## Choose a keyboard and destination
 
-The model dropdown currently contains **Razer Huntsman Pro Mini V3** (the
-Huntsman V3 Pro Mini, RZ03-0499). Detection shows product, reported serial,
+The model dropdown offers **Razer Huntsman Pro Mini V3** (the
+Huntsman V3 Pro Mini, RZ03-0499) and **MonsGeek M1 V5 TMR (identity only)**.
+Only Huntsman supports flashing; the M1 option performs
+[read-only factory identification](MONSGEEK_M1.md) with all flash actions disabled.
+The conversion instructions below apply to Huntsman. Detection shows product, reported serial,
 software build when available, USB VID/PID, physical port, speed and USB revision.
 The firmware identity includes its embedded full Git commit and clean/dirty
 state. Use that commit when identifying a build; a dirty build also contains
@@ -71,6 +74,9 @@ restoring the supplied application, not rewriting every factory region.
 view in `keyboard_flash_tab.py` only renders these contracts. Register future
 models in `adapters()` and implement their discovery, identity, image validation,
 allowed transitions and updater boundary in a separate adapter.
+Each adapter declares its inspectable modes; remembered image paths are scoped
+to the model and destination. `flash_monsgeek.py` verifies M1 ID2949 through
+vendor HID without implementing any bootloader-entry or write command.
 
 `flash_huntsman.py` owns Linux detection and the Razer-specific application
 updater. Before any write it revalidates the device token and confirmed image

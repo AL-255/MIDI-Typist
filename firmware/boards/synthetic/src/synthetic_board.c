@@ -10,6 +10,11 @@
 
 static keyboard_action_t actions[SYN_COUNT][2];
 static const uint16_t levels[11]=SYNTHETIC_ACTUATION_LEVELS;
+static const uint8_t keymap[256]={
+#define KEYMAP(key,usage) [key]=usage,
+#include "../config/keymap.def"
+#undef KEYMAP
+};
 static keyboard_layout_t layout;
 static keyboard_layout_t small_layout;
 static uint8_t key_id(unsigned sensor) { return (sensor*73u+19u)%251u+1u; }
@@ -29,7 +34,7 @@ void synthetic_board_init(void)
     actions[SYN_TAB][1].type=0x11; actions[SYN_TAB][1].arg0=0x70;
     actions[SYN_CAPS][1].type=0x11; actions[SYN_CAPS][1].arg0=0x71;
     layout=(keyboard_layout_t){SYN_COUNT,key_id(SYN_FN),key_id(SYN_TAB),key_id(SYN_CAPS),
-                              key_id(SYN_ESC),2000,levels,levels,false};
+                              key_id(SYN_ESC),2000,levels,levels,keymap};
     small_layout=layout; small_layout.count=7;
 }
 const keyboard_layout_t *keyboard_layout(uint8_t p) { return p==SYN_PROFILE?&layout:p==43?&small_layout:NULL; }

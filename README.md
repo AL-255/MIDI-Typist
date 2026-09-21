@@ -13,6 +13,12 @@ bootloader and computer-initiated updater. A synthetic 104-key desktop port
 demonstrates the shared application without NXP dependencies. Other hardware
 requires a board port, not this binary.
 
+The [MonsGeek M1 V5 TMR backend](docs/MONSGEEK_M1.md) provides official-SDK
+scan/lighting/radio/battery/power HAL components, an 82-key application library, offline-tested
+transport/power policies and a matching GUI preview.
+Connected M1 device access is read-only identification; there is no flashable
+M1 application yet. Each hardware backend builds separately—not one universal binary.
+
 ## Use the keyboard
 
 - NKRO typing, right-side arrows and a green-hinted Fn shortcut layer.
@@ -43,10 +49,14 @@ build-gui-venv/bin/python tools/keyboard_gui.py          # auto-detect the MIDI 
 build-gui-venv/bin/python tools/keyboard_gui.py --demo   # preview without hardware
 ```
 
-The ANSI GUI edits thresholds/mappings, displays velocities, starts calibration,
+The board-aware GUI edits thresholds/mappings, displays velocities, starts calibration,
 exports host JSON profiles and flashes application images after confirmation.
+It provides per-key keyboard keycode dropdowns with on-device persistence.
+Fn combinations remain fixed; platform defaults live in each board's
+`config/keymap.def`.
 Use the performance MIDI port in your DAW and the separate control port in the GUI.
 Only one GUI session may own control. See [GUI operation](docs/KEYBOARD_GUI.md).
+Preview the M1's 75% layout without hardware with `--demo --board MG-M1V5TMR`.
 
 ## Build from scratch
 

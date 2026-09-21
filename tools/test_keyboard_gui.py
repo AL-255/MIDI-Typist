@@ -13,35 +13,37 @@ import tempfile
 import threading
 import time
 import unittest
-from keyboard_gui_model import MAGIC, parse_build, SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_gui_model import MAGIC, parse_build, frame_size, HEADER_SIZE, RECORD_SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_boards import get_board, DEFAULT_TARGET
 from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
 
 
 def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
-           velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None):
-    data = bytearray(SIZE)
-    struct.pack_into('<4sH6B5I',data,0,MAGIC,SIZE,velocity_start,1,61,flags,result,0,sequence,0,ack,0,0)
-    raw_values = raw if raw is not None else [3900]*61
-    press_values = press or [3500]*61
-    for offset,values in ((32,raw_values),(162,press_values),(292,release or [3600]*61)):
-        struct.pack_into('<61H',data,offset,*values)
-    bits = 0
-    for i,value in enumerate(raw_values):
-        if value < press_values[i]: bits |= 1 << i
-    data[422:431] = bits.to_bytes(9,'little')
-    struct.pack_into('<61f',data,447,*(velocity or [0]*61))
-    struct.pack_into('<61I',data,707,*(captures or [0]*61))
-    data[967:1028] = bytes(states or [1]*61)
-    struct.pack_into('<BbBB',data,1032,performance_mode,octave,1,0)
-    data[1036:1097] = bytes(mapping or [255]*61)
-    data[1112]=calibration_state
-    data[1114]=255; data[1115]=4 | int(1 <= calibration_state <= 5)
-    struct.pack_into('<I',data,SIZE-4,sum(struct.unpack_from(f'<{(SIZE-4)//2}H',data)))
+           velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None,
+           count=61, profile=1, hid_bytes=30, sample_hz=8000, keycodes=None):
+    size = frame_size(count,hid_bytes)
+    data = bytearray(size)
+    struct.pack_into('<4sH6B5I',data,0,MAGIC,size,profile,count,flags,result,0,velocity_start,sequence,0,ack,0,0)
+    struct.pack_into('<IBBbBB',data,32,sample_hz,hid_bytes,performance_mode,octave,1,0)
+    struct.pack_into('<7B',data,41,calibration_state,0,255,4 | int(1 <= calibration_state <= 5),0,0,255)
+    struct.pack_into('<H',data,76,HEADER_SIZE)
+    raw_values = raw if raw is not None else [3900]*count
+    press_values = press or [3500]*count
+    release_values = release or [3600]*count
+    velocity_values = velocity or [0]*count
+    capture_values = captures or [0]*count
+    state_values = states or [1]*count
+    mapping_values = mapping or [255]*count
+    for i in range(count):
+        state = state_values[i] | (int(raw_values[i]<press_values[i])<<4)
+        struct.pack_into('<HHHfIBBB',data,HEADER_SIZE+i*RECORD_SIZE,raw_values[i],press_values[i],
+                         release_values[i],velocity_values[i],capture_values[i],state,mapping_values[i],
+                         keycodes[i] if keycodes is not None else 0)
+    struct.pack_into('<I',data,size-4,sum(struct.unpack_from(f'<{(size-4)//2}H',data)))
     return bytes(data)
 
-
 class Device(threading.Thread):
-    def __init__(self,fd=None,reject=False,mismatch=False,silent=False,key_rate=.000125):
+    def __init__(self,fd=None,reject=False,mismatch=False,silent=False,key_rate=.000125,board_target=DEFAULT_TARGET):
         super().__init__(daemon=True)
         self.fd,self.reject,self.mismatch,self.silent = fd,reject,mismatch,silent
         self.inbox = queue.Queue()
@@ -50,16 +52,18 @@ class Device(threading.Thread):
         self.stop_event = threading.Event()
         self.commands = []   # configuration commands (cfg ...)
         self.queries = []    # console queries such as `version`
-        self.press,self.release = [3500]*61,[3600]*61
-        self.mapping = [255]*61
+        self.board=get_board(board_target)
+        self.press,self.release = [3500]*self.board.count,[3600]*self.board.count
+        self.mapping = [255]*self.board.count
+        self.keycodes = list(self.board.default_keycodes())
         self.flags,self.ack,self.result,self.sequence = 7,0,0,0
         self.error = None
         self.calibration_state = 0
-        self.build = 'v0.1.0-RZ03-0499 git='+'a'*40+' state=dirty'
-        self.raw = None  # optional 61-value override for the next snapshots
+        self.build = 'v0.1.0-'+board_target+' git='+'a'*40+' state=dirty'
+        self.raw = None  # optional board-sized override for the next snapshots
         self.velocity_start = 1
         self.performance_mode = 0
-        self.stream_mode = 'gui'       # 'gui' HKG packets or 'key' HKL1 records
+        self.stream_mode = 'gui'       # 'gui' MTG3 packets or 'key' HKL1 records
         self.key_mode = None           # (session, threshold, sensor) while in key mode
         self.key_seq = 0; self.key_first = True
         self.key_rate = key_rate       # seconds between HKL1 records (8 ksps default)
@@ -105,7 +109,10 @@ class Device(threading.Thread):
                             elif fields[1] == 'all':
                                 if self.reject: self.result = 2
                                 elif not self.mismatch:
-                                    self.press = [int(fields[3])]*61; self.release = [int(fields[4])]*61
+                                    self.press = [int(fields[3])]*self.board.count; self.release = [int(fields[4])]*self.board.count
+                            elif fields[1] == 'key':
+                                if self.reject: self.result = 2
+                                elif not self.mismatch: self.keycodes[int(fields[3])] = int(fields[4])
                             elif fields[1] == 'midi':
                                 if self.reject: self.result = 2
                                 elif not self.mismatch: self.mapping[int(fields[3])] = int(fields[4])
@@ -126,10 +133,12 @@ class Device(threading.Thread):
                         self.emit(sx.SAMPLES,frame)
                         self.key_seq += 1; self.key_first = False; last = time.monotonic()
                     elif self.stream_mode == 'gui' and time.monotonic()-last > .03:
-                        self.emit(sx.SNAPSHOT,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,
+                        self.emit(sx.SNAPSHOT,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,keycodes=self.keycodes,
                                                calibration_state=self.calibration_state,raw=self.raw,
                                                velocity_start=self.velocity_start,performance_mode=self.performance_mode,
-                                               states=[9,9]+[1]*59 if self.calibration_state==3 else None))
+                                               states=[9,9]+[1]*(self.board.count-2) if self.calibration_state==3 else None,
+                                               count=self.board.count,profile=self.board.profile,
+                                               hid_bytes=self.board.hid_bytes,sample_hz=self.board.sample_hz))
                         self.sequence += 1; last = time.monotonic()
         except Exception as error: self.error = error
 
@@ -178,19 +187,19 @@ class Tests(unittest.TestCase):
         s=decode(packet())
         self.assertEqual((s.calibration_state,s.calibration_flags,s.calibration_selected),(0,4,255))
         b=bytearray(packet())
-        struct.pack_into('<4BHH',b,1112,3,1,32,5,500,4000)
-        b[1120]=1
-        struct.pack_into('<HH',b,1130,4000,1000)
+        struct.pack_into('<4B',b,41,3,1,32,5)
+        struct.pack_into('<4H',b,56,500,4000,4000,1000)
+        b[HEADER_SIZE+14] |= 32
         def checksum(data):
             struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
             return data
         s=decode(checksum(b)); self.assertTrue(s.calibration_done[0]); self.assertEqual(s.calibration_hold,500)
-        for offset,value in ((1112,9),(1113,2),(1114,61),(1115,4),(1128,128),(1129,5),(1134,1),(1144,8),(1145,2)):
+        for offset,value in ((41,9),(42,2),(43,61),(44,4),(HEADER_SIZE+14,128),(45,5),(78,1),(46,8),(47,2)):
             bad=bytearray(b); bad[offset]=value
             with self.assertRaises(ValueError): decode(checksum(bad))
         parallel=bytearray(packet(calibration_state=3,states=[8,8]+[0]*59))
         s=decode(parallel); self.assertEqual(s.velocity_state[:3],(8,8,0))
-        parallel[1112]=0; parallel[1115]=4
+        parallel[41]=0; parallel[44]=4
         with self.assertRaisesRegex(ValueError,'hold bitmap'): decode(checksum(parallel))
         with self.assertRaisesRegex(ValueError,'hold bitmap'): decode(packet(states=[8]+[0]*60))
 
@@ -205,9 +214,9 @@ class Tests(unittest.TestCase):
         s=decode(packet(mapping=mapping,performance_mode=1,octave=-2))
         self.assertEqual((s.performance_mode,s.octave,s.midi_mapping[32]),(1,-2,60))
         p=profile_from_snapshot(s)
-        self.assertEqual(p['version'],2)
+        self.assertEqual(p['version'],4)
         validate_profile(p)
-        with self.assertRaisesRegex(ValueError,'version 2'): validate_profile({**p,'version':1})
+        with self.assertRaisesRegex(ValueError,'version 4'): validate_profile({**p,'version':1})
         for key in p['keys']:
             if key['label'] in ('Fn','LCt','LGu','LAl','RAl','RCt','Spc'):
                 key['midi']=60
@@ -215,10 +224,37 @@ class Tests(unittest.TestCase):
                 key['midi']=255
         p['keys'][32]['midi']=128
         with self.assertRaises(ValueError): validate_profile(p)
-        for offset,value in ((1032,2),(1033,11),(1034,2),(1035,2),(1036,128),(1101,1),(1112,1)):
+        for offset,value in ((37,2),(38,11),(39,2),(40,2),(HEADER_SIZE+15,128),(78,1),(41,1)):
             bad=bytearray(packet()); bad[offset]=value
             struct.pack_into('<I',bad,len(bad)-4,sum(struct.unpack_from(f'<{(len(bad)-4)//2}H',bad)))
             with self.assertRaises(ValueError): decode(bad)
+
+    def test_keyboard_mapping(self):
+        from keyboard_keycodes import USAGES, keycode_name, parse_keycode
+        for usage in USAGES:self.assertEqual(parse_keycode(keycode_name(usage)),usage)
+        for bad in (True,1,3,232,-1,None):
+            with self.assertRaises(ValueError):keycode_name(bad)
+        board=get_board();codes=board.default_keycodes()
+        profile=profile_from_snapshot(decode(packet(keycodes=codes)))
+        self.assertEqual(tuple(k['keyboard'] for k in profile['keys']),codes)
+        for key in profile['keys']:
+            if key['label']=='Fn':
+                key['keyboard']=4
+                with self.assertRaisesRegex(ValueError,'Fn cannot'):validate_profile(profile)
+                key['keyboard']=0
+        for bad in (True,1,3,232,-1,None):
+            profile['keys'][32]['keyboard']=bad
+            with self.assertRaises(ValueError):validate_profile(profile)
+        for mismatch in (False,True):
+            resources=self.transport(mismatch=mismatch);_,_,_,connection=resources
+            try:
+                until(lambda:connection.connected)
+                connection.submit('key',32,0x87)
+                if mismatch:
+                    until(lambda:not connection.is_alive())
+                    self.assertTrue(any('mapping readback' in x for x in list(connection.events.queue)))
+                else:until(lambda:connection.snapshot()[1].keyboard_mapping[32]==0x87)
+            finally:self.cleanup(*resources)
 
     def test_midi_transport(self):
         resources=self.transport(); _,_,device,connection=resources

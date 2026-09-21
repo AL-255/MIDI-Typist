@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone ANSI keyboard monitor and per-key Schmitt configuration GUI."""
+"""Multi-board keyboard monitor and per-key Schmitt configuration GUI."""
 from firmware_defaults import DEFAULTS as D
 import argparse
 from collections import deque
@@ -12,12 +12,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
-from keyboard_gui_transport import Connection, find_midi_device, USB_VENDOR_ID, USB_PRODUCT_ID
+from keyboard_gui_transport import Connection, find_midi_device
 from midi_backend import control_ports
+from keyboard_keycodes import CHOICES, keycode_name, parse_keycode
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
 from keyboard_flash_tab import FlashTab
 import gui_fonts
 from gui_widgets import ScrollArea
+from keyboard_boards import get_board, boards, DEFAULT_TARGET
 
 AXIS_W = 34  # minimum left gutter for the bottom plot's raw-value axis
 # Fn+Tab (MIDI) trigger point: level 1 is the velocity window's bottom-out
@@ -29,13 +31,14 @@ VELOCITY_STARTS = [f'{level} — {(level-1)*100//9}%' for level in range(1,11)]
 
 
 class App:
-    def __init__(self,root,device='auto',demo=False):
+    def __init__(self,root,device='auto',demo=False,board_target=DEFAULT_TARGET):
         self.root,self.demo = root,demo
         self.connection = None
         self.snapshot = None
         self.device_build = None  # build identity reported by the connected device
-        self.selected = 32
-        self.keys = ansi_geometry()
+        self.board = get_board(board_target)
+        self.keys = self.board.keys
+        self.selected = next(k.sensor for k in self.keys if k.label=='A')
         self.items = {}
         self.titles = {}
         self.history = deque(maxlen=180)
@@ -47,7 +50,7 @@ class App:
         self.last_sequence = None
         self.initial_fields = False
         self.flashing = False           # a worker thread owns the device
-        root.title('Huntsman • Keyboard configuration')
+        root.title('MIDI-Typist • '+self.board.name)
         # Fit the screen, but never below the size at which the page still
         # shows its keyboard, settings row and footer without clipping.
         width = min(1180,max(900,root.winfo_screenwidth()-80))
@@ -86,7 +89,8 @@ class App:
         self.notebook.add(outer,text='  Keyboard configuration  ')
         self._page_wrap = 0
         outer.bind('<Configure>',self._wrap_page)
-        ttk.Label(outer,text='HUNTSMAN  /  KEYBOARD',style='Title.TLabel').pack(anchor='w')
+        self.board_title = tk.StringVar(value=self.board.name+' / KEYBOARD')
+        ttk.Label(outer,textvariable=self.board_title,style='Title.TLabel').pack(anchor='w')
         ttk.Label(outer,text='Raw Schmitt thresholds • press below the lower value, release above the upper value').pack(anchor='w',pady=(3,12))
         bar = ttk.Frame(outer); bar.pack(fill='x')
         self.device = tk.StringVar(value=device)
@@ -105,10 +109,10 @@ class App:
         self.load_button.pack(side='right',padx=3)
         self.status = tk.StringVar(value=('DEMO — no device access' if demo else
             'Disconnected — press Connect to use the detected device' if device else
-            f'Disconnected — no {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x} MIDI control device detected; click Detect'))
+            'Disconnected — no MIDI-Typist control port detected; click Detect'))
         self.status_label = ttk.Label(outer,textvariable=self.status,wraplength=1100)
         self.status_label.pack(anchor='w',pady=(12,4))
-        self.canvas = tk.Canvas(outer,height=270,bg='#101820',highlightthickness=0)
+        self.canvas = tk.Canvas(outer,height=int(self.board.height*52+10),bg='#101820',highlightthickness=0)
         self.canvas.pack(fill='x'); self.canvas.bind('<Configure>',lambda _:self.draw())
         ttk.Label(outer,text='Orange = sensor down   •   Cyan = selected   •   Numbers = raw / device velocity (0–1)').pack(anchor='w',pady=(0,12))
         calbar = ttk.Frame(outer); calbar.pack(fill='x',pady=(0,6))
@@ -145,6 +149,15 @@ class App:
         self.apply_button.pack(side='left')
         self.apply_all_button = ttk.Button(buttons,text='Apply thresholds to all keys',command=self.apply_all)
         self.apply_all_button.pack(side='left',padx=(6,0))
+        key_row = ttk.Frame(panel); key_row.pack(anchor='w',pady=3)
+        ttk.Label(key_row,text='Keyboard: ').pack(side='left')
+        self.keyboard_code = tk.StringVar(value=CHOICES[0])
+        self.keyboard_entry = ttk.Combobox(key_row,textvariable=self.keyboard_code,
+                                          values=CHOICES,state='readonly',width=24)
+        self.keyboard_entry.pack(side='left')
+        self.keyboard_button = ttk.Button(key_row,text='Apply keycode',command=self.apply_keyboard)
+        self.keyboard_button.pack(side='left',padx=6)
+        ttk.Label(panel,text='Base layer only. Physical labels and Fn combinations stay fixed.').pack(anchor='w')
         midi_row = ttk.Frame(panel); midi_row.pack(anchor='w',pady=3)
         ttk.Label(midi_row,text='MIDI note: ').pack(side='left')
         self.midi_note = tk.StringVar(value='Off')
@@ -205,7 +218,7 @@ class App:
 
     def draw(self):
         self.canvas.delete('all'); self.items.clear(); self.titles.clear()
-        unit = max(50,(self.canvas.winfo_width()-4)/15)
+        unit = max(1,(self.canvas.winfo_width()-4)/self.board.width)
         height = 52
         for key in self.keys:
             x,y = key.x*unit+2,key.y*height+2
@@ -219,14 +232,28 @@ class App:
             self.canvas.tag_bind(tag,'<Button-1>',lambda _,i=key.sensor:self.select(i))
         self.paint()
 
+    def set_board(self,target):
+        """Select geometry from verified build identity, never from key count."""
+        board=get_board(target)
+        if board.target==self.board.target:return
+        self.board=board; self.keys=board.keys
+        self.selected=next(k.sensor for k in self.keys if k.label=='A')
+        self.snapshot=None; self.initial_fields=False; self.last_sequence=None
+        self.history.clear(); self.capture.reset()
+        self.board_title.set(board.name+' / KEYBOARD')
+        self.root.title('MIDI-Typist • '+board.name)
+        self.canvas.configure(height=int(board.height*52+10))
+        self.draw()
+
     def select(self,index):
         self.selected = index; self.history.clear(); self.capture.reset()
         label = next(k.label for k in self.keys if k.sensor == index)
         self.key_title.set(f'{label}  /  sensor {index}')
-        if self.snapshot and self.snapshot.count == 61:
+        if self.board.accepts(self.snapshot):
             self.press.set(str(self.snapshot.press[index])); self.release.set(str(self.snapshot.release[index]))
             self.trigger_point.set(self.trigger_choice(self.snapshot.press[index]))
             self.midi_note.set(note_name(self.snapshot.midi_mapping[index]))
+            self.keyboard_code.set(keycode_name(self.snapshot.keyboard_mapping[index]))
         self.paint()
 
     @staticmethod
@@ -240,7 +267,8 @@ class App:
         return bool(not self.demo and self.connection and self.connection.connected and self.snapshot and
                     self.connection.stream_mode == 'gui' and
                     (allow_calibration or not self.snapshot.calibration_flags & 1) and
-                    self.snapshot.profile == 1 and self.snapshot.count == 61 and
+                    self.board.accepts(self.snapshot) and
+                    self.connection.build_target == self.board.target and
                     self.connection.snapshot() and time.monotonic()-self.connection.snapshot()[0] < 1)
 
     def toggle_hold(self):
@@ -249,20 +277,22 @@ class App:
     def sync_hold_stream(self):
         """Engage/disengage the full-rate per-key stream to match hold mode."""
         connection = self.connection
-        if self.demo or not connection or not connection.is_alive(): return
+        if (self.demo or not connection or not connection.is_alive() or
+                connection.build_target != self.board.target or
+                not self.board.accepts(self.snapshot)): return
         calibration = bool(self.snapshot and self.snapshot.calibration_flags & 1)
         if self.hold_mode.get() and connection.connected and not calibration:
             if connection.stream_mode != 'key' or connection.key_sensor != self.selected:
                 self.capture.reset()
                 self.capture_rate = 0.0; self._rate_count = 0; self._rate_at = None
-                threshold = self.snapshot.press[self.selected] if self.snapshot and self.snapshot.count == 61 else D['RAW_DEFAULT_PRESS']
+                threshold = self.snapshot.press[self.selected] if self.board.accepts(self.snapshot) else D['RAW_DEFAULT_PRESS']
                 connection.stream_key(threshold,self.selected)
         elif connection.stream_mode == 'key':
             connection.stream_gui()
             self.capture_rate = 0.0; self._rate_count = 0; self._rate_at = None
 
     def pump_key_samples(self,s):
-        if not self.connection or s.count != 61: return
+        if not self.connection or not self.board.accepts(s): return
         samples = self.connection.drain_samples(sensor=self.selected)
         if not samples: return
         press,release = s.press[self.selected],s.release[self.selected]
@@ -273,7 +303,7 @@ class App:
             # when more than five samples were collected.
             window = velocity_window(self.capture.points)
             if window is not None and len(window) >= 2:
-                self.capture.velocity = press_velocity(tuple(window))
+                self.capture.velocity = press_velocity(tuple(window),s.sample_hz)
         self._rate_count += len(samples)
         if self._rate_at is None: self._rate_at = time.monotonic()
         elapsed = time.monotonic()-self._rate_at
@@ -319,11 +349,11 @@ class App:
         if cap.velocity is not None and len(cap.points) >= 2:
             # Fitted velocity line: a straight slant anchored at the trigger
             # point whose slope is the measured counts/s converted back to raw
-            # counts per sample (assumed 8 kHz), spanning the fitted window.
+            # counts per sample (board-declared rate), spanning the fitted window.
             window = velocity_window(cap.points)
             fitted = len(window) if window is not None else min(VELOCITY_WINDOW,len(cap.points))
             if fitted >= 2:
-                drop = cap.velocity/8000.0  # raw counts per sample
+                drop = cap.velocity/self.snapshot.sample_hz  # raw counts per sample
                 x0,y0 = coords[0]
                 x1 = self.axis_w+(fitted-1)/span*(w-self.axis_w-4)
                 y1 = y0+drop*(fitted-1)/4096*(h-30)
@@ -333,7 +363,7 @@ class App:
         state = f'{"held" if cap.done else "capturing"} • {len(cap.points)}/{CAPTURE_POINTS} points{suffix}'
         if cap.velocity is not None:
             normalized = 0.0 if cap.velocity <= 0 else 1.0 if cap.velocity >= D['VELOCITY_MAX_COUNTS_PER_SECOND'] else cap.velocity/D['VELOCITY_MAX_COUNTS_PER_SECOND']
-            state += f' • velocity {normalized:.4f} [0–1] ({cap.velocity:,.0f} counts/s; assumed 8 kHz)'
+            state += f' • velocity {normalized:.4f} [0–1] ({cap.velocity:,.0f} counts/s; declared {self.snapshot.sample_hz:,} Hz)'
         elif cap.fit:
             state += f' • device velocity {cap.fit[1]:.4f} [0–1] (fit {cap.fit[0]})'
         elif cap.done:
@@ -343,7 +373,7 @@ class App:
     def paint(self,stale=False):
         s = self.snapshot
         for index,(rect,text,velocity) in self.items.items():
-            valid = s and s.profile == 1 and s.count == 61 and not stale
+            valid = self.board.accepts(s) and not stale
             down = valid and s.down[index]
             fill = '#a95420' if down else '#21313e' if valid else '#26303a'
             if valid and s.calibration_flags & 1:
@@ -360,21 +390,22 @@ class App:
         janko = bool(s and s.flags & FLAG_JANKO)
         for key in self.keys:
             label = key.label
-            if s and s.count == 61:
+            if self.board.accepts(s):
                 note = JANKO_NOTES.get(label) if janko else None
                 suffix = MIDI_CONTROLS.get(label,note or note_name(s.midi_mapping[key.sensor]))
                 label += '/'+suffix
             if key.sensor in self.titles: self.canvas.itemconfigure(self.titles[key.sensor],text=label)
-        if s and s.count == 61:
+        if self.board.accepts(s):
             i = self.selected
             state = s.velocity_state[i]
             result = 'no completed fit'
             if state & 2: result = f'{s.velocity[i]:.6f} [0–1]'
-            velocity = f'Velocity: {result}  (assumed 8 kHz)\nFits: {s.captures[i]}  |  '
+            velocity = f'Velocity: {result}  (declared {s.sample_hz:,} Hz)\nFits: {s.captures[i]}  |  '
             velocity += ('pending; ' if state & 4 else '') + ('armed' if state & 1 else 'waiting for release')
             self.details.set(f'Raw: {s.raw[i]}   Sensor: {"DOWN" if s.down[i] else "up"}\n'
                              f'On device: press {s.press[i]}, release {s.release[i]}\n'
                              f'Config revision: {s.revision}\n'
+                             f'Keyboard: {keycode_name(s.keyboard_mapping[i])} (Fn fixed)\n'
                              f'Velocity start: {s.velocity_start} ({(s.velocity_start-1)*100//9}%, Fn+V)\n'
                              f'{velocity}\n'
                              f'HID submitted: {s.report.hex()}'
@@ -382,7 +413,7 @@ class App:
         self.graph.delete('all')
         w,h = max(1,self.graph.winfo_width()),max(1,self.graph.winfo_height())
         self.draw_axis(w,h)
-        if s and s.count == 61:
+        if self.board.accepts(s):
             for value,color,title in ((s.press[self.selected],'#f1a366','press'),(s.release[self.selected],'#56d7db','release')):
                 y = h-15-value/4096*(h-30)
                 self.graph.create_line(self.axis_w,y,w-2,y,fill=color,dash=(4,4))
@@ -406,10 +437,10 @@ class App:
             self.message.set(str(error)); return
         if path:
             self.device.set(path)
-            self.message.set(f'Detected {path} (USB {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x}); press Connect.')
+            self.message.set(f'Detected {path}; press Connect to verify its board identity.')
         else:
             self.device.set('')
-            self.message.set(f'No USB {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x} MIDI control device detected; check the cable and udev permissions.')
+            self.message.set('No unique MIDI-Typist control port detected; check the cable, port selector and permissions.')
 
     def toggle_connection(self):
         if self.connection and self.connection.is_alive():
@@ -420,7 +451,7 @@ class App:
             except Exception as error:
                 messagebox.showerror('MIDI control',str(error)); return
             if not path:
-                messagebox.showerror('Detect',f'No USB {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x} MIDI control device detected.\n\n'
+                messagebox.showerror('Detect','No unique MIDI-Typist control port detected.\n\n'
                     'Plug in the keyboard, wait for the MIDI control port, or enter a MIDI control port name and connect again.')
                 return
             self.device.set(path)
@@ -432,7 +463,7 @@ class App:
         if not self.usable() or self.snapshot.performance_mode: return
         if not messagebox.askyesno('Calibrate all keys',
             'Keyboard output pauses. Release ALL keys; wait for blue. Fully press and hold blue keys for one second until green. You may hold multiple keys together; each key has an independent timer. Include Fn and modifiers.\n\n'
-            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration in two dedicated pages (0x78000 / 0x78200) inside the original free block, preserving the serial-number area. Continue?'): return
+            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration to this board\'s dedicated custom storage, preserving factory data. Continue?'): return
         try:
             self.connection.submit('calibrate')
             self.message.set('Calibration requested; ACK starts the routine, not a flash save. Watch progress below.')
@@ -456,6 +487,15 @@ class App:
             try: self.connection.submit('enable',int(enabled))
             except queue.Full: messagebox.showerror('Busy','Configuration queue is full.')
 
+    def apply_keyboard(self):
+        try:
+            if not self.usable(): raise ValueError('Connect to a keyboard snapshot first.')
+            if next(k.label for k in self.keys if k.sensor==self.selected)=='Fn':
+                raise ValueError('Fn cannot be remapped.')
+            self.connection.submit('key',self.selected,parse_keycode(self.keyboard_code.get()))
+            self.message.set('Keyboard mapping queued; waiting for device ACK/readback, then settings saved…')
+        except (ValueError,queue.Full) as error: messagebox.showerror('Keyboard mapping',str(error))
+
     def apply_midi(self):
         try:
             if not self.usable(): raise ValueError('Connect to a keyboard snapshot first.')
@@ -474,11 +514,11 @@ class App:
             level = TRIGGER_LEVELS.index(self.trigger_point.get())+1
             press = TRIGGER_FLOOR + (level-1)*(TRIGGER_CEILING-TRIGGER_FLOOR)//9
             if not messagebox.askyesno('Trigger point',
-                f'Set the MIDI trigger point to level {level} (raw press < {press}) for all 61 keys?\n'
+                f'Set the MIDI trigger point to level {level} (raw press < {press}) for all {self.board.count} keys?\n'
                 'Each key keeps its release threshold; press < release is enforced.'):
                 return
             if not self.connection.requests.empty(): raise ValueError('Wait for queued changes to finish first.')
-            for index in range(61):
+            for index in range(self.board.count):
                 release = self.snapshot.release[index]
                 self.connection.submit('set',index,min(press,release-1),release)
             self.message.set('Trigger point queued for all keys with per-key readback; a failure cancels remaining changes.')
@@ -497,16 +537,16 @@ class App:
         try:
             pair = validate_pair(int(self.press.get()),int(self.release.get()))
             if not self.usable(): raise ValueError('Connect to a keyboard snapshot first.')
-            if not messagebox.askyesno('Apply to all keys',f'Set all 61 keys to press {pair[0]}, release {pair[1]}?\nThis releases held keys and waits for neutral.'):
+            if not messagebox.askyesno('Apply to all keys',f'Set all {self.board.count} keys to press {pair[0]}, release {pair[1]}?\nThis releases held keys and waits for neutral.'):
                 return
             self.connection.submit('all',*pair)
-            self.message.set('All-key thresholds queued; waiting for ACK and all 61 readbacks…')
+            self.message.set(f'All-key thresholds queued; waiting for ACK and all {self.board.count} readbacks…')
         except (ValueError,queue.Full) as error: messagebox.showerror('Thresholds',str(error))
 
     def save_profile(self):
         try:
             if not self.snapshot: raise ValueError('No device configuration to save.')
-            profile = profile_from_snapshot(self.snapshot)
+            profile = profile_from_snapshot(self.snapshot,self.board.target)
             path = filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('Keyboard profile','*.json')])
             if path:
                 Path(path).write_text(json.dumps(profile,indent=2)+'\n')
@@ -519,8 +559,8 @@ class App:
         if not path: return
         try:
             profile = json.loads(Path(path).read_text())
-            values = validate_profile(profile)
-            if not messagebox.askyesno('Apply profile','Temporarily disable keyboard output and apply all 61 keys? Settings save automatically after release.'):
+            values = validate_profile(profile,self.board.target)
+            if not messagebox.askyesno('Apply profile',f'Temporarily disable keyboard output and apply all {self.board.count} keys? Settings save automatically after release.'):
                 return
             enabled = bool(self.snapshot.flags & 1)
             if not self.connection.requests.empty(): raise ValueError('Wait for queued changes to finish first.')
@@ -528,6 +568,7 @@ class App:
             for index,pair in sorted(values.items()): self.connection.submit('set',index,*pair)
             for key in profile['keys']:
                 if key['label'] not in MIDI_CONTROLS: self.connection.submit('midi',key['sensor'],key['midi'])
+                if key['label'] != 'Fn': self.connection.submit('key',key['sensor'],key['keyboard'])
             self.connection.submit('enable',int(enabled))
             self.message.set('Applying profile with per-key readback; a failure cancels remaining changes.')
         except (ValueError,OSError,queue.Full) as error: messagebox.showerror('Load profile',str(error))
@@ -535,15 +576,18 @@ class App:
     def update(self):
         stale = True
         if self.demo:
-            raw = [3900]*61
-            raw[32] = int(3900-2600*(.5+.5*math.sin(time.monotonic()*2)))
-            mapping = tuple(255 if k.label in MIDI_CONTROLS else 60+k.sensor for k in self.keys)
-            self.snapshot = Snapshot(1,61,7,1,int(time.monotonic()*30),0,0,0,0,
-                                     tuple(raw),(D['RAW_DEFAULT_PRESS'],)*61,(D['RAW_DEFAULT_RELEASE'],)*61,tuple(v<D['RAW_DEFAULT_PRESS'] for v in raw),bytes(16),
-                                     midi_mapping=mapping,
-                                     velocity=tuple(0.5 if i == 32 else 0.0 for i in range(61)),
-                                     captures=tuple(1 if i == 32 else 0 for i in range(61)),
-                                     velocity_state=tuple(2 if i == 32 else 1 for i in range(61)))
+            count=self.board.count
+            animated=next(k.sensor for k in self.keys if k.label=='A')
+            raw = [3900]*count
+            raw[animated] = int(3900-2600*(.5+.5*math.sin(time.monotonic()*2)))
+            mapping = tuple(255 if k.label in MIDI_CONTROLS else 60+k.sensor%60 for k in sorted(self.keys,key=lambda k:k.sensor))
+            self.snapshot = Snapshot(self.board.profile,count,7,1,int(time.monotonic()*30),0,0,0,0,
+                                     tuple(raw),(D['RAW_DEFAULT_PRESS'],)*count,(D['RAW_DEFAULT_RELEASE'],)*count,tuple(v<D['RAW_DEFAULT_PRESS'] for v in raw),bytes(self.board.hid_bytes),
+                                     midi_mapping=mapping, sample_hz=self.board.sample_hz,
+                                     keyboard_mapping=self.board.default_keycodes(),
+                                     velocity=tuple(0.5 if i == animated else 0.0 for i in range(count)),
+                                     captures=tuple(1 if i == animated else 0 for i in range(count)),
+                                     velocity_state=tuple(2 if i == animated else 1 for i in range(count)))
             stale = False
         elif self.connection:
             latest = self.connection.snapshot()
@@ -557,6 +601,7 @@ class App:
                 if self.device_build:
                     target = self.connection.build_target
                     name = KNOWN_TARGETS.get(target)
+                    if name:self.set_board(target)
                     self.message.set(f'Device build {self.device_build}' +
                                      (f' ({name})' if name else f' (unrecognized build target {target})'))
             self.connect_button.configure(text='Disconnect' if self.connection.is_alive() else 'Connect')
@@ -565,12 +610,12 @@ class App:
         self.sync_hold_stream()
         self.key_capture = not self.demo and bool(self.connection and self.connection.is_alive() and self.connection.stream_mode == 'key')
         if s:
-            if s.count == 61 and not self.initial_fields:
+            if self.board.accepts(s) and not self.initial_fields:
                 self.select(self.selected); self.initial_fields = True
             self.velocity_start.set(VELOCITY_STARTS[s.velocity_start-1])
             if self.hold_mode.get() and not self.demo:
                 self.pump_key_samples(s)
-            if s.sequence != self.last_sequence and s.count == 61 and not stale:
+            if s.sequence != self.last_sequence and self.board.accepts(s) and not stale:
                 self.last_sequence = s.sequence
                 if self.hold_mode.get() and self.demo:
                     captures = s.captures[self.selected]
@@ -587,7 +632,7 @@ class App:
             state += f' | {"MIDI" if s.performance_mode else "KEYBOARD"} | octave {s.octave:+d} | MIDI errors={s.midi_errors}'
             if s.flags & FLAG_JANKO: state += ' | JANKÓ layout (Fn+J)'
             if s.midi_cleanup: state += ' | MIDI note cleanup pending'
-            if s.profile not in (0,1): state = 'Unsupported graphical layout (ANSI only)'
+            if s.count and not self.board.accepts(s): state = 'Snapshot does not match identified board layout'
             self.status.set(f'{"DEMO • " if self.demo else ""}{state}  |  {s.count} sensors  |  valid={bool(s.flags & 4)}  |  '
                             f'scan errors={s.scan_errors}  LED errors={s.light_errors}  |  FN={bool(s.flags & 32)}  |  config revision={s.revision}'
                             + (f'  |  build {self.device_build}' if self.device_build else ''))
@@ -598,6 +643,9 @@ class App:
         self.apply_all_button.configure(state='normal' if self.usable() else 'disabled')
         midi_usable = self.usable() and next(k.label for k in self.keys if k.sensor == self.selected) not in MIDI_CONTROLS
         self.midi_button.configure(state='normal' if midi_usable else 'disabled')
+        key_usable = self.usable() and next(k.label for k in self.keys if k.sensor==self.selected)!='Fn'
+        self.keyboard_button.configure(state='normal' if key_usable else 'disabled')
+        self.keyboard_entry.configure(state='readonly' if key_usable else 'disabled')
         supported = self.usable(allow_calibration=True) and bool(s.calibration_flags & 4)
         active = supported and bool(s.calibration_flags & 1)
         self.calibrate_button.configure(state='normal' if supported and not active and not s.performance_mode else 'disabled')
@@ -630,10 +678,13 @@ class App:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device',default='auto',
-                        help=f"MIDI control port name, or 'auto' (default) to detect USB {USB_VENDOR_ID:04x}:{USB_PRODUCT_ID:04x}")
+                        help="MIDI-Typist control port name, or 'auto' (default) to detect a unique paired port")
     parser.add_argument('--demo',action='store_true',help='visual demo only; never opens a device')
+    parser.add_argument('--board',choices=tuple(boards()),default=DEFAULT_TARGET,
+                        help='board geometry for demo; live connections use the reported build target')
     args = parser.parse_args()
-    root = tk.Tk(); app = App(root,'' if args.demo else args.device,args.demo)
+    if not args.demo and args.board != DEFAULT_TARGET:parser.error('--board is for --demo only')
+    root = tk.Tk(); app = App(root,'' if args.demo else args.device,args.demo,args.board)
     if not args.demo and args.device == 'auto': app.detect()
     root.mainloop()
 

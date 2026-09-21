@@ -5,13 +5,12 @@ import secrets
 import threading
 import time
 from firmware_defaults import DEFAULTS as D
-from keyboard_gui_model import decode, parse_build
+from keyboard_gui_model import decode, parse_build, MAX_KEYS
+from keyboard_boards import get_board
 from keyboard_capture import KeyDecoder
 from midi_backend import MidiBackend, find_midi_device
 import midi_sysex as sx
 
-USB_VENDOR_ID = 0x1532
-USB_PRODUCT_ID = 0x02b0
 SAMPLE_CAPACITY = D['MIDI_CONTROL_CAPTURE_SAMPLES']
 
 class Connection(threading.Thread):
@@ -22,7 +21,9 @@ class Connection(threading.Thread):
         self.session = secrets.randbelow(0xffffffff)+1
         self.sequence = 0
         self.stop_event = threading.Event()
-        self.requests = queue.Queue(maxsize=128)
+        # A profile queues thresholds plus MIDI and keyboard maps for every
+        # protocol-supported sensor, with disable/enable around the batch.
+        self.requests = queue.Queue(maxsize=3*MAX_KEYS+2)
         self.events = queue.Queue(maxsize=128)
         self.lock = threading.Lock()
         self.latest = None
@@ -31,7 +32,7 @@ class Connection(threading.Thread):
         self.connected = False
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = deque(maxlen=1)  # latest requested display mode wins
-        self.stream_mode = 'gui'  # 'gui' (HKG telemetry) or 'key' (HKL1 8 ksps)
+        self.stream_mode = 'gui'  # 'gui' (MTG3 telemetry) or 'key' (HKL1 samples)
         self.key_threshold = self.key_sensor = self.key_session = None
         self.samples = deque(maxlen=SAMPLE_CAPACITY)
         self.samples_lock = threading.Lock()
@@ -44,7 +45,7 @@ class Connection(threading.Thread):
         self.requests.put_nowait((action,args))
 
     def stream_key(self,threshold,sensor):
-        """Switch the device to the 8 ksps per-key stream for one sensor."""
+        """Switch the device to the full-rate per-key stream for one sensor."""
         self.stream_requests.append(('key',threshold,sensor,secrets.randbelow(0xfffffffe)+1))
 
     def stream_gui(self):
@@ -88,6 +89,10 @@ class Connection(threading.Thread):
             index,note = args
             if index >= snapshot.count or snapshot.midi_mapping[index] != note:
                 raise ValueError('MIDI mapping readback differs from requested values')
+        if action == 'key':
+            index,usage = args
+            if index >= snapshot.count or snapshot.keyboard_mapping[index] != usage:
+                raise ValueError('Keyboard mapping readback differs from requested value')
         # `clean` is confirmed by its ACK alone: the device
         # verified the erase by reading both pages back blank
         # before answering result 1.
@@ -139,6 +144,8 @@ class Connection(threading.Thread):
             kind, _, _, payload = message
             if kind == sx.SNAPSHOT and self.stream_mode == 'gui':
                 snapshot = decode(payload)
+                if not self.build_target or not get_board(self.build_target).validates_wire(snapshot):
+                    raise ValueError('Snapshot layout/report/rate contradicts the identified board')
                 self.last_rx = time.monotonic()
                 with self.lock: self.latest = self.last_rx, snapshot
             elif kind == sx.SAMPLES and self.stream_mode == 'key':
@@ -169,6 +176,7 @@ class Connection(threading.Thread):
                     found = parse_build(message[3]+b'\n')
                     if not found: raise ValueError('Invalid device build identity')
                     self.build, self.build_target = found[0], found[2]
+                    get_board(self.build_target)  # reject an unknown board before configuration commands
                     self.notify(f'Device build {self.build}')
                     break
                 if time.monotonic() >= deadline: raise TimeoutError('MIDI SysEx handshake timed out')
@@ -192,7 +200,7 @@ class Connection(threading.Thread):
                         with self.samples_lock:
                             self.key_threshold, self.key_sensor, self.key_session = threshold, sensor, session
                             self.samples.clear()
-                        self.key_decoder = KeyDecoder(threshold, session)
+                        self.key_decoder = KeyDecoder(threshold, session, self.snapshot()[1].count)
                         self.command(f'stream key {threshold} {session} {sensor}')
                     else:
                         self.stream_mode = 'gui'
