@@ -264,6 +264,11 @@ measure cadence, dropped frames and worst-case service time under polyphony.
 Provide milliseconds separately as a monotonic uint32 timer; wrapping is
 expected. At 2 kHz, consecutive scans can share one millisecond timestamp.
 Never derive acquisitions from GUI refreshes or a wall-clock catch-up loop.
+Track acquisition continuity separately from publication/capture numbering.
+A missing or duplicate frame must invalidate held outputs and partial velocity
+windows; require neutral before rearming. If a lossless per-key stream is
+active, call `scan_stream_lost()` to emit a terminal loss marker after accepted
+records drain. One-shot wake scans must not enter the periodic velocity path.
 
 ## 4. Connect the common lifecycle
 
@@ -397,8 +402,12 @@ The board owns refresh cadence, gamma/protocol encoding and explicit light-off.
 Provide calibration load/save/profile-clear callbacks as appropriate. The
 callbacks own physical pages, checksums, rollback, identity and power-failure
 handling. They must not modify unrelated bootloader, serial, security or
-factory data. No callback means unavailable storage; calibration must report
-failure instead of claiming a persistent save. The simulator saves only in
+factory data. No callback means unavailable storage: initialization masks the
+calibration/RESET Fn options when `save_calibration`/`clear_profile` is absent,
+and calibration commands reject entry without a save callback. Other board
+capability exclusions use `keyboard_menu_t.disabled_options`, with bit
+`MENU_* - 1`; disabled options neither execute nor receive menu hints.
+Never claim a persistent save without verified storage. The simulator saves only in
 its process RAM. Huntsman's writer and MTP2 whole-profile journal are examples for that board,
 not a universal flash layout.
 

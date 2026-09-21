@@ -23,6 +23,7 @@ typedef struct {
     bool brightness_session;
     bool reset_confirmation, confirmation_ready;
     bool midi_blocked; /* board transport policy; USB-only ports leave false */
+    uint16_t disabled_options; /* bit (MENU_* - 1): unsupported board actions */
     keyboard_text_t text;
 } keyboard_menu_t;
 

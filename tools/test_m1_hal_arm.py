@@ -211,6 +211,7 @@ def scanner(elf):
     ranks=[(packed[i//6]>>(5*(i%6)))&31 for i in range(15)]
     assert ranks==[10,11,12,13,0,1,2,3,4,5,6,7,14,15,8],ranks
     assert dev.call('m1_hal_start')==1
+    assert dev.call('m1_hal_periodic_active')==1
     assert dev.call('m1_hal_start')==0
     def begin():
         dev.put(TMR6+0x10,1);dev.call('m1_hal_timer_irq')
@@ -293,10 +294,13 @@ def scanner_capture(elf):
         assert dev.u32(RGB+200)==(1 if start==0xfffffff0 else start//10000+1)
     assert dev.call('m1_hal_start')==1 and dev.u32(ADC+8)&1 and dev.u32(TMR6)&1
     assert not dev.call('m1_hal_capture_start',30000)
+    assert dev.call('m1_hal_periodic_active')==1
     dev.call('m1_hal_stop');assert not dev.call('m1_hal_capture_start',30001)
+    assert dev.call('m1_hal_periodic_active')==0
     for reason in ('deadline','dma error','bad sample','stop'):
         dev=M1Arm(elf,scanner=True);assert dev.call('m1_hal_init')==1
         assert dev.call('m1_hal_capture_start',0xfffffff0)==1
+        assert dev.call('m1_hal_periodic_active')==0
         dev.call('m1_hal_service',0xfffffff0+timeout-1)
         assert dev.call('m1_hal_capture_busy')==1
         if reason=='deadline':dev.call('m1_hal_service',0xfffffff0+timeout)

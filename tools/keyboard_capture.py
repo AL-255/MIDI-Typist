@@ -80,7 +80,7 @@ class KeyDecoder:
             if flags & ~7 or threshold != self.threshold:
                 raise StreamError('unexpected HKL1 flags or threshold')
             if flags & 2:
-                raise StreamError('device stream buffer overflow or USB data loss')
+                raise StreamError('device stream buffer overflow, scan loss or USB data loss')
             if flags & 4:
                 raise StreamError('invalid hardware readback or layout change')
             if self.sequence is None:

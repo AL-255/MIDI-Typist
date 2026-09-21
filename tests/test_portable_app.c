@@ -257,8 +257,18 @@ static void atomic_press_edit(void)
     for(unsigned i=0;i<SYN_COUNT;++i) assert(raw.press[i]==3599);
     assert(raw.revision==1 && !raw.armed);
 }
+static void unavailable_storage(void)
+{
+    init();keyboard_app_init(&app,&raw,&midi,&menu,&app_cal,NULL);frame();
+    assert(!keyboard_app_calibrate(&app,now,true));
+    assert(menu.disabled_options&(1u<<(MENU_CALIBRATION-1u)));
+    assert(menu.disabled_options&(1u<<(MENU_RESET-1u)));
+    assert(!keyboard_app_reset_profile(&app));
+    /* Restore callbacks: capability filtering must not leak across init. */
+    init();assert(!menu.disabled_options && keyboard_app_calibrate(&app,now,true));
+}
 int main(void)
 {
-    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change(); reset_while_held(); atomic_press_edit();
+    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

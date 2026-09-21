@@ -53,6 +53,9 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_options(m1_hal PRIVATE -Wall -Wextra -Werror)
     target_link_options(m1_hal INTERFACE -Wl,--wrap=usbd_endpoint_request -Wl,--wrap=usbd_device_request
         -Wl,--wrap=usb_global_init -Wl,--wrap=usb_connect)
+    add_library(m1_live STATIC ${MT_BOARD_DIR}/src/m1_live.c)
+    target_link_libraries(m1_live PUBLIC m1_hal midi_typist_services)
+    target_compile_options(m1_live PRIVATE -Wall -Wextra -Werror)
     add_executable(m1_hal_audit tests/m1_hal_audit.c)
     set_target_properties(m1_hal_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_hal_audit PRIVATE m1_hal midi_typist_app)
@@ -67,7 +70,19 @@ if(CMAKE_CROSSCOMPILING)
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -Wl,-e,m1_test_usb_init -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_usb_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
-    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_hal_audit m1_usb_audit)
+    add_executable(m1_live_audit tests/m1_usb_audit.c tests/m1_live_audit.c)
+    set_target_properties(m1_live_audit PROPERTIES SUFFIX ".elf")
+    target_link_libraries(m1_live_audit PRIVATE m1_live)
+    target_link_options(m1_live_audit PRIVATE -nostartfiles --specs=nosys.specs
+        -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
+        -Wl,-e,m1_test_usb_init -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
+    set_property(TARGET m1_live_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
+    foreach(symbol m1_hal_periodic_active m1_hal_frame m1_hal_service m1_hal_errors
+        m1_battery_hal_service m1_battery_hal_status m1_lighting_service m1_lighting_ready
+        m1_lighting_healthy m1_lighting_errors m1_lighting_offer)
+        target_link_options(m1_live_audit PRIVATE -Wl,--wrap=${symbol})
+    endforeach()
+    foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_hal_audit m1_usb_audit m1_live_audit)
         target_compile_options(${target} PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections)
     endforeach()
 else()

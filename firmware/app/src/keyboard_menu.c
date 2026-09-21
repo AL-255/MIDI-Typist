@@ -250,7 +250,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     /* Menu edges retain their own Schmitt history when preview entry clears
      * raw.down[]. A still-held key must not become a fresh press afterward. */
     for (unsigned i=0;i<MENU_OPTION_COUNT;++i) {
-        if(i+1u==MENU_MODE && s->midi_blocked)continue;
+        if((i+1u==MENU_MODE && s->midi_blocked) || (s->disabled_options&(1u<<i)))continue;
         if(!(options[i].modes & (raw->midi_mode?OPTION_MIDI:OPTION_KEYBOARD))) continue;
         unsigned sensor=sensors[i];
         if (sensor<raw->count && (s->previous & (1u<<i) ?
@@ -262,7 +262,8 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     if (!raw->valid || !raw->enabled || calibration || raw->engine.config.mode) {
         keyboard_menu_cancel(s); return MENU_NONE;
     }
-    if(s->midi_blocked && s->pending==MENU_MODE) {
+    if((s->midi_blocked && s->pending==MENU_MODE) ||
+       (s->pending && (s->disabled_options&(1u<<(s->pending-1u))))) {
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     if(s->music_page) return music_page_frame(s,raw,now);
@@ -453,7 +454,7 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
         }
         for(unsigned i=0;i<MENU_OPTION_COUNT;++i)
             if((options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) &&
-               !(i+1u==MENU_MODE && s->midi_blocked)) {
+               !(i+1u==MENU_MODE && s->midi_blocked) && !(s->disabled_options&(1u<<i))) {
                 /* The active Jankó layout uses a yellow hint. */
                 const bool active = (i+1u)==MENU_JANKO && janko;
                 if(active) color(s->profile,s->option_sensors[i],frame,COLOR_JANKO);

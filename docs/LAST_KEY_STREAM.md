@@ -10,7 +10,8 @@ snapshots and configuration edits pause during capture. Disable hold mode
 to resume them. This does not stop the keyboard's performance output.
 
 Each capture command carries a new nonce. Inner sequence numbers begin at zero;
-missing, duplicated, invalid or overflow-marked records fail the capture.
+missing, duplicated, invalid or loss-marked records fail the capture. A device
+acquisition discontinuity is a loss even if its transmitted records are consecutive.
 Device buffering is 256 records, published in batches of up to 32.
 The host uses a bounded MIDI callback queue and a 16384-sample buffer.
 Overflow never silently discards waveform data. Reconnect to start a new session

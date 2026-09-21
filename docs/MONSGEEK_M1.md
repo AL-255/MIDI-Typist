@@ -349,6 +349,31 @@ cleanup, independent TX/RX flush timeouts and 82-key ACK/readback.
 Endpoint completions and register effects are modeled. This does **not** prove
 physical enumeration, acquisition cadence or a running M1 application.
 
+### Foreground USB application
+
+`m1_live` connects periodic scan frames to the shared keyboard/MIDI application,
+LED renderer, composite USB class and GUI SysEx services. One foreground owner
+calls it with independently maintained wrapping millisecond/microsecond clocks.
+Initialization requires verified canonical per-key travel bounds; unknown
+calibration is not replaced with ADC rails. Settings are volatile: no profile
+storage is advertised, and calibration/RESET commands and Fn hints are disabled.
+
+Only complete periodic frames enter velocity and capture processing, never
+one-shot wake scans. Sequence gaps or duplicates cancel held outputs and partial
+velocity windows, require neutral before rearming, and terminate a per-key
+capture with an explicit loss marker. GUI snapshots remain latest-only.
+USB generation changes invalidate output ownership and the GUI session before
+new submissions. Stop neutralizes application state without changing rails;
+continue servicing releases before explicit reinitialization.
+
+`m1_live_audit.elf` exercises this coordinator through the real USB class and
+shared services at both packet sizes, decoding snapshots with the GUI codec.
+Acquisition, battery and LED boundaries are scripted, including discontinuities
+and backpressure; these are not physical scans or measured 8 kHz operation.
+The outer startup/power coordinator, radio delivery, durable storage and an
+installable application remain unimplemented. This USB binding is not a
+wired-only product policy.
+
 ### USB hardware lifecycle
 
 `m1_usb_hw_start(platform_quiescent)` binds the composite class to the official

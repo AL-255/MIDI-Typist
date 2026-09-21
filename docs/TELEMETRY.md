@@ -157,11 +157,11 @@ for velocity calculations; actual acquisition cadence still needs measurement.
 | 8 | u32 | record sequence, starting at 0 |
 | 12 | u16 | raw sample of the selected sensor |
 | 14 | u8 | selected sensor index |
-| 15 | u8 flags | bit 0: first record; bit 1: stream overflow/transport fault; bit 2: invalid sample or profile change |
+| 15 | u8 flags | bit 0: first record; bit 1: stream overflow or acquisition/transport loss; bit 2: invalid sample or profile change |
 | 16 | u16 | trigger threshold from the command |
 | 18 | u16 | checksum: sum of the preceding 9 little-endian u16 words |
 
-Records are never dropped silently. A full ring emits a terminal fault record
+Records are never dropped silently. A full ring or reported acquisition loss emits a terminal fault record
 once queued data drains. USB reset or session expiry stops the stream; the
 host detects disconnect or stale telemetry and must open a new session.
 See [the per-key stream](LAST_KEY_STREAM.md).

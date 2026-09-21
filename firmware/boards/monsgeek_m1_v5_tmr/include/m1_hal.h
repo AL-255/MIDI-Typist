@@ -27,5 +27,7 @@ bool m1_hal_frame(uint16_t frame[M1_KEY_COUNT],uint32_t *sequence);
  * Caller must reject a sequence it has already sampled. */
 bool m1_hal_battery(uint16_t *adc,uint32_t *sequence);
 bool m1_hal_healthy(void);
+/* One-shot wake captures must never enter the periodic velocity pipeline. */
+bool m1_hal_periodic_active(void);
 uint32_t m1_hal_errors(void);
 #endif

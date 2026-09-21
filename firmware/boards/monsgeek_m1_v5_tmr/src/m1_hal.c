@@ -222,6 +222,7 @@ bool m1_hal_frame(uint16_t frame[M1_KEY_COUNT],uint32_t *sequence)
     return available;
 }
 bool m1_hal_healthy(void) { return healthy; }
+bool m1_hal_periodic_active(void) { return running && !single && healthy; }
 bool m1_hal_battery(uint16_t *adc,uint32_t *sequence)
 {
     uint32_t mask=__get_PRIMASK(); __disable_irq(); __DMB();

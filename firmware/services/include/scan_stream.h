@@ -20,6 +20,9 @@ void scan_stream_stop(void);
 bool scan_stream_active(void);
 bool scan_stream_enabled(void);
 void scan_stream_push(const uint16_t *samples, uint8_t count, uint8_t profile, uint32_t tick);
+/* Board detected a missing scan. Drain accepted records, then emit the same
+ * explicit loss marker as queue overflow. GUI snapshots remain latest-only. */
+void scan_stream_lost(void);
 bool scan_stream_service(void); /* true when a SysEx payload was published */
 void scan_stream_usb_reset(void);
 uint32_t scan_stream_dropped(void);

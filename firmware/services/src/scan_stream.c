@@ -63,6 +63,10 @@ static void key_record(uint8_t *out,uint16_t value,uint8_t flags)
     unsigned checksum=0;for(unsigned i=0;i<18;i+=2)checksum+=out[i]|(unsigned)out[i+1]<<8;
     le16(out+18,checksum);
 }
+void scan_stream_lost(void)
+{
+    if(s_enabled && s_mode==KEY && !s_fault) { ++s_dropped;s_fault=true; }
+}
 void scan_stream_push(const uint16_t *samples,uint8_t count,uint8_t profile,uint32_t tick)
 {
     (void)tick;

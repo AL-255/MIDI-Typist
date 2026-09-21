@@ -7,6 +7,8 @@ static void defaults(keyboard_app_t *s)
 {
     keyboard_raw_init(s->raw); s->raw->menu_managed=true;
     keyboard_midi_init(s->midi); keyboard_menu_init(s->menu);
+    if(!s->ops || !s->ops->save_calibration)s->menu->disabled_options|=1u<<(MENU_CALIBRATION-1u);
+    if(!s->ops || !s->ops->clear_profile)s->menu->disabled_options|=1u<<(MENU_RESET-1u);
     calibration_init(s->cal);
     s->loaded=s->reset_pending=false;
 }
@@ -40,7 +42,8 @@ void keyboard_app_invalidate(keyboard_app_t *s,uint32_t now)
 }
 bool keyboard_app_calibrate(keyboard_app_t *s,uint32_t now,bool healthy)
 {
-    if(!healthy || !s->frame_valid || (uint32_t)(now-s->last_frame)>=SCAN_STALE_MS ||
+    if(!s->ops || !s->ops->save_calibration || !healthy || !s->frame_valid ||
+       (uint32_t)(now-s->last_frame)>=SCAN_STALE_MS ||
        s->midi->mode || s->raw->engine.config.mode ||
        !calibration_start(s->cal,s->raw->profile,s->raw->count,now)) return false;
     keyboard_raw_invalidate(s->raw); s->sent_valid=false;

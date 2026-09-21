@@ -16,6 +16,11 @@ bounded control requests, ownership, suspend and session reset at both USB speed
 It executes the SDK hardware initializer and reset IRQ, with deferred attachment,
 bounded clock/counter/reset/flush failures, shutdown/restart and PHY power-down
 handoff. Oscillator readiness and cycle progression are modeled, not measured.
+The foreground coordinator audit connects scripted scan/battery/LED boundaries
+to the actual application, USB class and GUI decoder. It covers remapping,
+MIDI, capture loss, unsupported storage actions, session reset, stale input,
+independent timer/sequence wrap and release draining before explicit restart.
+It does not measure real acquisition or foreground execution time.
 
 ## Automated checks
 
@@ -28,7 +33,7 @@ handoff. Oscillator readiness and cycle progression are modeled, not measured.
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
-`python3 tools/run_tests.py` runs 22 audit groups, including native Huntsman
+`python3 tools/run_tests.py` runs 23 audit groups, including native Huntsman
 and M1 tests, with a 300-second total deadline. It requires the optional original
 reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. The M1 group also compiles the HAL/services against the pinned
