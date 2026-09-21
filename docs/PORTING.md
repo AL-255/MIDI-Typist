@@ -496,6 +496,12 @@ to track pending/debounce status without making a write attempt. Defer until
 power and output ownership are proven, then call `device_store_update`; a busy
 deferral is not a controller fault. Preserve visible capture gaps and rearm only
 on fresh neutral acquisitions after resume.
+Distinguish unchanged deferral from fatal failure to acquire quiescence. M1's
+save callback returns `M1_SAVE_DEFER`, `M1_SAVE_READY` or `M1_SAVE_FAULT`; only
+READY permits a write and must be paired with end, including on write errors.
+Its `m1_save_ops()` implementation retains links/rails and masks interrupts
+through the scanner pause/write/resume boundary. Local drain during a retained
+link is not proof of host delivery for a transport switch or radio power-down.
 M1's scanner pause/resume contract discards partial/unread acquisitions and
 battery samples without recalibrating ADC or changing rails. The outer owner
 must retain clocks/power, coordinate the other peripherals and expose the gap;

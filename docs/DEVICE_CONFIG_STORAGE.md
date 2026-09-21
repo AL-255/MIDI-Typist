@@ -132,8 +132,8 @@ and all other stock storage are outside this writer.
 **The factory bootloader erases both profiles on every application reflash.**
 This backend does not promise update-time retention or implement backup/restore.
 
-The caller supplies only slot 0/1 and must explicitly confirm adequate power,
-released/drained host outputs and quiescent acquisition/transports. Additional
+The caller supplies only slot 0/1 and must explicitly qualify power,
+locally drained neutral outputs and quiescent acquisition/transport DMA. Additional
 guards reject active DMA1/2 channels, ADC1, scan timers or busy LED/radio SPI,
 unexpected controller state, invalid records and non-foreground/unprivileged
 calls. The read-only size register must report the 256 KiB part, matching the
@@ -166,27 +166,41 @@ of the imported-calibration flag.
 `device_store_poll` marks pending changes without writing. When a stable neutral
 snapshot is due, the foreground additionally checks completed neutral output,
 MIDI cleanup, local transport drain, idle lighting and no transport selection.
-The supplied `m1_live_storage_ops_t.begin` must prove power/host safety and pause
-hardware; false means unchanged/deferred, not a flash fault. After the bounded
+The supplied `m1_live_storage_ops_t.begin` qualifies power and pauses hardware:
+`M1_SAVE_DEFER` leaves hardware unchanged, `M1_SAVE_READY` acquires ownership,
+and `M1_SAVE_FAULT` is terminal before any write. After a ready begin and bounded
 write/readback, `end` must discard pre-pause acquisitions, resume hardware and
 preserve accurate outer clocks across masked-IRQ time. The deliberate scan gap
 invalidates capture/velocity and requires neutral before rearming. A failed
 resume is terminal; reinitialization cannot silently clear it. No unchanged
 settings are rewritten, and a write failure is not retried in that session.
 
-The scanner provides `m1_hal_pause` / `m1_hal_resume` to stop periodic
-acquisition without reinitializing ADC calibration or power rails. It discards
-partial/unread frames and battery data. This is only one owner primitive:
-it neither qualifies power nor drains lighting/radio/USB or maintains clocks.
-The [TMR2 timebase](MONSGEEK_M1.md#foreground-timebase) counts through masked
-interrupts; leave it running during flash and sample it afterward. It does not
-replace the power/drain coordinator or establish real flash timing.
+Pass `m1_save_ops()` to `m1_live_init` for the hardware save gate. It requires
+fresh, qualified source/battery status, normal power-pin ownership, idle LED
+and local USB/radio transfers, no other DMA, no USB DMA, and stopped SysTick.
+On battery, both the filtered percentage and newest raw battery reading must
+meet `M1_FLASH_MIN_BATTERY_PERCENT` (21%); external power does not require a
+charged battery. Unknown, stale, low or changing supplies defer the save.
+This is a custom conservative policy, not a stock flash threshold or a
+physical brownout guarantee.
 
-The physical pause/drain/power coordinator, live calibration save/reset,
-startup RAM copy and complete application image remain unfinished. Foreground
-audits script the owner gate and profile I/O; the separate backend audit runs
-the actual SDK against modeled controller effects. Neither proves hardware
-power qualification or physical persistence.
+The gate holds PRIMASK across the transaction and pauses only the scanner,
+discarding partial/unread frames and battery samples. The
+[TMR2 timebase](MONSGEEK_M1.md#foreground-timebase) continues counting. End
+checks elapsed time against `M1_FLASH_MAX_PAUSE_US` (100 ms), unchanged source,
+retained power/bus ownership and fresh periodic restart, then restores PRIMASK.
+The measured-duration check does not replace bounded SDK waits; stuck-busy
+flash still cannot return from SRAM. Rails, USB identity/endpoints and radio
+state remain intact. A locally completed neutral radio report is **not** a
+host-delivery acknowledgement, but saving does not switch hosts or shut down
+the peer that may still be delivering that report.
+
+The overall startup/power/transport coordinator, live calibration save/reset,
+startup RAM copy and complete application image remain unfinished. The save
+gate audit runs actual scanner/time/battery/LED HALs with scripted transport
+readiness and electrical inputs. Foreground audits script profile I/O and the
+gate; the separate backend audit runs the actual SDK against modeled flash
+effects. None proves physical supply adequacy or persistence.
 
 ## Reset, flashing and telemetry
 

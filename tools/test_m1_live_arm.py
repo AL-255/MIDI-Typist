@@ -267,6 +267,17 @@ def persistence(path):
         assert d.call('m1_live_storage_fault')
         assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
         print(f'PASS M1 {"HS" if high else "FS"} profile lifecycle: pending gate, neutral save, no wear, GUI status, restart restoration, failure latch and terminal resume fault')
+        d=Live(path,high,storage=True)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.call('m1_test_live_storage_gate',2,1,0);advance(d,400)
+        s=stored(d,lambda s:bool(s.storage_flags&4))
+        assert d.call('m1_live_storage_fault') and s.calibration_error==0x3100e
+        assert not d.call('m1_test_live_storage_count',1) # no end without ownership
+        assert not d.call('m1_test_live_storage_count',2) # no write after pause failure
+        begins=d.call('m1_test_live_storage_count',0)
+        d.call('m1_test_live_storage_gate',1,1,0);advance(d,400)
+        assert d.call('m1_test_live_storage_count',0)==begins
+        assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
     # Independent synthetic record fixture, with a unique bound for every key.
     # The six fixed MIDI controls have 8 mapping bits; Fn has none, others 15.
     record=bytearray(saved);record[5]=1;struct.pack_into('<I',record,10,7)

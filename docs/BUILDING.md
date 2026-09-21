@@ -107,13 +107,14 @@ python tools/test_m1_hal_arm.py build-m1-hal/m1_hal_audit.elf
 python tools/test_m1_usb_arm.py build-m1-hal/m1_usb_audit.elf
 python tools/test_m1_live_arm.py build-m1-hal/m1_live_audit.elf
 python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
+python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
 ```
 
-The ARM artifacts are `libm1_live.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
+The ARM artifacts are `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
 application archive `libmidi_typist_app.a`, plus `libmidi_typist_services.a`. Native CTest passes an
 actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
 no M1 `.bin` to install. `m1_hal_audit.elf`, `m1_usb_audit.elf`,
-`m1_live_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
+`m1_live_audit.elf`, `m1_save_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
 or vector table: none is a flash image. Each test
 requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
@@ -129,6 +130,9 @@ foreground audit imports those records rather than accepting supplied bounds.
 The storage audit runs the shared journal and official SDK flash driver in RAM
 against modeled erase/program effects. It supplies a synthetic image-end symbol
 and safety gate, not a deployable image or real power/quiescence qualification.
+The save-gate audit composes the actual scanner, timebase, battery and lighting
+HALs with scripted supply/transport inputs; it checks retained links/rails,
+unchanged deferrals, measured pause/resume and terminal ownership failures.
 The HAL audit also executes the wireless report scheduler through actual
 SPI/DMA drivers with scripted status replies; no radio host is simulated.
 The SDK package selector

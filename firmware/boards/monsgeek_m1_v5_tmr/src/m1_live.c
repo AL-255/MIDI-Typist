@@ -183,7 +183,12 @@ static bool persist(bool fresh)
      * restarts debounce rather than piggybacking on an older pending save. */
     if(!device_store_poll(&store,&app,now,true))return false;
     last_save_attempt=now;
-    if(!storage_ops->begin(storage_ops->context))return false;
+    m1_save_result_t started=storage_ops->begin(storage_ops->context);
+    if(started==M1_SAVE_DEFER)return false;
+    if(started!=M1_SAVE_READY) {
+        storage_fault=true;enabled=false;store.fault=true;store.error=M1_STORAGE_QUIESCE;
+        scan_stream_lost();++losses;seen=false;cancel_input();return true;
+    }
     /* No samples acquired before/during the pause may enter velocity/capture.
      * begin() owns the actual hardware pause; no new lights/USB work starts. */
     (void)device_store_update(&store,&app,NULL,m1_storage_read,write_profile);

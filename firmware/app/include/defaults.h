@@ -194,6 +194,13 @@
 #define M1_CHARGER_CONFIRM_SAMPLES 10u
 #define M1_BATTERY_LOW_PERCENT 20u
 #define M1_BATTERY_CRITICAL_PERCENT 5u
+/* Custom save qualification: defer on low/unknown battery; external power
+ * still needs a qualified source. These are policy, not measured flash limits. */
+#define M1_FLASH_MIN_BATTERY_PERCENT 21u
+#define M1_FLASH_MAX_PAUSE_US 100000u
+#if M1_FLASH_MIN_BATTERY_PERCENT <= M1_BATTERY_LOW_PERCENT || M1_FLASH_MIN_BATTERY_PERCENT > 100u || M1_FLASH_MAX_PAUSE_US == 0 || M1_FLASH_MAX_PAUSE_US >= M1_RADIO_STATUS_TIMEOUT_US
+#error "invalid M1 flash-save power/pause qualification"
+#endif
 #define M1_BATTERY_BLINK_MS 400u
 #define M1_BATTERY_DISPLAY_PWM 100u
 /* Reference power-policy qualification counts, not wall-clock durations. */

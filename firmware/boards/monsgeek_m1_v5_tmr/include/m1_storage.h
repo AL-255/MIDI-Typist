@@ -22,14 +22,15 @@ typedef enum {
     M1_STORAGE_UNSAFE, M1_STORAGE_GEOMETRY, M1_STORAGE_LINK,
     M1_STORAGE_BUSY, M1_STORAGE_CONTROLLER, M1_STORAGE_RECORD,
     M1_STORAGE_UNLOCK, M1_STORAGE_ERASE, M1_STORAGE_PROGRAM,
-    M1_STORAGE_VERIFY, M1_STORAGE_RESUME
+    M1_STORAGE_VERIFY, M1_STORAGE_RESUME, M1_STORAGE_QUIESCE
 } m1_storage_result_t;
 
 /* Privileged foreground, no concurrent flash owner. Buffers are complete
  * pages in main SRAM. Reads never unlock or change controller state. */
 uint32_t m1_storage_read(unsigned slot,uint8_t *page);
-/* platform_safe is explicit proof from the owner: adequate supply, neutral
- * outputs drained, acquisition and transports quiesced. Hardware DMA/ADC/
+/* platform_safe is explicit qualification from the owner: adequate supply,
+ * neutral outputs locally drained, acquisition/transport DMA quiesced while
+ * links remain intact (not permission for radio power-down). Hardware DMA/ADC/
  * timer/SPI guards are additional checks, not a replacement for that proof.
  * No arbitrary addresses, reset, option bytes, mass erase or implicit retry.
  * Completed errors relock and preserve IRQ/VTOR. Busy after the finite SDK

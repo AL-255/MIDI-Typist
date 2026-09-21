@@ -55,7 +55,8 @@ void m1_test_live_battery(uint8_t percent,bool valid)
 /* Owner safety and flash effects are scripted here; the separate storage
  * audit executes the actual SDK transaction and validates its guards. */
 static uint8_t pages[2][M1_STORAGE_PAGE_BYTES];
-static bool storage_allowed,storage_resumes,storage_owned;
+static unsigned storage_allowed;
+static bool storage_resumes,storage_owned;
 static unsigned storage_begins,storage_ends,storage_writes;
 static uint32_t storage_error;
 uint32_t __wrap_m1_storage_read(unsigned slot,uint8_t *page)
@@ -66,14 +67,18 @@ uint32_t __wrap_m1_storage_write(unsigned slot,const uint8_t *page,bool safe)
     ++storage_writes;if(storage_error)return storage_error;
     memcpy(pages[slot],page,sizeof(pages[0]));return 0;
 }
-static bool storage_begin(void *context)
-{ (void)context;++storage_begins;if(!storage_allowed)return false;storage_owned=true;return true; }
+static m1_save_result_t storage_begin(void *context)
+{
+    (void)context;++storage_begins;
+    if(storage_allowed!=M1_SAVE_READY)return storage_allowed;
+    storage_owned=true;return M1_SAVE_READY;
+}
 static bool storage_end(void *context)
 { (void)context;++storage_ends;storage_owned=false;return storage_resumes; }
 uintptr_t m1_test_live_storage(void)
 { static const m1_live_storage_ops_t ops={storage_begin,storage_end,NULL};return (uintptr_t)&ops; }
 void m1_test_live_storage_gate(unsigned allowed,unsigned resumes,uint32_t error)
-{ storage_allowed=allowed!=0;storage_resumes=resumes!=0;storage_error=error; }
+{ storage_allowed=allowed;storage_resumes=resumes!=0;storage_error=error; }
 unsigned m1_test_live_storage_count(unsigned field)
 { return field==0?storage_begins:field==1?storage_ends:storage_writes; }
 uintptr_t m1_test_live_storage_page(unsigned slot)

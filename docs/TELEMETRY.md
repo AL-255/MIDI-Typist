@@ -107,6 +107,13 @@ than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
 | 76 | u16 | header size, 80 |
 | 78 | 2 bytes | zero reserved |
 
+M1 storage errors at offset 68 use `0x31001`–`0x3100c` for backend failures
+(argument, context, unsafe, geometry, linker, busy, controller, record, unlock,
+erase, program, verification, respectively). `0x3100d` means resume failed;
+`0x3100e` means the save gate failed before writing. Both gate/resume failures
+latch the storage fault flag and disable normal input; a deferred gate is not
+an error. These codes do not change the frame layout.
+
 Saved calibration does not imply a writable backend: a set saved bit and clear
 supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses this combination for validated
 factory records (calibration generation 0) or bounds from a valid custom record.

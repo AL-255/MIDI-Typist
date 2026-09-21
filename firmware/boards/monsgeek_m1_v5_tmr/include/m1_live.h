@@ -17,15 +17,18 @@
  * USB SysEx configuration stays available while typing over radio. Performance
  * MIDI is USB-only; HID goes to the selected transport. No pairing/power sequencing
  * or automatic link restart happens here. */
+typedef enum { M1_SAVE_DEFER, M1_SAVE_READY, M1_SAVE_FAULT } m1_save_result_t;
 typedef struct {
     /* Called only after stable neutral input and local output completion.
-     * Returning false must leave the platform unchanged (defer, not error).
-     * Returning true proves supply adequacy, host release and fully quiesced
-     * scan/LED/radio DMA. Keep USB endpoints/identity intact. Must outlive live.
+     * DEFER leaves hardware unchanged; FAULT is terminal, never retried.
+     * READY qualifies supply and quiesces scan/LED/radio DMA. Retain links,
+     * rails and USB endpoints/identity: locally drained neutral reports are
+     * not a radio-host acknowledgement or permission to switch/power down.
+     * Must outlive live. A READY begin must always be paired with end.
      * end() resumes acquisition, discards pre-pause frames and keeps the outer
      * monotonic clocks accurate across masked-IRQ flash time. False is terminal:
      * never silently continue typing after an ambiguous peripheral restart. */
-    bool (*begin)(void *context);
+    m1_save_result_t (*begin)(void *context);
     bool (*end)(void *context);
     void *context;
 } m1_live_storage_ops_t;

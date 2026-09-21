@@ -106,7 +106,9 @@ rails. A latched acquisition fault still requires reinitialization. One-shot
 captures cannot be paused, and ordinary start/capture cannot bypass a pause.
 The owner must invalidate input/velocity state and report a capture gap; scan
 sequence numbers count only completed acquisitions. This primitive does not
-provide the complete flash power/drain/timekeeping coordinator.
+alone provide flash power/drain/timekeeping. The
+[save gate](DEVICE_CONFIG_STORAGE.md#m1-application-tail-backend) composes these
+checks without changing the radio/USB links or power rails.
 
 ## Lighting HAL
 
@@ -541,10 +543,11 @@ Acquisition, battery and LED boundaries are scripted, including discontinuities
 and backpressure. Factory loading executes against synthetic read-only flash.
 Profile I/O and the storage pause/resume callbacks are scripted; tests cover
 deferred neutral saves, no-change wear, GUI status, restart restoration, write
-failure latching and terminal resume failure. The actual flash driver has its
-own controller-model audit. Radio status, DMA completion and external transport callbacks
+failure latching and terminal gate/resume failure. The save-gate audit executes
+actual scanner/time/battery/LED HALs with scripted power and transport readiness;
+the flash driver has its own controller-model audit. Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
-The outer startup/power/transport/storage coordinator, verified radio delivery,
+The outer startup/power/transport coordinator, verified radio delivery,
 physical persistence and an installable application remain unfinished. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
