@@ -11,6 +11,12 @@
   commits. Preserve unrelated user changes.
 - Verify the push succeeded and report its branch and commit. If it fails,
   retain the local commit and report the actual failure.
+- Prioritize an installable firmware and a verified flashing/recovery path.
+  Use focused checks for changed behavior; do not repeatedly expand or run the
+  entire offline audit suite instead of progressing to hardware validation.
+  Flash boundaries, device identity, transfer integrity and recovery are release
+  gates. Unfinished application features must be documented, not hidden behind
+  claims of a complete port or used to postpone all testable firmware delivery.
 
 ## Latest implementation only
 
@@ -89,9 +95,10 @@
   implementation or commit original firmware, disassembly, private device
   dumps, serial-number data or credentials.
 - Keep the external MonsGeek M1 firmware-recovery repository read-only too.
-  M1 device access is currently identity-only; its libraries, 82-key GUI preview
-  and `m1_development.elf` are for offline development. Do not flash or package
-  that ELF: runtime power/transport recovery and update integration are incomplete.
+  M1 installation requires a verified application-only updater and recovery
+  path. The current `m1_development.elf` alone is not a flashing procedure.
+  Incomplete power/transport features do not by themselves forbid an explicitly
+  labelled experimental build once flashing and recovery are established.
   Require vendor ID2949, not a shared
   USB PID, to identify an application. Never probe its destructive boot-entry
   command. Do not enable M1 flashing or allocate profile pages without proving

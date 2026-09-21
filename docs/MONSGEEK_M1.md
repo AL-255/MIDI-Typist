@@ -536,6 +536,20 @@ changing rails; continue servicing releases before explicit reinitialization.
 Wireless restart additionally requires the outer owner's host-release proof;
 neither local idle nor a neutral SPI packet supplies that proof.
 
+Power integration can use `m1_live_power_suspend`, continued foreground service,
+then `m1_live_power_park` to drain local neutral reports and relinquish foreground
+hardware ownership. Unlike stop/reinitialization, this preserves RAM settings,
+active calibration and pending unsaved changes. It cancels transient menus,
+calibration, captures and the GUI lease; no flash writes occur during handoff.
+While parked, live service touches no peripherals. The outer owner still owes
+host-release/peer-sleep policy, LED blanking, scan/USB shutdown and rail/clock
+sequencing. Local completion is not permission to remove power.
+After explicit physical restoration and servicing the same transport,
+`m1_live_power_resume` discards unread pre-wake scans/control traffic and requires
+fresh neutral acquisitions and a new GUI handshake. Stopping an already parked
+owner is terminal and does not reclaim hardware. The development main loop does
+not yet invoke this handoff automatically.
+
 Optional `m1_transport_ops_t` callbacks connect Fn+F1–F5 to the outer physical
 transport owner. Without these callbacks, selection hints/actions are disabled.
 The foreground owner waits for neutral reports, USB MIDI cleanup where relevant,

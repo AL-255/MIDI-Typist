@@ -94,7 +94,7 @@ bool m1_test_usb_publish(void)
 __attribute__((used,section(".test_exports")))
 const void *const m1_test_exports[]={
     m1_test_usb_init,m1_test_usb_setup,m1_test_usb_get,m1_test_usb_in,m1_test_usb_out,
-    m1_test_usb_event,m1_test_usb_sof,m1_usb_ready,m1_usb_drained,m1_usb_hid_send,
+    m1_test_usb_event,m1_test_usb_sof,m1_usb_ready,m1_usb_drained,m1_usb_in_idle,m1_usb_hid_send,
     m1_usb_midi_send,m1_usb_midi_take,m1_usb_generation,m1_usb_errors,m1_usb_leds,
     m1_test_usb_control_init,m1_test_usb_service,m1_test_usb_publish,
     m1_usb_hw_start,m1_usb_hw_stop,m1_usb_hw_running,m1_usb_hw_irq,

@@ -46,6 +46,28 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us);
  * resume. Wireless restart also requires the existing transport ops to confirm
  * old-host releases. Reinitialization restores committed settings; USB epochs do not. */
 void m1_live_stop(uint32_t now_ms);
+/* RAM-preserving power handoff, unlike terminal stop/reinitialization.
+ * suspend cancels transient key/velocity/calibration/menu state and the GUI
+ * lease, but retains settings, active bounds and unsaved journal state. It
+ * never writes flash or changes rails. Repeat suspension is idempotent.
+ * Continue service until park accepts locally completed neutral HID/MIDI,
+ * current radio mode readiness, USB IN buffer release and completed LEDs.
+ * park then stops ALL live foreground HAL/service work; the outer owner takes
+ * exclusive hardware ownership. This is NOT radio-host receipt, peer sleep,
+ * LED blanking, stopped acquisition, or permission to change clocks/rails.
+ * A live USB IRQ may still handle control/idle requests until the owner stops it.
+ * No timeout silently grants ownership; the outer controller owns its deadline.
+ * resume requires explicit physical restoration, healthy periodic acquisition,
+ * lighting and the same ready transport. It discards unread pre-wake frames
+ * and control input, starts a new GUI lease, and requires fresh neutral scans.
+ * Never reload flash or synthesize a key/velocity from a wake-only sample.
+ * No suspend during physical transport selection or terminal owner faults.
+ * Terminal stop after park never reclaims hardware; only cold reset can then
+ * initialize this live owner again. The outer controller must service restored
+ * USB/radio drivers before resume, so readiness is not a pre-sleep snapshot. */
+bool m1_live_power_suspend(uint32_t now_ms);
+bool m1_live_power_park(void);
+bool m1_live_power_resume(uint32_t now_ms,bool platform_restored);
 uint32_t m1_live_scan_losses(void);
 m1_transport_t m1_live_transport(void);
 /* A timed-out physical selection leaves host ownership ambiguous. This is

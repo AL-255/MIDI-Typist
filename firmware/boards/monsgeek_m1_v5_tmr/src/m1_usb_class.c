@@ -26,7 +26,8 @@ bool m1_usb_ready(void)
 uint32_t m1_usb_generation(void) { return s.generation; }
 uint32_t m1_usb_errors(void) { return s.errors; }
 uint8_t m1_usb_leds(void) { return s.leds; }
-bool m1_usb_drained(void) { return m1_usb_ready() && !s.hid_busy && !s.midi_busy; }
+bool m1_usb_in_idle(void) { return !s.hid_busy && !s.midi_busy; }
+bool m1_usb_drained(void) { return m1_usb_ready() && m1_usb_in_idle(); }
 static void fault(void) { ++s.errors;s.fault=true;++s.generation; }
 static usb_sts_type unsupported(usbd_core_type *dev)
 { usbd_ctrl_unsupport(dev);return USB_FAIL; }

@@ -86,6 +86,7 @@ uintptr_t m1_test_live_storage_page(unsigned slot)
 __attribute__((used,section(".test_exports")))
 const void *const m1_live_test_exports[]={
     m1_live_init,m1_live_service,m1_live_stop,m1_live_scan_losses,m1_live_transport,m1_live_transport_fault,
+    m1_live_power_suspend,m1_live_power_park,m1_live_power_resume,
     m1_live_factory_result,
     m1_live_storage_fault,m1_test_live_storage,m1_test_live_storage_gate,
     m1_test_live_storage_count,m1_test_live_storage_page,

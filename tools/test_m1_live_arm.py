@@ -207,6 +207,99 @@ def main():
     wireless_integration(args.elf)
     persistence(args.elf)
     calibration_persistence(args.elf)
+    power_handoff(args.elf)
+
+
+def power_handoff(path):
+    def park(d):
+        for _ in range(1200):
+            d.tick()
+            if d.call('m1_live_power_park'):return
+        raise AssertionError('Power handoff did not finish local output cleanup')
+    def reconnect(d):
+        d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY);d.commands=0
+        d.command('stream gui');return d.snapshot()
+    for high in (False,True):
+        d=Live(path,high,storage=True)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
+        d.command('cfg velocity 3 7');d.snapshot(3)
+        if high:
+            d.chord(56);d.chord(51) # unsaved MIDI + Janko must survive sleep
+            for i in range(D['RAW_VELOCITY_WINDOW']):d.samples[29]=3499-i*100;d.tick()
+            d.run(10);assert any(e[1]==0x90 and e[3] for e in d.events)
+        else:
+            d.samples[81]=2500;d.tick();assert d.held(135)
+        d.events.clear()
+        assert not d.call('m1_live_power_park')
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        assert d.call('m1_live_power_suspend',d.time//1000)
+        assert d.call('m1_live_power_suspend',d.time//1000) # no second panic/gap
+        assert d.call('m1_live_scan_losses')==1
+        assert not d.call('m1_live_power_park')
+        d.call('m1_test_live_led',0);d.run(300)
+        assert not d.call('m1_live_power_park')
+        assert d.hid==bytes(30) and not d.call('midi_control_ready')
+        if high:
+            assert {e[2] for e in d.events if e[1]==0x80}==set(range(128))
+            assert any(e[1:]==bytes((0xb0,64,0)) for e in d.events)
+        # Host commands/HELLO cannot restart streams during handoff.
+        d.send(sx.HELLO);d.run(2);assert not d.call('midi_control_ready')
+        d.call('m1_test_live_led',1);park(d)
+        assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
+        d.samples=[3900]*82;d.tick() # pending, deliberately unconsumed while parked
+        assert d.call('m1_test_live_get',2)==1
+        frames=d.call('m1_test_live_get',1);writes=len(d.writes)
+        d.run(20)
+        assert d.call('m1_test_live_get',1)==frames and len(d.writes)==writes
+        assert not d.call('m1_test_live_storage_count',2)
+        assert not d.call('m1_live_power_resume',d.time//1000,0)
+        d.call('m1_test_live_periodic',0)
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        d.call('m1_test_live_periodic',1)
+        assert d.call('m1_live_power_resume',d.time//1000,1)
+        assert not d.call('m1_test_live_get',2) # unread pre-wake neutral discarded
+        d.samples[81]=2500;d.tick()
+        s=reconnect(d)
+        assert s.keyboard_mapping[81]==135 and s.press[81]==2700 and s.release[81]==3100
+        assert s.velocity_start==7 and s.performance_mode==int(high)
+        assert bool(s.flags&64)==high and not s.flags&2 and s.scan_errors==1
+        assert s.storage_flags==2 and not s.storage_generation and d.hid==bytes(30)
+        assert not d.call('m1_test_live_storage_count',2)
+        d.samples=[3900]*82;d.run(5)
+        if not high:
+            d.samples[81]=2500;d.tick();assert d.held(135)
+        # Once parked, terminal stop must not restart foreground peripheral work.
+        assert d.call('m1_live_power_suspend',d.time//1000);park(d)
+        d.call('m1_live_stop',d.time//1000)
+        writes=len(d.writes);d.run(20);assert len(d.writes)==writes
+        assert not d.call('m1_live_power_suspend',d.time//1000)
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
+        print(f'PASS M1 {"HS MIDI" if high else "FS HID"} power handoff: drain/backpressure, parked ownership, unsaved settings preserved, stale-frame discard, fresh lease and neutral rearm')
+    for mode in (0,1,2,5):
+        d=Live(path,True,mode=mode,storage=True);d.run()
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.command('cfg key 1 81 135');d.snapshot(1)
+        d.samples[81]=3000;d.run();assert d.radio_held(135)
+        assert d.call('m1_live_power_suspend',d.time//1000)
+        assert not d.call('m1_live_power_park');park(d)
+        assert not any(d.radio_slots) and not any(d.radio_bitmap) and not d.events
+        packets=len(d.radio_packets);d.run();assert len(d.radio_packets)==packets
+        d.call('m1_wireless_stop')
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        d.start_radio(mode)
+        # The restoration owner, not parked live, services physical readiness.
+        for _ in range(400):
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+            if d.call('m1_wireless_ready'):break
+        assert d.call('m1_wireless_ready')
+        assert d.call('m1_live_power_resume',d.time//1000,1)
+        d.run();assert not d.radio_held(135)
+        s=reconnect(d);assert s.keyboard_mapping[81]==135 and s.performance_mode==0
+        assert not s.flags&2 and not d.call('m1_test_live_storage_count',2)
+        d.samples[81]=3900;d.run();d.samples[81]=3000;d.run();assert d.radio_held(135)
+    print('PASS M1 radio power handoff: all four modes release locally, parked scheduler ownership, explicit restoration, retained keymaps and no MIDI')
 
 
 def calibration_persistence(path):

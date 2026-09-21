@@ -28,6 +28,7 @@ static device_store_t store;
 static const m1_live_storage_ops_t *storage_ops;
 static bool storage_fault,storage_gap;
 static uint32_t last_save_attempt;
+static enum { POWER_AWAKE,POWER_DRAINING,POWER_PARKED,POWER_STOPPED } power_state;
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal);
 static const keyboard_app_ops_t app_ops={.save_calibration=save_calibration};
 
@@ -125,7 +126,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     bool old_drained=!initialized || (controls.current==M1_TRANSPORT_USB?
         usb_ready() && m1_usb_drained() && !midi.panic && !midi.count:
         transport_ops && drained(NULL));
-    if((initialized && (enabled || transport_fault || storage_fault || !old_drained || !app.sent_valid ||
+    if((initialized && (enabled || power_state!=POWER_AWAKE || transport_fault || storage_fault || !old_drained || !app.sent_valid ||
         memcmp(&app.sent,&neutral,sizeof(neutral)))) || !m1_transport_valid(current) ||
        (current!=M1_TRANSPORT_USB && !radio_mode(current)) ||
        (transports && (!transports->drained || !transports->select)) ||
@@ -150,6 +151,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     }
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
+    power_state=POWER_AWAKE;
     status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true,
                                       .calibration_supported=storage!=NULL};
     epoch=m1_usb_generation();scan_stream_init();
@@ -158,8 +160,57 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
 }
 void m1_live_stop(uint32_t now_ms)
 {
-    if(!initialized || !enabled)return;
-    now=now_ms;enabled=false;cancel_input();scan_stream_stop();midi_control_usb_reset();
+    if(!initialized || (!enabled && power_state==POWER_AWAKE))return;
+    now=now_ms;enabled=false;
+    /* Do not reclaim peripherals already handed to the power owner. */
+    power_state=power_state>=POWER_PARKED?POWER_STOPPED:POWER_AWAKE;
+    cancel_input();scan_stream_stop();midi_control_usb_reset();
+}
+static bool neutral_sent(void)
+{
+    const keyboard_report_t neutral={0};
+    return app.sent_valid && !memcmp(&app.sent,&neutral,sizeof(neutral));
+}
+bool m1_live_power_suspend(uint32_t now_ms)
+{
+    if(!initialized || power_state==POWER_STOPPED || transport_fault || storage_fault ||
+       selection_attempted || controls.switching)return false;
+    if(power_state!=POWER_AWAKE)return true;
+    if(!enabled)return false;
+    now=now_ms;enabled=false;power_state=POWER_DRAINING;
+    cancel_input();scan_stream_lost();++losses;seen=source_healthy=false;
+    scan_stream_stop();midi_control_usb_reset();return true;
+}
+bool m1_live_power_park(void)
+{
+    if(!initialized || transport_fault || storage_fault)return false;
+    if(power_state==POWER_PARKED)return true;
+    if(power_state!=POWER_DRAINING || !neutral_sent() ||
+       !m1_lighting_healthy() || !m1_lighting_ready())return false;
+    uint32_t mask=lock();
+    bool ready=m1_usb_in_idle() && (controls.current==M1_TRANSPORT_USB?
+        usb_ready() && !midi.panic && !midi.count:
+        radio_mode(controls.current) && m1_wireless_ready() && m1_wireless_local_idle());
+    if(ready)power_state=POWER_PARKED;
+    unlock(mask);return ready;
+}
+bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
+{
+    if(!initialized || power_state!=POWER_PARKED || !platform_restored ||
+       transport_fault || storage_fault || !m1_hal_periodic_active() ||
+       !m1_lighting_healthy())return false;
+    now=now_ms;check_epoch();
+    if(!output_ready())return false;
+    uint32_t discarded;
+    (void)m1_hal_frame(samples,&discarded);
+    uint8_t events[M1_USB_HS_PACKET];
+    (void)m1_usb_midi_take(events,sizeof(events));
+    scan_stream_usb_reset();midi_control_usb_reset();
+    /* Do not restart MIDI panic here: park already proved cleanup completed.
+     * A changed USB epoch may legitimately have queued fresh cleanup. */
+    keyboard_app_invalidate(&app,now);seen=source_healthy=light_sent=false;
+    controls.neutral_required=true;
+    power_state=POWER_AWAKE;enabled=true;return true;
 }
 uint32_t m1_live_scan_losses(void) { return losses; }
 m1_factory_result_t m1_live_factory_result(void) { return factory_result; }
@@ -243,10 +294,19 @@ static void snapshot(void)
 }
 void m1_live_service(uint32_t now_ms,uint32_t now_us)
 {
-    if(!initialized)return;
+    if(!initialized || power_state>=POWER_PARKED)return;
     now=now_ms;check_epoch();
     m1_hal_service(now_us);m1_lighting_service(now_us);m1_battery_hal_service(now);
     m1_wireless_service(now_us);
+    if(power_state==POWER_DRAINING) {
+        /* No new scan, configuration, battery packet, LED frame or flash
+         * transaction may compete with the neutral-output handoff. */
+        keyboard_app_service(&app,now,false,neutral_sent()?NULL:send_keyboard,
+                             controls.current==M1_TRANSPORT_USB?send_midi:NULL);
+        uint8_t events[M1_USB_HS_PACKET];
+        (void)m1_usb_midi_take(events,sizeof(events)); /* discard, never dispatch */
+        midi_control_service();return;
+    }
     if(controls.current!=M1_TRANSPORT_USB)
         (void)m1_wireless_battery(m1_battery_hal_status());
     source_healthy=enabled && m1_hal_periodic_active();

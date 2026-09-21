@@ -13,6 +13,9 @@ extern usbd_desc_handler m1_usb_descriptors;
 void m1_usb_bind(usbd_core_type *device);
 bool m1_usb_ready(void);
 bool m1_usb_drained(void); /* no local IN pending; inspect epoch for aborted work */
+/* Buffer ownership only, including an unconfigured/suspended control link.
+ * Not host receipt, physical endpoint shutdown or permission to remove power. */
+bool m1_usb_in_idle(void);
 /* Copy on acceptance. Unchanged HID state is accepted without requeueing;
  * the class implements host SET_IDLE instead of forwarding app heartbeats. */
 bool m1_usb_hid_send(const keyboard_report_t *report);
