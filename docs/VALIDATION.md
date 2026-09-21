@@ -10,6 +10,11 @@ Linked Cortex-M4 tests execute clock, wired/battery cold-start, battery-input, U
 scan, LED and SPI3 radio HALs with official SDK drivers; register effects and completion
 events are modeled. These do not validate an installable
 M1 firmware or peripheral timing.
+Scanner pause/resume tests cut acquisition at every bank boundary, reject
+one-shot/invalid contexts and latched faults, discard unread/battery samples,
+preserve IRQ masks and ADC configuration, and require a fresh complete frame
+after restart. Register guards prohibit power-rail and unrelated-DMA changes;
+ADC settling and resumed sample accuracy still require physical validation.
 The composite USB audit also drives real SDK endpoint/control routines through
 shared SysEx into the 82-key GUI decoder, including configuration ACK/readback,
 bounded control requests, ownership, suspend and session reset at both USB speeds.

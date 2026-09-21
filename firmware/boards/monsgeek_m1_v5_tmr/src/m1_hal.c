@@ -9,7 +9,7 @@
 
 static m1_scan_t scan;
 static uint16_t row[M1_ADC_RANKS];
-static volatile bool initialized, running, busy, healthy, single;
+static volatile bool initialized, running, busy, healthy, single, paused;
 static uint32_t capture_since;
 static uint8_t bank;
 _Static_assert(M1_CORE_HZ%M1_SCAN_HZ==0,"M1 scan cadence must divide timer clock");
@@ -43,7 +43,7 @@ static void arm_row(void)
 }
 static void fail(void)
 {
-    healthy=false; busy=false; running=false;
+    healthy=false; busy=false; running=false; paused=false;
     tmr_counter_enable(TMR6,FALSE);
     tmr_counter_enable(TMR3,FALSE);
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
@@ -54,7 +54,7 @@ static void fail(void)
 bool m1_hal_init(void)
 {
     if(initialized) m1_hal_stop();
-    initialized=healthy=false;
+    initialized=healthy=paused=false;
     m1_scan_init(&scan);
     crm_clocks_freq_type clocks;
     crm_clocks_freq_get(&clocks);
@@ -134,7 +134,7 @@ bool m1_hal_init(void)
 }
 bool m1_hal_start(void)
 {
-    if(!initialized || !healthy || running) return false;
+    if(!initialized || !healthy || running || paused) return false;
     /* A completed one-shot owns its frame until consumed. */
     if(single && scan.pending)return false;
     bank=0; busy=single=false; scan.next_bank=0; scan.pending=false;
@@ -150,10 +150,67 @@ bool m1_hal_start(void)
     tmr_counter_enable(TMR6,TRUE);
     return true;
 }
+static bool pause_context(void)
+{
+    return !__get_IPSR() && !__get_BASEPRI() && !__get_FAULTMASK() &&
+        !(__get_CONTROL()&1u);
+}
+bool m1_hal_pause(void)
+{
+    if(!pause_context())return false;
+    uint32_t mask=__get_PRIMASK(); __disable_irq();
+    if(!initialized || !healthy || !running || single || paused) {
+        __set_PRIMASK(mask); return false;
+    }
+    /* Do not disguise an already-latched acquisition failure as a save gap. */
+    if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET ||
+       (busy && tmr_flag_get(TMR6,TMR_OVF_FLAG)!=RESET)) {
+        fail(); __set_PRIMASK(mask); return false;
+    }
+    NVIC_DisableIRQ(DMA1_Channel6_IRQn); NVIC_DisableIRQ(TMR6_GLOBAL_IRQn);
+    tmr_counter_enable(TMR6,FALSE); tmr_counter_enable(TMR3,FALSE);
+    adc_enable(ADC1,FALSE); /* Stops/resets a partially acquired sequence. */
+    dma_channel_enable(DMA1_CHANNEL6,FALSE);
+    __DSB();
+    if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET) {
+        fail(); __set_PRIMASK(mask); return false;
+    }
+    dma_flag_clear(DMA1_GL6_FLAG);
+    tmr_flag_clear(TMR3,TMR_OVF_FLAG); tmr_flag_clear(TMR6,TMR_OVF_FLAG);
+    NVIC_ClearPendingIRQ(DMA1_Channel6_IRQn); NVIC_ClearPendingIRQ(TMR6_GLOBAL_IRQn);
+    bank=scan.next_bank=0;
+    busy=running=scan.pending=scan.battery_valid=false;
+    paused=true;
+    __DMB(); __set_PRIMASK(mask);
+    return true;
+}
+bool m1_hal_resume(void)
+{
+    if(!pause_context())return false;
+    uint32_t mask=__get_PRIMASK(); __disable_irq();
+    if(!initialized || !healthy || !paused) {
+        __set_PRIMASK(mask); return false;
+    }
+    crm_clocks_freq_type clocks;
+    crm_clocks_freq_get(&clocks);
+    if(clocks.sclk_freq!=M1_CORE_HZ || clocks.ahb_freq!=M1_CORE_HZ ||
+       clocks.apb1_freq!=M1_CORE_HZ/2u || clocks.apb2_freq!=M1_CORE_HZ) {
+        __set_PRIMASK(mask); return false;
+    }
+    /* Retain ADC calibration/rank setup and all power rails. TMR6 starts at
+     * zero: ADC gets a full frame period to settle before its first trigger.
+     * No pre-pause frame or battery reading is published after this boundary. */
+    dma_flag_clear(DMA1_GL6_FLAG);
+    tmr_flag_clear(TMR3,TMR_OVF_FLAG);
+    paused=false;
+    bool started=m1_hal_start();
+    __DMB(); __set_PRIMASK(mask);
+    return started;
+}
 bool m1_hal_capture_start(uint32_t now_us)
 {
     uint32_t mask=__get_PRIMASK(); __disable_irq();
-    if(!initialized || !healthy || running || scan.pending) {
+    if(!initialized || !healthy || running || paused || scan.pending) {
         __set_PRIMASK(mask); return false;
     }
     NVIC_DisableIRQ(TMR6_GLOBAL_IRQn);
@@ -186,7 +243,7 @@ void m1_hal_stop(void)
     tmr_counter_enable(TMR6,FALSE); tmr_counter_enable(TMR3,FALSE);
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
     adc_enable(ADC1,FALSE);
-    busy=running=healthy=false; scan.pending=false;
+    busy=running=healthy=paused=false; scan.pending=false;
 }
 void m1_hal_timer_irq(void)
 {
@@ -198,6 +255,7 @@ void m1_hal_timer_irq(void)
 }
 void m1_hal_dma_irq(void)
 {
+    if(paused) { dma_flag_clear(DMA1_GL6_FLAG); return; }
     if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET) { fail(); return; }
     if(dma_interrupt_flag_get(DMA1_FDT6_FLAG)==RESET) return;
     tmr_counter_enable(TMR3,FALSE);

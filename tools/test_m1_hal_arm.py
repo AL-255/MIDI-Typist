@@ -264,6 +264,105 @@ def scanner(elf):
     print('PASS M1 linked scanner/SDK: ADC ranks, six DMA rows, bank pins, complete-frame ownership, cadence/DMA/calibration faults')
 
 
+def scanner_pause(elf):
+    def begin(d):
+        d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+
+    def complete(d,bank,base):
+        assert (d.u32(GPIO+0x414)>>7)&7==[0,6,2,4,3,1][bank]
+        d.cpu.mem_write(d.u32(DMA+0x78),struct.pack('<15H',
+            *(base+bank*15+i for i in range(15))))
+        d.put(DMA,3<<20);d.call('m1_hal_dma_irq')
+
+    for mask in (0,1):
+        # Every bank boundary, including an unread complete frame and idle.
+        for cut in range(8):
+            d=M1Arm(elf,scanner=True)
+            assert not d.call('m1_hal_pause') and not d.call('m1_hal_resume')
+            assert not d.writes
+            assert d.call('m1_hal_init') and d.call('m1_hal_start')
+            begin(d)
+            for bank in range(6):complete(d,bank,1000)
+            if cut<6:
+                begin(d)
+                for bank in range(cut):complete(d,bank,2000)
+            elif cut==7:
+                assert d.call('m1_hal_frame',RGB,RGB+200)
+            assert d.call('m1_hal_battery',RGB+204,RGB+208)
+            d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+            d.writes.clear()
+            assert d.call('m1_hal_pause')
+            assert d.call('m1_hal_healthy') and not d.call('m1_hal_periodic_active')
+            assert not d.call('m1_hal_frame',RGB,RGB+200)
+            assert not d.call('m1_hal_battery',RGB+204,RGB+208)
+            assert not d.call('m1_hal_errors')
+            assert not d.u32(ADC+8)&1 and not d.u32(DMA+0x6c)&1
+            assert not d.u32(TMR3)&1 and not d.u32(TMR6)&1
+            assert not d.call('m1_hal_pause') and not d.call('m1_hal_start')
+            assert not d.call('m1_hal_capture_start',1)
+            # Late pending vectors cannot publish stale data or fault a pause.
+            d.put(DMA,11<<20);d.call('m1_hal_dma_irq')
+            d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+            assert d.call('m1_hal_healthy') and not d.call('m1_hal_errors')
+            assert not d.call('m1_hal_frame',RGB,RGB+200)
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+            # Clock changes deny resume without touching registers/state.
+            clock=d.u32(CRM+8);d.put(CRM+8,0)
+            before=len(d.writes)
+            assert not d.call('m1_hal_resume') and len(d.writes)==before
+            d.put(CRM+8,clock)
+            # Clear stale peripheral flags again before enabling vectors.
+            d.put(DMA,3<<20);d.put(TMR6+0x10,1)
+            assert d.call('m1_hal_resume')
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+            assert not d.call('m1_hal_resume') and d.call('m1_hal_periodic_active')
+            assert d.u32(ADC+8)&1 and d.u32(TMR6)&1
+            assert not d.u32(TMR3)&1 and not d.u32(DMA+0x6c)&1
+            assert d.u32(TMR6+0x24)==0 and not d.u32(TMR6+0x10)&1
+            assert not d.u32(DMA)&(15<<20)
+            # No peripheral reset, rail/mux change, ADC rank or calibration write.
+            assert all(a!=CRM+0x24 and a!=CRM+0x20 and
+                not GPIO<=a<GPIO+0xc00 and
+                (not ADC<=a<ADC+0x400 or (a==ADC+8 and not v&12))
+                for a,s,v in d.writes)
+            assert not d.call('m1_hal_frame',RGB,RGB+200)
+            begin(d)
+            for bank in range(6):
+                assert not d.call('m1_hal_frame',RGB,RGB+200)
+                complete(d,bank,3000)
+            assert d.call('m1_hal_frame',RGB,RGB+200)
+            assert d.u32(RGB+200)==2  # pause does not fabricate a scan sequence
+            assert struct.unpack('<82H',d.cpu.mem_read(RGB,164))==tuple(
+                3001+r[1]*15+r[2] for r in m1_records())
+            assert d.call('m1_hal_battery',RGB+204,RGB+208)
+            assert d.u32(RGB+208)==2
+            assert d.call('m1_hal_pause')
+            d.call('m1_hal_stop')
+            assert not d.call('m1_hal_resume') and not d.call('m1_hal_healthy')
+    for reg,value in ((UC_ARM_REG_BASEPRI,1),(UC_ARM_REG_FAULTMASK,1),
+                      (UC_ARM_REG_CONTROL,1),(UC_ARM_REG_IPSR,3)):
+        for method in ('m1_hal_pause','m1_hal_resume'):
+            d=M1Arm(elf,scanner=True)
+            assert d.call('m1_hal_init') and d.call('m1_hal_start')
+            if method=='m1_hal_resume':assert d.call('m1_hal_pause')
+            d.cpu.reg_write(reg,value);d.writes.clear()
+            assert not d.call(method) and not d.writes
+    for fault in ('dma','overrun'):
+        d=M1Arm(elf,scanner=True)
+        assert d.call('m1_hal_init') and d.call('m1_hal_start')
+        begin(d)
+        if fault=='dma':d.put(DMA,8<<20)
+        else:d.put(TMR6+0x10,1)
+        assert not d.call('m1_hal_pause') and not d.call('m1_hal_healthy')
+        assert d.call('m1_hal_errors')==1 and not d.call('m1_hal_resume')
+    d=M1Arm(elf,scanner=True)
+    assert d.call('m1_hal_init') and d.call('m1_hal_capture_start',0)
+    d.writes.clear()
+    assert not d.call('m1_hal_pause') and not d.call('m1_hal_resume') and not d.writes
+    assert d.call('m1_hal_capture_busy')
+    print('PASS M1 periodic pause: all bank cuts, unread/battery invalidation, fresh restart, retained calibration/rails, IRQ/context and fault guards')
+
+
 def scanner_capture(elf):
     timeout=D['M1_WAKE_SCAN_TIMEOUT_US']
     dev=M1Arm(elf,scanner=True)
@@ -1408,6 +1507,7 @@ def main():
     args=parser.parse_args()
     lighting(args.elf)
     scanner(args.elf)
+    scanner_pause(args.elf)
     scanner_capture(args.elf)
     startup(args.elf)
     battery_startup(args.elf)

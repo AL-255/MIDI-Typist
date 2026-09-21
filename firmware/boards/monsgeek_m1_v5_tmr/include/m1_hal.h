@@ -8,6 +8,17 @@
  */
 bool m1_hal_init(void);
 bool m1_hal_start(void);
+/* Foreground-only periodic pause/resume, preserving PRIMASK. Pause stops
+ * ADC/timers/DMA and discards partial/unread frames and battery data, retaining
+ * ADC configuration/calibration and complete-frame sequence/errors. Not valid
+ * for one-shot captures. A latched DMA/overrun fault fails instead of pausing.
+ * Resume requires the original clocks/rails retained by the owner, starts at
+ * bank zero after a full frame period, and does not recalibrate. Start/capture
+ * cannot bypass a pause. Stop/fault requires init, not resume.
+ * Owner MUST publish a scan gap and clear held-key/velocity state; a successful
+ * pause alone is NOT proof of flash safety, power, or other DMA quiescence. */
+bool m1_hal_pause(void);
+bool m1_hal_resume(void);
 /* One nonperiodic, complete six-bank frame for sleep/wake checks. Init and
  * sensor/clock settling remain caller responsibilities. Rejects busy or
  * unconsumed frames. Completion stops ADC/timers/DMA but keeps configuration

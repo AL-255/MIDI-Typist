@@ -174,6 +174,11 @@ invalidates capture/velocity and requires neutral before rearming. A failed
 resume is terminal; reinitialization cannot silently clear it. No unchanged
 settings are rewritten, and a write failure is not retried in that session.
 
+The scanner provides `m1_hal_pause` / `m1_hal_resume` to stop periodic
+acquisition without reinitializing ADC calibration or power rails. It discards
+partial/unread frames and battery data. This is only one owner primitive:
+it neither qualifies power nor drains lighting/radio/USB or maintains clocks.
+
 The physical pause/drain/power coordinator, live calibration save/reset,
 startup RAM copy and complete application image remain unfinished. Foreground
 audits script the owner gate and profile I/O; the separate backend audit runs

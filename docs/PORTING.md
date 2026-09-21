@@ -490,6 +490,10 @@ to track pending/debounce status without making a write attempt. Defer until
 power and output ownership are proven, then call `device_store_update`; a busy
 deferral is not a controller fault. Preserve visible capture gaps and rearm only
 on fresh neutral acquisitions after resume.
+M1's scanner pause/resume contract discards partial/unread acquisitions and
+battery samples without recalibrating ADC or changing rails. The outer owner
+must retain clocks/power, coordinate the other peripherals and expose the gap;
+unchanged complete-frame sequence counters are not evidence of continuous time.
 If a flash operation stalls instruction fetch, keep the transaction, SDK
 callees, literal pools and unmaskable exception path in RAM. Prove the complete
 load-image boundary excludes the slots, including RAM initializers. M1's

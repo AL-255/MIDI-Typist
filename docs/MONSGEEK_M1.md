@@ -97,6 +97,17 @@ Timeout, DMA error or invalid sample invalidates acquisition and requires init.
 Clocks, sensor power and settling remain caller responsibilities. A one-shot
 frame is not an 8 kHz sample stream and must not feed normal velocity fitting.
 
+`m1_hal_pause()` / `m1_hal_resume()` provide a foreground-only pause for
+periodic scanning. Pause stops ADC, both timers and the owned DMA channel;
+partial/unread frames and battery readings are discarded. Resume retains ADC
+configuration/calibration, checks the original clocks and starts a fresh
+bank-zero frame after one full timer period. Neither operation changes power
+rails. A latched acquisition fault still requires reinitialization. One-shot
+captures cannot be paused, and ordinary start/capture cannot bypass a pause.
+The owner must invalidate input/velocity state and report a capture gap; scan
+sequence numbers count only completed acquisitions. This primitive does not
+provide the complete flash power/drain/timekeeping coordinator.
+
 ## Lighting HAL
 
 `m1_lighting_encode` converts the shared application's LED-chain RGB frame
