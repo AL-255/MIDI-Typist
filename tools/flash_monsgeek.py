@@ -1,13 +1,15 @@
-"""Identity-bound M1 V5 TMR factory conversion for the GUI.
+"""Identity-bound M1 V5 TMR conversion and custom reflash for the GUI.
 
-USB PIDs are shared across products. Only the normal application's vendor
-identity reply can establish ID2949. A bootloader candidate is never a verified
-M1, and entering that bootloader is destructive even without sending an image.
+USB PIDs are shared across products. Factory identity requires its ID2949 reply;
+custom identity requires the build target on the same physical USB MIDI port.
+A bootloader candidate is never a verified M1, and entering that bootloader
+is destructive even without sending an image.
 """
 from dataclasses import replace
 from contextlib import contextmanager
 import hashlib
 import os
+import secrets
 from pathlib import Path
 import struct
 import time
@@ -35,6 +37,9 @@ INSTALL = FlashAction('install', 'Install experimental MIDI-Typist', 'custom',
     'Factory sensor calibration is preserved. The next reset enters IAP and erases the trial and custom saves.')
 RESTORE = FlashAction('restore', 'Install MonsGeek factory application', 'monsgeek',
     'Use your own ID2949 factory image. Resets factory user settings; preserves sensor calibration and bootloader code.')
+REFLASH = FlashAction('reflash', 'Reflash experimental MIDI-Typist', 'custom',
+    'Replace the M1 application through its armed recovery path. Custom profiles are erased.')
+CUSTOM_TARGET = 'MG-M1V5TMR'
 
 
 def boot_request():
@@ -69,14 +74,15 @@ def parse_identity(report):
 class MonsGeekAdapter:
     id = 'monsgeek-m1-v5-tmr'
     name = 'MonsGeek M1 V5 TMR (experimental)'
-    inspection_modes = ('candidate', 'factory')
+    inspection_modes = ('candidate', 'factory', 'custom_candidate', 'custom')
+    control_inspection_modes = ('custom_candidate', 'custom')
     default_image = str(Path(__file__).resolve().parents[1]/'build-m1-hal/m1_development.bin')
     filetypes = (('M1 application or factory dump', '*.bin'),)
-    safety = ('M1 trial USB startup is not working yet; not for daily use. '
+    safety = ('M1 trial USB diagnostics work, but calibration validation blocks keyboard startup; not for daily use. '
               'Experimental conversion: factory entry resets stock user settings. '
               'Bootloader code and factory sensor calibration are preserved. '
-              'Every update erases custom saves. Trial startup attempts to arm reset-to-IAP recovery; '
-              'if armed, power cycling erases the trial application. Physical recovery is unconfirmed. '
+              'Every update erases custom saves. Trial startup arms reset-to-IAP recovery; '
+              'power cycling erases the trial application. '
               'A shared bootloader PID alone '
               'cannot authorize an update. No automatic retries.')
 
@@ -96,13 +102,24 @@ class MonsGeekAdapter:
             usb_id = read('idVendor') + ':' + read('idProduct')
             if usb_id not in APPLICATION_IDS and usb_id != BOOTLOADER_ID:
                 continue
+            bus,address,serial=read('busnum'),read('devnum'),read('serial')
+            if not bus.isdecimal() or not address.isdecimal():continue
             mode = 'unverified_bootloader' if usb_id == BOOTLOADER_ID else 'candidate'
-            identity = '|'.join((path.name, read('busnum'), read('devnum'), usb_id, read('serial')))
+            if (usb_id in APPLICATION_IDS and read('manufacturer')=='MIDI-Typist' and
+                    read('product')=='M1 V5 TMR'):
+                mode='custom_candidate'
+            identity = '|'.join((path.name,bus,address,usb_id,serial))
             details = {'USB revision': read('bcdDevice', 'Not reported'),
                        'Model verification': 'Not queried; USB identity is shared between products',
                        'Recovery': ('Shared bootloader PID; cannot establish the model or flash.'
                                     if mode == 'unverified_bootloader' else
                                     'Choose Read firmware details to verify internal ID2949. No settings are changed.')}
+            if mode=='custom_candidate':
+                details['Recovery']='Read firmware details to verify the custom build over its USB-bound MIDI control port.'
+            # sysfs files disappear separately during USB reset. Never turn a
+            # torn snapshot into a new identity (or authorize a partial IAP).
+            if (read('idVendor')+':'+read('idProduct'),read('busnum'),read('devnum'),read('serial'))!=(usb_id,bus,address,serial):
+                continue
             result.append(ConnectedDevice(self.id, path.name,
                 hashlib.sha256(identity.encode()).hexdigest(), mode,
                 read('product', 'Unknown product'), read('serial', 'Not exposed by USB'),
@@ -115,7 +132,7 @@ class MonsGeekAdapter:
         return device
 
     def actions(self, device):
-        return (INSTALL, RESTORE) if device.mode == 'factory' else ()
+        return {'factory':(INSTALL, RESTORE),'custom':(REFLASH, RESTORE)}.get(device.mode,())
 
     def selected(self, token):
         devices = self.discover()
@@ -146,7 +163,7 @@ class MonsGeekAdapter:
     def feature_device(self, token):
         import fcntl
         current = self.selected(token)
-        if current.mode not in self.inspection_modes:
+        if current.mode not in ('candidate','factory'):
             raise RuntimeError('Shared bootloader identity cannot verify an M1; no query was sent')
         node = self.vendor_node(current)
         fd = os.open(node, os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
@@ -166,6 +183,8 @@ class MonsGeekAdapter:
 
     def inspect(self, token):
         import fcntl
+        if self.selected(token).mode=='custom_candidate':
+            with self.custom_session(token) as device:return device
         with self.feature_device(token) as (current, fd):
             request = identity_request()
             if fcntl.ioctl(fd, HIDIOCSFEATURE, request, True) != FEATURE_BYTES:
@@ -180,21 +199,58 @@ class MonsGeekAdapter:
             details={**current.details, 'Model verification': f'ID{MODEL_ID} confirmed by vendor identity query',
                      'Recovery': self.safety})
 
-    def load_image(self, path, destination):
-        return iap.load_image(path, destination)
+    @contextmanager
+    def custom_session(self, token, *, enter_boot=False, status=lambda message:None):
+        from midi_backend import MidiBackend, control_port_for_usb
+        from keyboard_gui_model import parse_build
+        from firmware_defaults import DEFAULTS as D
+        import midi_sysex as sx
+        current=self.selected(token)
+        if current.mode!='custom_candidate':raise RuntimeError('Selected device is not a custom M1 candidate')
+        usb_path=self.sysfs/current.location
+        port=control_port_for_usb(usb_path)
+        connection=None;boot_requested=False
+        session=secrets.randbelow(0xffffffff)+1
+        try:
+            connection=MidiBackend(port)
+            self.selected(token)
+            if control_port_for_usb(usb_path)!=port:raise RuntimeError('MIDI port changed before identity query')
+            connection.send(sx.encode(sx.HELLO,session))
+            deadline=time.monotonic()+D['MIDI_CONTROL_COMMAND_TIMEOUT_MS']/1000
+            while True:
+                wire=connection.receive(.02)
+                if wire:
+                    kind,reply_session,sequence,payload=sx.decode(wire)
+                    if reply_session==session and kind==sx.READY and sequence==0:
+                        build=parse_build(payload+b'\n')
+                        if not build or build[2]!=CUSTOM_TARGET:
+                            raise RuntimeError('Control port did not identify the current M1 firmware target')
+                        break
+                    if reply_session==session and kind==sx.ERROR:
+                        raise RuntimeError('M1 identity query was rejected')
+                if time.monotonic()>=deadline:raise TimeoutError('M1 custom build query timed out')
+            self.selected(token)
+            if control_port_for_usb(usb_path)!=port:raise RuntimeError('MIDI port changed after identity query')
+            confirmed=replace(current,mode='custom',version=build[0],details={**current.details,
+                'Model verification':CUSTOM_TARGET+' confirmed by USB-bound SysEx',
+                'Control port':port,'Recovery':self.safety})
+            if enter_boot:
+                status('Custom M1 build verified: '+build[0]+'. Requesting armed recovery once.')
+                boot_requested=True # send failure has uncertain acceptance; never resend or cancel
+                connection.send(sx.encode(sx.COMMAND,session,1,b'bootloader'))
+            yield confirmed
+        finally:
+            if connection:
+                if not boot_requested:
+                    try:connection.send(sx.encode(sx.CLOSE,session))
+                    except Exception:pass  # preserve original identity/USB error
+                try:connection.close()
+                except Exception:
+                    if not boot_requested:raise
+                    status('MIDI port closed during boot entry; checking USB transition.')
 
-    def flash(self, token, action, path, digest, progress, status):
+    def enter_factory(self, token, status):
         import fcntl
-        # Resolve everything that can fail locally before destructive entry.
-        choices = {item.id:item for item in (INSTALL, RESTORE)}
-        if action not in choices: raise ValueError('Unsupported M1 flash action')
-        image = self.load_image(path, choices[action].destination)
-        if image.digest != digest: raise iap.ImageError('Firmware changed after confirmation')
-        import usb.core
-        import usb.util
-        import usb.backend.libusb1
-        backend = usb.backend.libusb1.get_backend()
-        if backend is None: raise RuntimeError('Install libusb before converting the keyboard')
         with self.feature_device(token) as (current, fd):
             request = identity_request()
             if fcntl.ioctl(fd, HIDIOCSFEATURE, request, True) != FEATURE_BYTES:
@@ -206,9 +262,32 @@ class MonsGeekAdapter:
             version = parse_identity(reply)
             self.selected(token)
             status(f'ID{MODEL_ID} {version} verified; entering IAP once (stock settings will be reset).')
-            # A transfer exception means unknown acceptance, never a reason to resend.
             if fcntl.ioctl(fd, HIDIOCSFEATURE, boot_request(), True) != FEATURE_BYTES:
                 raise RuntimeError('Boot-entry acceptance uncertain; no retry was sent')
+        return current
+
+    def load_image(self, path, destination):
+        return iap.load_image(path, destination)
+
+    def flash(self, token, action, path, digest, progress, status):
+        # Resolve everything that can fail locally before destructive entry.
+        choices = {item.id:item for item in (INSTALL, RESTORE, REFLASH)}
+        if action not in choices: raise ValueError('Unsupported M1 flash action')
+        image = self.load_image(path, choices[action].destination)
+        if image.digest != digest: raise iap.ImageError('Firmware changed after confirmation')
+        import usb.core
+        import usb.util
+        import usb.backend.libusb1
+        backend = usb.backend.libusb1.get_backend()
+        if backend is None: raise RuntimeError('Install libusb before converting the keyboard')
+        current=self.selected(token)
+        if current.mode=='custom_candidate':
+            if action not in ('reflash','restore'):raise ValueError('Use Reflash for a custom M1')
+            with self.custom_session(token,enter_boot=True,status=status) as current:pass
+        elif current.mode=='candidate':
+            if action not in ('install','restore'):raise ValueError('Use Install for a factory M1')
+            current=self.enter_factory(token,status)
+        else:raise RuntimeError('No verified application entry path for this M1 candidate')
         deadline = time.monotonic()+BOOT_TIMEOUT_SECONDS
         while True:
             candidates = self.discover()
@@ -222,7 +301,7 @@ class MonsGeekAdapter:
                     raise RuntimeError('Unexpected application after boot entry; stopped')
             if time.monotonic()>=deadline: raise TimeoutError('M1 did not enter IAP; no entry retry was sent')
             time.sleep(ENUMERATION_POLL_SECONDS)
-        # This process witnessed ID2949 -> guarded factory entry -> IAP on the
+        # This process witnessed verified application -> guarded entry -> IAP on the
         # same port. Never offer this path to a pre-existing, unverified PID.
         return self._program_entered_bootloader(boot, image, progress, status, backend)
 

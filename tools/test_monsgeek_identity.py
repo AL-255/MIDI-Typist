@@ -87,6 +87,22 @@ class IdentityTests(unittest.TestCase):
         self.device('3-3')
         with self.assertRaisesRegex(RuntimeError, 'Exactly one'): self.adapter.selected(device.token)
 
+    def test_discovery_skips_incomplete_or_torn_enumeration(self):
+        path=self.device()
+        (path/'devnum').unlink()
+        self.assertEqual(self.adapter.discover(),[])
+        (path/'devnum').write_text('22')
+        read=Path.read_text
+        count=0
+        def changing(file,*args,**kwargs):
+            nonlocal count
+            if file==path/'devnum':
+                count+=1
+                if count==2:return '23'
+            return read(file,*args,**kwargs)
+        with patch.object(Path,'read_text',changing):
+            self.assertEqual(self.adapter.discover(),[])
+
     def test_vendor_interface_only_and_ambiguity(self):
         self.device(interface=0)
         device, = self.adapter.discover()
@@ -144,7 +160,7 @@ class IdentityTests(unittest.TestCase):
         def checked(token):
             nonlocal count
             count += 1
-            if count == 3:
+            if count == 4:
                 (self.usb / '3-2.1' / 'devnum').write_text('23')
             return selected(token)
         with patch.object(self.adapter, 'selected', side_effect=checked):
@@ -173,14 +189,16 @@ class IdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'no query'):
                 self.adapter.inspect(device.token)
 
-    def test_only_verified_factory_has_conversion_actions(self):
+    def test_only_verified_applications_have_conversion_actions(self):
         self.device()
         device, = self.adapter.discover()
         with patch('os.open', side_effect=AssertionError('Opened hardware')):
-            for mode in ('candidate', 'custom', 'bootloader', 'unverified_bootloader'):
+            for mode in ('candidate', 'custom_candidate', 'bootloader', 'unverified_bootloader'):
                 self.assertEqual(self.adapter.actions(replace(device, mode=mode)), ())
             self.assertEqual([a.id for a in self.adapter.actions(replace(device,mode='factory'))],
                              ['install','restore'])
+            self.assertEqual([a.id for a in self.adapter.actions(replace(device,mode='custom'))],
+                             ['reflash','restore'])
             with self.assertRaises(FileNotFoundError):
                 self.adapter.flash(device.token, 'install', '/missing/firmware.bin', '', None, None)
 
@@ -190,6 +208,56 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(request[:6],b'\0\x7f\x55\xaa\x55\xaa')
         self.assertEqual(sum(request[1:9])&255,255)
         self.assertEqual(request[9:],bytes(56))
+
+    def custom_device(self):
+        path=self.device()
+        (path/'manufacturer').write_text('MIDI-Typist')
+        (path/'product').write_text('M1 V5 TMR')
+        device,=self.adapter.discover()
+        self.assertEqual(device.mode,'custom_candidate')
+        return device
+
+    def test_custom_identity_and_single_boot_request(self):
+        import midi_sysex as sx
+        device=self.custom_device()
+        build='v0.1.0-MG-M1V5TMR git='+'a'*40+' state=clean'
+        class Peer:
+            def __init__(self,port):self.sent=[];self.closed=False
+            def send(self,wire):self.sent.append(sx.decode(wire))
+            def receive(self,timeout):
+                return sx.encode(sx.READY,self.sent[0][1],0,('build='+build).encode())
+            def close(self):self.closed=True
+        for boot in (False,True):
+            peer=Peer('control')
+            with patch('midi_backend.control_port_for_usb',return_value='control'), \
+                 patch('midi_backend.MidiBackend',return_value=peer), \
+                 patch('os.open',side_effect=AssertionError('Custom M1 opened HID')):
+                with self.adapter.custom_session(device.token,enter_boot=boot) as confirmed:
+                    self.assertEqual(confirmed.mode,'custom')
+                    self.assertEqual(confirmed.version,build)
+            self.assertTrue(peer.closed)
+            self.assertEqual([entry[0] for entry in peer.sent],
+                             [sx.HELLO,sx.COMMAND if boot else sx.CLOSE])
+            if boot:self.assertEqual(peer.sent[-1][2:],(1,b'bootloader'))
+
+    def test_wrong_build_or_changed_midi_binding_never_enters_bootloader(self):
+        import midi_sysex as sx
+        device=self.custom_device()
+        for wrong_target,ports in ((True,['control']*3),(False,['control','other']),
+                                   (False,['control','control','other'])):
+            messages=[]
+            class Peer:
+                def send(self,wire):messages.append(sx.decode(wire))
+                def receive(self,timeout):
+                    target='RZ03-0499' if wrong_target else 'MG-M1V5TMR'
+                    return sx.encode(sx.READY,messages[0][1],0,
+                        ('build=v0.1.0-'+target+' git='+'a'*40+' state=clean').encode())
+                def close(self):pass
+            with patch('midi_backend.control_port_for_usb',side_effect=ports), \
+                 patch('midi_backend.MidiBackend',return_value=Peer()):
+                with self.assertRaises(RuntimeError):
+                    with self.adapter.custom_session(device.token,enter_boot=True):pass
+            self.assertFalse(any(m[0]==sx.COMMAND for m in messages))
 
 
 if __name__ == '__main__':

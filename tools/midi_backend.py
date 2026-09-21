@@ -2,6 +2,7 @@
 import queue
 import re
 import sys
+from pathlib import Path
 from firmware_defaults import DEFAULTS as D
 
 
@@ -34,6 +35,58 @@ def control_ports():
 def find_midi_device():
     ports = control_ports()
     return ports[0] if len(ports) == 1 else None
+
+
+def alsa_client_card(client):
+    """Read the kernel sound-card association, not the editable MIDI port name."""
+    import ctypes as c
+    from ctypes.util import find_library
+    if not sys.platform.startswith('linux'):
+        raise RuntimeError('Physical USB/MIDI binding currently requires Linux ALSA')
+    library=find_library('asound')
+    if not library:raise RuntimeError('libasound is required to bind the selected MIDI device')
+    api=c.CDLL(library)
+    signatures={
+        'snd_seq_open':([c.POINTER(c.c_void_p),c.c_char_p,c.c_int,c.c_int],c.c_int),
+        'snd_seq_close':([c.c_void_p],c.c_int),
+        'snd_seq_client_info_malloc':([c.POINTER(c.c_void_p)],c.c_int),
+        'snd_seq_client_info_free':([c.c_void_p],None),
+        'snd_seq_get_any_client_info':([c.c_void_p,c.c_int,c.c_void_p],c.c_int),
+        'snd_seq_client_info_get_card':([c.c_void_p],c.c_int),
+    }
+    for name,(args,result) in signatures.items():
+        function=getattr(api,name);function.argtypes=args;function.restype=result
+    sequence,info=c.c_void_p(),c.c_void_p()
+    def checked(result):
+        if result<0:raise RuntimeError(f'ALSA device identity query failed ({result})')
+    checked(api.snd_seq_open(c.byref(sequence),b'hw',2,1)) # input, nonblocking
+    try:
+        checked(api.snd_seq_client_info_malloc(c.byref(info)))
+        checked(api.snd_seq_get_any_client_info(sequence,client,info))
+        return api.snd_seq_client_info_get_card(info)
+    finally:
+        if info:api.snd_seq_client_info_free(info)
+        api.snd_seq_close(sequence)
+
+
+def control_port_for_usb(usb_path, sound_sysfs='/sys/class/sound'):
+    """Require exactly one control port belonging to this physical USB device.
+
+    Virtual clients, another keyboard and ambiguous control ports are rejected;
+    never fall back to a friendly-name match before a destructive command.
+    """
+    usb=Path(usb_path).resolve(strict=True);matches=[]
+    for port in control_ports():
+        address=re.search(r' (\d+):(\d+)$',port)
+        if not address:continue
+        card=alsa_client_card(int(address[1]))
+        if card<0:continue
+        try:owner=(Path(sound_sysfs)/f'card{card}'/'device').resolve(strict=True)
+        except OSError:continue
+        if owner==usb or usb in owner.parents:matches.append(port)
+    if len(matches)!=1:
+        raise RuntimeError('No unique MIDI control port belongs to the selected USB device')
+    return matches[0]
 
 
 class MidiBackend:

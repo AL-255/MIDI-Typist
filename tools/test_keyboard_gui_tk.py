@@ -61,16 +61,24 @@ def main():
             assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
         huntsman_name=tab.model.get()
         tab.model.set('MonsGeek M1 V5 TMR (experimental)')
-        for mode in ('candidate','factory','unverified_bootloader'):
+        for mode in ('candidate','factory','custom_candidate','custom','unverified_bootloader'):
             tab.show_device(replace(device,model=tab.adapter.id,mode=mode,version='v4.08'))
             tab.set_options()
             if mode=='factory':
                 assert [w['text'] for w in tab.action_widgets]==[
                     'Install experimental MIDI-Typist','Install MonsGeek factory application']
+            elif mode=='custom':
+                assert [w['text'] for w in tab.action_widgets]==[
+                    'Reflash experimental MIDI-Typist','Install MonsGeek factory application']
             else:assert not tab.action_widgets and tab.option is None
             assert str(tab.flash_button['state'])=='disabled'
             assert str(tab.inspect_button['state'])==('disabled' if mode=='unverified_bootloader' else 'normal')
             assert tab.identity['Firmware'].get()=='v4.08'
+        tab.show_device(replace(device,model=tab.adapter.id,mode='custom_candidate'))
+        with patch.object(tab,'close_configuration',return_value=False),patch.object(tab,'launch_worker') as launch:
+            tab.inspect();launch.assert_not_called()
+        with patch.object(tab,'close_configuration',return_value=True),patch.object(tab,'launch_worker') as launch:
+            tab.inspect();launch.assert_called_once_with('inspect')
         tab.model.set(huntsman_name);tab.device=None;tab.set_options()
         app.demo=True;app.notebook.select(0);root.update()
         assert len(app.items) == 61 and len(app.canvas.find_all()) == 244

@@ -99,8 +99,11 @@
   path. The current `m1_development.elf` alone is not a flashing procedure.
   Incomplete power/transport features do not by themselves forbid an explicitly
   labelled experimental build once flashing and recovery are established.
-  Require vendor ID2949, not a shared
-  USB PID, to identify an application. Never probe its destructive boot-entry
+  Require vendor ID2949 for a factory application, not a shared USB PID.
+  For custom M1 firmware, require the current SysEx build target on a control
+  port bound through ALSA/sysfs to the selected physical USB device. Never
+  substitute a friendly MIDI name or another connection's cached build identity.
+  Never probe its destructive boot-entry
   command. Do not enable M1 flashing or allocate profile pages without proving
   its application/update and factory-calibration boundaries. M1's custom profile
   reservation is now 0x08027000/0x08027800, the last two application pages; its

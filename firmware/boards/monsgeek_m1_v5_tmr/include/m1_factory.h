@@ -32,4 +32,7 @@ m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
  * key-type initialization, no arbitrary-address reader. Caller must prevent
  * concurrent flash writes. Failed validation leaves output unchanged. */
 m1_factory_result_t m1_factory_load(m1_factory_bounds_t *out);
+/* Read only the two fixed calibration payloads/trailers, including invalid
+ * records for diagnosis. Same context/busy guards as load; no flash mutation. */
+m1_factory_result_t m1_factory_read(m1_factory_record_t *upper,m1_factory_record_t *lower);
 #endif

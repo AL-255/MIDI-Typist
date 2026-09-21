@@ -143,11 +143,10 @@ ARM save/reboot. These are offline tests, not a physical unplug/replug check.
 
 M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
-per-byte readback verdict. The custom application does not yet enumerate on
-USB; kernel messages show the bootloader disconnect without an application
-return. The early recovery-flag writer passes the SRAM/SDK model, but its
-execution on the device and reset-to-IAP recovery remain unconfirmed.
-The early USB/diagnostic path has not yet been tested on the physical keyboard.
+per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;
+the control port returns the embedded Git identity and startup failure detail.
+Power-cycle and software-requested recovery return to the factory bootloader.
+Factory calibration range validation currently prevents keyboard startup.
 No custom keyboard, MIDI, lighting, calibration or wireless behavior is claimed
 physically working. See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 

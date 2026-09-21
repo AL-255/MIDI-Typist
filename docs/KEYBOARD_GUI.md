@@ -114,7 +114,8 @@ confirmation. It supports application and bootloader states, including custom
 reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
 The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
-before offering a trial conversion. Custom USB startup is not working yet;
+before offering a trial conversion, or checks USB-bound SysEx identity for custom
+reflashing. USB diagnostics work; factory calibration validation blocks keyboard startup;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 If an experimental backend reports `Boot failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard

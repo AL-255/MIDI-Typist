@@ -195,6 +195,7 @@ def diagnostics(path):
     import midi_sysex as sx
     from test_m1_hal_arm import M1Arm,RGB
     d=M1Arm(path);wire=bytearray();messages=[]
+    pages=factory_memory(d,distinct=True)
     d.cpu.mem_map(0x08004000,0x1000)
     responses={'m1_usb_hw_running':1,'m1_usb_ready':1,'m1_usb_generation':1,
                'm1_usb_midi_take':0,'m1_boot_state':FAILED,'m1_boot_error':9,
@@ -214,7 +215,7 @@ def diagnostics(path):
     d.cpu.hook_add(UC_HOOK_CODE,port)
     def service():
         result=0
-        for _ in range(12):result=d.call('m1_diagnostics_service',10)
+        for _ in range(24):result=d.call('m1_diagnostics_service',10)
         return result
     def send(kind,seq=0,payload=b''):
         events=sx.usb_events(sx.encode(kind,123,seq,payload))
@@ -227,8 +228,17 @@ def diagnostics(path):
     assert not send(sx.COMMAND,1,b'cfg set 7 1 2500 2800') and messages[-1][0]==sx.ERROR
     assert not send(sx.COMMAND,2,b'bootloader') and messages[-1][0]==sx.ERROR
     assert not send(sx.COMMAND,3,b'boot status') and messages[-1][0]==sx.LOG
+    assert not send(sx.COMMAND,4,b'factory read') and messages[-1][0]==sx.ACK
+    dump=messages[-2]
+    assert dump[0]==sx.DUMP and dump[3]==(b'M1FC\x01\x00\x7e\x00'+
+        pages[:252]+pages[2045:2048]+pages[2048:2300]+pages[4093:4096])
+    assert bytes(d.cpu.mem_read(FACTORY_UPPER,len(pages)))==pages and not d.writes
+    d.put(0x40023c0c,1)
+    assert not send(sx.COMMAND,5,b'factory read') and messages[-1][0]==sx.ERROR
+    d.put(0x40023c0c,0)
+    assert not send(sx.COMMAND,6,b'factory read 0x08000000') and messages[-1][0]==sx.ERROR
     d.put(0x08004800,0x55aa55aa)
-    assert send(sx.COMMAND,4,b'bootloader') and messages[-1][0]==sx.ACK
+    assert send(sx.COMMAND,7,b'bootloader') and messages[-1][0]==sx.ACK
     responses['m1_usb_generation']=2
     assert not service() and not d.call('midi_control_ready')
     responses['m1_boot_state']=READY

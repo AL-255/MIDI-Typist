@@ -93,11 +93,15 @@ not claimed as separate physical conversion tests. See [validation](VALIDATION.m
 
 ## MonsGeek M1 experimental conversion
 
-**The transfer works, but the custom application does not yet reappear on USB
-on the test keyboard. Do not install it for normal use.**
+**Flashing, reset-to-IAP recovery and high-speed USB diagnostics work on the test
+keyboard. Factory calibration validation blocks keyboard startup. Do not install
+this trial for normal use.**
 
 Select the M1 model and use **Read firmware details…** to confirm internal
-ID2949. Only a verified factory application offers installation actions. Choose
+ID2949 for factory firmware, or the embedded build target over the selected
+device's USB-bound MIDI control port for custom firmware. Verified factory
+devices offer installation/restoration; custom devices offer reflash/restoration.
+Configuration disconnects before custom inspection or flashing. Choose
 `build-m1-hal/m1_development.bin` for the current trial, or supply your own
 ID2949 factory `.bin`. A factory file may be application-only or boot-prefixed;
 only its application slice from `0x5000` through at most `0x28000` is sent.
@@ -114,11 +118,11 @@ That verdict confirms transfer, not working keyboard functionality.
 peripherals, it programs only the IAP magic word at `0x08004800`, from SRAM,
 and refuses a nonblank metadata page. It does not erase bootloader metadata.
 If this startup step completes, the next reset/power cycle enters the factory
-updater and erases the trial application and custom saves. Physical execution
-of this recovery step has not yet been confirmed.
+updater and erases the trial application and custom saves. Both power-cycle and
+software-requested return to the factory bootloader have been observed.
 
 A pre-existing shared bootloader PID is not sufficient model/recovery proof,
-so the GUI does not offer direct bootloader recovery or custom reflash yet.
+so the GUI does not offer direct recovery of an unidentified bootloader.
 The trial's SysEx `bootloader` command permits a controlled reset only while
 the recovery flag is armed. Full transport switching and power management
 remain incomplete.

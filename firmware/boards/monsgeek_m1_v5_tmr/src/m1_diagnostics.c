@@ -1,6 +1,7 @@
 #include "m1_diagnostics.h"
 #include "m1_boot.h"
 #include "m1_image.h"
+#include "m1_factory.h"
 #include "m1_usb.h"
 #include "m1_usb_hal.h"
 #include "midi_control.h"
@@ -20,6 +21,19 @@ static bool send(const uint8_t *events,uint32_t size)
 }
 static bool command(const char *line)
 {
+    if(!strcmp(line,"factory read")) {
+        /* Fixed calibration fields only: no arbitrary address, serial data,
+         * bootloader code, unlock or erase operation is exposed. */
+        if(m1_boot_state()!=M1_BOOT_FAILED)return false;
+        m1_factory_record_t upper,lower;
+        if(m1_factory_read(&upper,&lower)!=M1_FACTORY_OK)return false;
+        uint8_t payload[8u+2u*sizeof(m1_factory_record_t)]={'M','1','F','C',1,0,
+            M1_FACTORY_CELL_COUNT&255u,M1_FACTORY_CELL_COUNT>>8};
+        _Static_assert(sizeof(m1_factory_record_t)==M1_FACTORY_VALUES_BYTES+3u,"packed calibration fields");
+        memcpy(payload+8,&upper,sizeof(upper));
+        memcpy(payload+8+sizeof(upper),&lower,sizeof(lower));
+        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"bootloader")) {
         if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)return false;
         update_requested=true;return true;

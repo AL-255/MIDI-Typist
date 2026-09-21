@@ -594,7 +594,11 @@ a different host presentation can call the same common configuration command eng
 Adapters declare `inspection_modes` separately from flash actions; identity-only
 support must also reject flashing in the privileged worker, not just hide a
 button. The [M1 adapter](MONSGEEK_M1.md) permits experimental conversion only
-after factory ID2949 verification; a shared bootloader PID cannot establish
+after factory ID2949 verification, or custom reflashing after querying the build
+target on a MIDI port bound via ALSA/sysfs to the selected USB device. Friendly
+MIDI names and another session's cached build are not identity proof. Adapters
+declare `control_inspection_modes` to close configuration before owning the
+control port. Discard torn sysfs enumeration snapshots during reset. A shared bootloader PID cannot establish
 model identity or persistent recovery state. A transfer verdict must not be
 reported as proof that the new application enumerated or functions correctly.
 Where clocks and power allow, keep the control channel available after a

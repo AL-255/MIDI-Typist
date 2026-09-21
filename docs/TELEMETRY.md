@@ -11,8 +11,8 @@ The experimental M1 application accepts the ASCII command `bootloader` on its
 active SysEx control session only if the factory IAP flag is armed. It requests
 a reset after stopping local peripherals; disconnect, not an ACK alone, is the
 transition. The factory updater then erases the application and custom saves.
-This custom command has not been physically exercised because M1 application
-USB startup is not yet working.
+The M1 diagnostic control port enumerates at USB high speed; application
+startup currently stops at factory calibration validation.
 
 ## Cold-start failure reporting
 
@@ -31,6 +31,15 @@ are acknowledged only to allow the failure log through; no snapshot or successfu
 configuration readback is fabricated. This service hands ownership to the normal
 application on successful startup. It cannot report failures before USB or after
 loss of the clock/timebase; those still require external recovery/debugging.
+
+During an M1 cold-start failure, `factory read` returns one read-only `DUMP`
+payload with magic `M1FC`, version byte 1, reserved byte 0 and a little-endian
+u16 cell count (126). Two records follow, upper then lower: 126 raw little-endian
+u16 values followed by their three stored trailer bytes (flag, `55`, `AA`).
+Total size is 518 bytes. Values retain the factory rank-major order, not compact
+key order. The command exposes only these fixed calibration fields, never an
+arbitrary address or a flash write. ACK means the response was queued; ERROR
+means it was not. Private readbacks must stay outside Git.
 
 ## SysEx envelope
 
@@ -58,7 +67,7 @@ bits must be zero. Payloads are at most 2292 bytes; the largest SysEx is 2643 by
 | SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
 | LOG | 7 | Best-effort debug text, sequence 0 |
 | ERROR | 8 | ASCII rejection reason, command sequence |
-| DUMP | 9 | One HBD1 read response, sequence 0 |
+| DUMP | 9 | One HBD1 read response or M1FC calibration diagnostic, sequence 0 |
 | KEEPALIVE | 10 | Empty, sequence 0 |
 | CLOSE | 11 | Empty, sequence 0; stops GUI streaming |
 

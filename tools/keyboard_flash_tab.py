@@ -14,6 +14,7 @@ from flash_models import ConnectedDevice, adapters
 
 class FlashTab(ttk.Frame):
     MODES = {'custom':'MIDI-TYPIST', 'razer':'RAZER FIRMWARE',
+             'custom_candidate':'CUSTOM FIRMWARE · BUILD NOT VERIFIED',
              'candidate':'MODEL NOT VERIFIED', 'factory':'FACTORY FIRMWARE · ID VERIFIED',
              'unverified_bootloader':'SHARED BOOTLOADER · MODEL UNKNOWN',
              'bootloader':'BOOTLOADER · READY TO RECOVER', 'unknown':'UNRECOGNIZED APPLICATION'}
@@ -192,7 +193,17 @@ class FlashTab(ttk.Frame):
 
     def inspect(self):
         if self.busy or self.device is None or self.app.demo:return
+        if self.device.mode in getattr(self.adapter,'control_inspection_modes',()):
+            if not self.close_configuration():return
         self.launch_worker('inspect')
+
+    def close_configuration(self):
+        if self.app.connection and self.app.connection.is_alive():
+            self.app.connection.stop();self.app.connection.join(1.5)
+            if self.app.connection.is_alive():
+                self.status.set('Configuration connection did not close; no device operation started.')
+                return False
+        return True
 
     def flash(self):
         if self.busy or self.device is None or self.image is None or not self.option or not self.confirm_model.get() or self.app.demo:return
@@ -202,10 +213,7 @@ class FlashTab(ttk.Frame):
             f'USB {device.usb_id} at {device.location}\nReported serial: {device.serial}\n\n'
             f'{image.path}\n{len(image.data):,} bytes\nSHA-256: {image.digest}\n\n'
             f'{self.adapter.safety}\n\nKeep the device connected until completion. Flash now?'):return
-        if self.app.connection and self.app.connection.is_alive():
-            self.app.connection.stop();self.app.connection.join(1.5)
-            if self.app.connection.is_alive():
-                self.status.set('Configuration connection did not close; nothing was flashed.');return
+        if not self.close_configuration():return
         self.launch_worker('flash',image,option)
 
     def launch_worker(self,operation,image=None,option=None):
@@ -260,7 +268,8 @@ class FlashTab(ttk.Frame):
                     self.status.set('Image validated. Confirm the model, then review the flash plan.')
             elif kind=='device':
                 device=ConnectedDevice(**payload)
-                if device.mode=='custom' and self.identity['Firmware'].get().startswith('v'):
+                if (device.mode=='custom' and not device.version.startswith('v') and
+                        self.identity['Firmware'].get().startswith('v')):
                     from dataclasses import replace
                     device=replace(device,version=self.identity['Firmware'].get())
                 self.show_device(device);self.set_options()

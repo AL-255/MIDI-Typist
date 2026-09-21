@@ -6,7 +6,8 @@ components, an 82-key application library, a wireless report scheduler,
 transport-menu and power-policy components, an experimental application image,
 and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
-The transfer is hardware-checked, but custom USB startup is not working yet.
+Flashing, recovery and high-speed USB diagnostics are hardware-checked; factory
+calibration validation blocks keyboard startup. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.
@@ -24,8 +25,11 @@ identity query and requires ID2949 before showing **FACTORY FIRMWARE · ID
 VERIFIED**. The USB revision is shown separately from the queried firmware
 version. An unavailable serial is not synthesized from the USB location.
 Inspection alone leaves factory configuration untouched. Installation is a
-separate, explicitly confirmed action that resets stock settings. Direct
-bootloader recovery and custom reflash are not yet exposed in the GUI.
+separate, explicitly confirmed action that resets stock settings. For a custom
+application, inspection verifies its embedded build target over a MIDI control
+port bound to the selected physical USB device, then offers reflash/restoration.
+A pre-existing shared bootloader PID remains unidentified and cannot be flashed
+directly through the GUI.
 
 ## Board and GUI layout
 
@@ -965,8 +969,10 @@ The adapter's identity transaction is physically checked on an ID2949 keyboard
 running **v4.08**, enumerating as `3151:5030` at USB high speed. The reference
 version is v4.10; matching model IDs do not prove identical peripheral or update
 behavior between revisions. Guarded factory entry and application IAP transfer
-have a physical checksum/readback success verdict. Custom application USB
-startup is not working, and physical recovery-flag execution is unconfirmed.
+have a physical checksum/readback success verdict. Custom USB enumerates at
+480 Mb/s and answers build and startup diagnostic queries. Power-cycle and
+software-requested reset-to-IAP recovery have been observed. Keyboard startup
+stops on factory-bound range validation; no working typing or musical output is claimed.
 The alternate application PID remains covered only offline.
 
 Offline tests exercise report framing, invalid replies, model rejection,
@@ -974,7 +980,7 @@ changed/ambiguous targets, vendor-interface selection, descriptor identity,
 short transfers, I/O failures, image bounds and rejection of unverified targets.
 The private v4.10 bootloader instructions independently accept the host packet
 sequence and reject simulated readback corruption. Tk checks cover model
-selection and factory-only conversion actions. Native C-to-Python tests run the
+selection and identity-gated factory/custom conversion actions. Native C-to-Python tests run the
 actual shared command mailbox, telemetry encoder and SysEx stream with 82 keys.
 Mocked Tk tests verify identity-selected geometry, sensor 81 edits/capture,
 all-key thresholds and calibration status/cancel. These checks do not validate an M1
