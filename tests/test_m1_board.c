@@ -299,6 +299,11 @@ static void power_policy(void)
     assert(m1_power_radio_committed(&power,5));
     for(unsigned mask=0;mask<32;++mask)
         assert(m1_power_can_sleep(&power,mask&1,mask&2,mask&4,mask&8,mask&16)==(mask==31));
+    battery.percent=5;m1_power_tick(&power,&in);
+    assert(power.sleep_requested && power.critical_latched && power.radio_command==3 && !power.radio_committed);
+    assert(!m1_power_radio_committed(&power,5) && m1_power_radio_committed(&power,3));
+    in.externally_powered=true;m1_power_tick(&power,&in);
+    assert(!power.critical_latched);in.externally_powered=false;battery.percent=80;
     m1_power_woke(&power); assert(!power.sleep_requested && !power.radio_committed);
     in.transport=M1_TRANSPORT_RADIO;
     for(unsigned i=0;i<3*M1_POWER_QUALIFY_TICKS;++i)m1_power_tick(&power,&in);

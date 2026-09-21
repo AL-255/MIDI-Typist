@@ -26,6 +26,11 @@ with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests
 cover list/bitmap mapping and rollover. These do not simulate a radio host or
 prove delivery, pairing, report aggregation or complete transport switching.
+The same ARM audit composes battery filtering and idle/critical policy with
+radio metadata and sleep-control transfers: latest-only percentages, neutral
+gates, cancellation boundaries, retention escalation, both-DMA/SPI completion,
+timeout rejection and quiet handoff. It does not establish peer sleep or execute
+a complete battery-powered startup/sleep/wake cycle.
 
 ## Automated checks
 

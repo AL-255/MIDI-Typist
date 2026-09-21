@@ -376,6 +376,12 @@ ownership when a peer splits keys between usage slots and a smaller bitmap.
 Bound every peer format independently of the USB descriptor. Queue acceptance,
 DMA completion, a peer mode reply and host delivery are separate facts: do not
 wire a local-idle predicate into a host-drained callback.
+Sleep commands need the same ownership discipline. Process activity/cable
+cancellation before submitting a queued power command; after transmission has
+started, require the board's real restoration path rather than just clearing a
+software flag. A stronger shutdown request must invalidate completion of an
+earlier retention-only command. Keep battery metadata latest-only without
+letting it overwrite in-flight packets or delay accepted key releases.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

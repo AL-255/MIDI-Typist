@@ -15,6 +15,7 @@ enum {
     M1_RADIO_REPLY_STATUS=0x10,
     M1_RADIO_STATE_REPORTS=3 /* observed reference report-eligibility state */
 };
+enum { M1_RADIO_SLEEP=3, M1_RADIO_BT_RETAIN=5 };
 typedef struct {
     uint8_t bytes[M1_RADIO_BUFFER_BYTES];
     uint8_t size; /* whole DMA transaction, including zero padding */

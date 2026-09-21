@@ -885,6 +885,132 @@ def wireless(elf):
     print('PASS M1 wireless: mode/status gating, neutral baseline, paired remapped reports, backpressure, stale/invalid status, DMA faults, wrap and explicit restart; no host-delivery claim')
 
 
+def wireless_power(elf):
+    d=WirelessArm(elf);d.baseline()
+    # Real battery filter -> scheduler -> SDK DMA buffer. Incomplete/invalid
+    # sampling must never become a fictitious full battery packet.
+    samples=D['M1_BATTERY_FILTER_SAMPLES']
+    assert not d.call('m1_test_wireless_battery',1705,samples-1,1)
+    for adc,percent,pins in ((1145,1,1),(1280,20,1),(1705,100,1),(1705,99,2)):
+        assert d.call('m1_test_wireless_battery',adc,samples,pins)==percent*256+1
+        assert not d.call('m1_wireless_local_idle')
+        d.step();assert d.packet()==bytes((0x90,1,percent,percent))
+        d.finish();assert d.call('m1_wireless_battery_sent',RADIO_OUT)
+        assert d.cpu.mem_read(RADIO_OUT,1)[0]==percent
+        assert d.call('m1_wireless_local_idle')
+    for percent in range(1,101):
+        assert d.call('m1_test_wireless_battery_raw',percent,3)
+        d.step();assert d.packet()==bytes((0x90,1,percent,percent));d.finish()
+    assert d.call('m1_test_wireless_battery_raw',100,3)
+    d.step();assert d.call('m1_wireless_local_idle') # unchanged value does not spam
+    for percent,flags in ((0,3),(101,3),(255,3),(50,0),(50,1),(50,2)):
+        assert not d.call('m1_test_wireless_battery_raw',percent,flags)
+        assert not d.call('m1_wireless_battery_sent',RADIO_OUT)
+    assert not d.call('m1_wireless_battery',0)
+    assert not d.call('m1_wireless_battery_sent',0)
+    # Latest-only while queued, copy-on-accept while in flight. Invalidating
+    # acquisition cannot overwrite DMA or revive a stale valid percentage.
+    assert d.call('m1_test_wireless_battery_raw',20,3)
+    assert d.call('m1_test_wireless_battery_raw',21,3)
+    d.step();assert d.packet()==bytes((0x90,1,21,21))
+    assert d.call('m1_test_wireless_battery_raw',22,3)
+    assert d.packet()==bytes((0x90,1,21,21))
+    d.finish();assert d.packet()==bytes((0x90,1,22,22))
+    assert d.call('m1_wireless_battery_sent',RADIO_OUT) and d.cpu.mem_read(RADIO_OUT,1)[0]==21
+    assert not d.call('m1_test_wireless_battery',4096,samples,1)
+    d.finish();assert not d.call('m1_wireless_battery_sent',RADIO_OUT)
+    assert d.call('m1_wireless_local_idle')
+    # Metadata cannot split an accepted key pair or starve its release.
+    assert d.offer((4,)) and d.call('m1_test_wireless_battery_raw',50,3)
+    d.step(D['M1_RADIO_BT_REPORT_US']);assert d.packet()[2]==1
+    d.finish();assert d.packet()[2]==2
+    d.finish();assert d.packet()==bytes((0x90,1,50,50))
+    assert d.offer(())
+    d.finish();d.step(D['M1_RADIO_BT_REPORT_US'])
+    assert d.packet()[:10]==bytes((0x81,8,1))+bytes(7)
+    d.finish();d.finish();assert d.call('m1_wireless_local_idle')
+    for mode in (0,1,2,5):
+        for critical in (False,True):
+            d=WirelessArm(elf,mode,start=0xffffc000);d.baseline()
+            command=3 if critical or mode==5 else 5
+            for invalid in (0,1,2,4,6,255):
+                assert not d.call('m1_wireless_request_sleep',invalid,1)
+            assert not d.call('m1_test_wireless_power_request',mode,critical,0)
+            assert d.offer((4,))
+            assert not d.call('m1_test_wireless_power_request',mode,critical,1)
+            d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
+            assert not d.call('m1_test_wireless_power_request',mode,critical,1) # held
+            assert d.offer(())
+            d.step(D['M1_RADIO_BT_REPORT_US']);d.finish()
+            assert not d.call('m1_test_wireless_power_request',mode,critical,1) # half release
+            d.finish()
+            if mode==5:assert not d.call('m1_wireless_request_sleep',5,1)
+            assert d.call('m1_test_wireless_power_request',mode,critical,1)
+            assert not d.offer((4,)) and not d.call('m1_test_wireless_battery_raw',50,3)
+            assert d.call('m1_test_wireless_power_status',31)==command
+            assert d.call('m1_wireless_cancel_sleep')
+            assert d.call('m1_wireless_ready')
+            assert d.call('m1_test_wireless_power_request',mode,critical,1)
+            d.step();assert d.packet()==bytes((0x94,1,command,command))
+            assert not d.call('m1_wireless_cancel_sleep')
+            assert not d.call('m1_wireless_sleep_sent')
+            assert not d.call('m1_wireless_local_idle')
+            # Neither TX completion alone nor full DMA while SPI is busy is a commit.
+            d.put(DMA,0x30);d.step();assert not d.call('m1_wireless_sleep_sent')
+            d.put(DMA,0x330);d.put(RADIO_SPI+8,0x82);d.step()
+            assert d.call('m1_test_wireless_power_status',31)==command
+            d.put(RADIO_SPI+8,2);d.step()
+            assert d.call('m1_wireless_sleep_sent')==command
+            assert d.call('m1_wireless_local_idle') and not d.call('m1_wireless_ready')
+            for guards in range(32):
+                assert d.call('m1_test_wireless_power_status',guards)==command+256+(512 if guards==31 else 0)
+            # Completed handoff remains quiet beyond normal status expiry; it
+            # must not restart status queries into the possibly sleeping peer.
+            d.put(GPIO+0xc10,0);writes=len(d.writes)
+            d.step(D['M1_RADIO_STATUS_TIMEOUT_US']*2)
+            assert len(d.writes)==writes and d.call('m1_wireless_sleep_sent')==command
+            assert not d.call('m1_wireless_cancel_sleep')
+            if command==5:
+                d.call('m1_test_wireless_power_critical')
+                assert d.call('m1_test_wireless_power_status',31)==3
+                assert not d.call('m1_wireless_request_sleep',3,0)
+                assert d.call('m1_wireless_request_sleep',3,1)
+                assert not d.call('m1_wireless_sleep_sent')
+                assert d.call('m1_wireless_cancel_sleep')
+                assert d.call('m1_wireless_sleep_sent')==5 and not d.call('m1_wireless_ready')
+                assert d.call('m1_test_wireless_power_status',31)==3 # old completion is insufficient
+                assert d.call('m1_wireless_request_sleep',3,1)
+                d.step();assert d.packet()==bytes((0x94,1,3,3))
+                d.finish();assert d.call('m1_test_wireless_power_status',31)==3+256+512
+            d.call('m1_wireless_stop');assert not d.call('m1_wireless_sleep_sent')
+    # No connected host / unsent neutral baseline: critical shutdown can still
+    # send control 3. Cancelling before submission restores the baseline gate.
+    d=WirelessArm(elf)
+    assert not d.call('m1_wireless_request_sleep',5,1)
+    assert d.call('m1_test_wireless_power_request',0,1,1)
+    assert d.call('m1_wireless_cancel_sleep') and not d.call('m1_wireless_local_idle')
+    assert d.call('m1_test_wireless_power_request',0,1,1)
+    d.step();assert d.packet()==bytes((0x94,1,3,3));d.finish()
+    assert d.call('m1_test_wireless_power_status',31)==3+256+512
+    # An in-flight timeout, DMA error or overdue unsent request cannot commit.
+    for failure in ('timeout','dma','unsent','late-completion'):
+        d=WirelessArm(elf);d.baseline()
+        assert d.call('m1_test_wireless_power_request',0,1,1)
+        if failure=='unsent':d.step(D['M1_RADIO_SLEEP_TIMEOUT_US'])
+        elif failure=='late-completion':
+            d.step(D['M1_RADIO_SLEEP_TIMEOUT_US']-125)
+            assert d.packet()[0]==0x94
+            d.put(DMA,0x330);d.put(RADIO_SPI+8,2);d.step(250)
+        else:
+            d.step();assert d.packet()[0]==0x94
+            if failure=='dma':d.put(DMA,8<<8);d.step()
+            else:d.step(RADIO_TIMEOUT)
+        assert not d.call('m1_wireless_healthy') and not d.call('m1_wireless_sleep_sent')
+        assert d.call('m1_test_wireless_power_status',31)==3
+        assert not d.call('m1_wireless_cancel_sleep')
+    print('PASS M1 wireless power: filtered battery metadata, latest/copy ownership, neutral-gated sleep controls, actual idle/critical policy commit, cancellation, DMA drain, timeouts and quiet handoff; no peer-sleep claim')
+
+
 USB_HS = 0x40040000
 
 
@@ -980,6 +1106,7 @@ def main():
     battery(args.elf)
     radio(args.elf)
     wireless(args.elf)
+    wireless_power(args.elf)
     usb_power(args.elf)
     sleep_hal(args.elf)
 

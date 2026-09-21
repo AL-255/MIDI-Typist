@@ -264,6 +264,9 @@ sleep, or 3 for the other paths. It grants sleep eligibility only after that
 radio transaction is committed, host reports are drained, scanning is stopped,
 LEDs are off, SPI is idle and USB power is quiescent. It does not itself execute
 RTC sleep or power-rail writes.
+Critical battery escalation replaces a pending retention command 5 with command
+3 and invalidates any earlier retention completion. A completed command 5 must
+not authorize deeper sleep while command 3 is still pending.
 
 ### Radio transfer HAL
 
@@ -357,8 +360,48 @@ releases, rollover recovery and evolving polyphony. Linked ARM tests execute
 the scheduler and official SPI/DMA drivers with scripted replies/completion,
 covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
 backpressure, stale/invalid status, faults and timer wrap. This component is not
-yet bound to `m1_live` or a complete transport/power coordinator. Battery packet
-scheduling, pairing, physical host delivery and sleep handshakes remain required.
+yet bound to `m1_live` or a complete transport/power coordinator. Pairing,
+physical host delivery and the electrical sleep handoff remain required.
+
+### Radio battery and sleep-control handoff
+
+The owner passes filtered battery state to `m1_wireless_battery` after a battery
+HAL update or invalidation. Valid, source-qualified percentages 1–100 become
+opcode `90` with one payload byte. Queued metadata is latest-only; an in-flight
+packet is immutable. Unknown/invalid readings cancel unsent metadata and never
+become a fabricated full battery. Unchanged percentages are not retransmitted.
+Keyboard report pairs take precedence, including releases. The last locally
+completed percentage is separate from the latest requested value. Raw charger
+pin state is not encoded as an unverified charging/full flag.
+
+`m1_wireless_request_sleep` admits only the reviewed opcode `94` payloads 3
+(sleep) and 5 (Bluetooth retention). It requires explicit host-release permission,
+no transfer in flight and neutral completed keyboard state. The unsent neutral
+startup baseline may be discarded for command 3, allowing critical protection
+before a host becomes report-eligible; retention still requires eligible Bluetooth.
+Accepted requests reject new keyboard/battery offers and stop regular polling.
+
+Cancellation succeeds only before the control packet enters the HAL. The owner
+must process activity/cable cancellation before servicing that queued request;
+after submission, cancellation fails and a real wake/restore path is required.
+Cancellation discards the staged battery metadata, so republish current qualified
+battery state when normal operation resumes. After both DMA channels and the
+SPI shifter finish, `m1_wireless_sleep_sent` exposes the exact transmitted command
+for `m1_power_radio_committed`. The scheduler then stays quiet, including after
+normal status expiry. Pending work, a DMA flag alone, timeout or error cannot
+produce a completion. All handoff deadlines are in `defaults.h`.
+
+Completed Bluetooth retention can escalate to command 3 without reinitializing
+SPI or admitting keyboard traffic. Cancelling an unsent escalation preserves
+the quiet retention state, not a fictional awake state. The power policy still
+requires command 3 completion when critical protection has superseded retention.
+
+This is a **local transaction handoff, not proof of peer sleep or host release**.
+It does not change power rails, apply sleep GPIO patterns or invoke RTC sleep.
+The outer coordinator still owns those operations and the retention timeout.
+ARM tests compose the actual battery filter and idle/critical policy with the
+scheduler and SDK DMA path. ADC values, time and completion are scripted; no
+battery voltage, charging behavior, current draw or radio peer is simulated.
 
 ### Composite USB class
 

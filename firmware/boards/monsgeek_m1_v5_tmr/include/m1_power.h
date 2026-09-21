@@ -27,6 +27,9 @@ void m1_power_activity(m1_power_t *s);
  * Then the platform must finish releasing reports, blank LEDs, pause ADC and
  * reduce USB PHY power. Pending/busy flags are not completion evidence. */
 bool m1_power_radio_committed(m1_power_t *s,uint8_t command);
+/* Local prerequisites only: the outer coordinator must also establish the
+ * transport-specific sleep handoff before quiescing peer GPIO or power rails.
+ * Critical escalation to command 3 invalidates a previous command-5 commit. */
 bool m1_power_can_sleep(const m1_power_t *s,bool reports_drained,bool scan_stopped,
                         bool leds_off,bool radio_idle,bool usb_quiescent);
 /* Invoke only after clocks/rails/scan/radio have actually been restored. */

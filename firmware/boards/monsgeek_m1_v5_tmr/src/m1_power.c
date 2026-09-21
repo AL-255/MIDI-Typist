@@ -1,4 +1,5 @@
 #include "m1_power.h"
+#include "m1_radio.h"
 
 void m1_power_init(m1_power_t *s,uint16_t bluetooth_idle,uint16_t radio_idle)
 { *s=(m1_power_t){.bluetooth_idle=bluetooth_idle,.radio_idle=radio_idle}; }
@@ -22,7 +23,14 @@ void m1_power_tick(m1_power_t *s,const m1_power_input_t *in)
          * the reference's latched critical-battery protection indefinitely. */
         if(!s->critical_latched) { m1_power_activity(s); return; }
     }
-    if(s->sleep_requested)return;
+    if(s->sleep_requested) {
+        /* Critical protection supersedes BT retention even if that earlier
+         * command already completed. Completion of 5 cannot authorize 3. */
+        if(s->critical_latched && s->radio_command!=M1_RADIO_SLEEP) {
+            s->radio_command=M1_RADIO_SLEEP;s->radio_committed=false;
+        }
+        return;
+    }
     unsigned ticks=in->fast_idle?M1_POWER_FAST_QUALIFY_TICKS:M1_POWER_QUALIFY_TICKS;
     if(++s->periodic<ticks)return;
     s->periodic=0;
@@ -40,7 +48,7 @@ void m1_power_tick(m1_power_t *s,const m1_power_input_t *in)
     /* Opcode 0x94 payload 5 retains BT's intermediate radio state; all other
      * paths request payload 3. The later RTC/rail sequence is a separate HAL. */
     s->radio_command=!s->critical_latched && in->selector==1 &&
-                     in->transport!=M1_TRANSPORT_RADIO?5:3;
+                     in->transport!=M1_TRANSPORT_RADIO?M1_RADIO_BT_RETAIN:M1_RADIO_SLEEP;
 }
 bool m1_power_radio_committed(m1_power_t *s,uint8_t command)
 {
