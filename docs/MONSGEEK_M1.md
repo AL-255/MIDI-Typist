@@ -236,6 +236,10 @@ The decoder stages the entire result before publishing it. Bad markers, absent
 calibration, wrapped/reversed/narrow pairs, busy flash or invalid execution
 context leave the previous output unchanged. The reader preserves the interrupt
 mask and touches only 252 data bytes plus three trailer bytes per page.
+The tested keyboard has valid record markers but values outside this importer's
+assumed ADC domain. They are rejected, not rescaled or overwritten. The
+[cold-start diagnostics](TELEMETRY.md#cold-start-failure-reporting) expose those
+fixed fields and the first actual scan for investigating the representation.
 
 This is a conservative import, not the stock calibration algorithm: it does not
 repair records, use sample-minus-700 fallback floors, rebase resting samples,

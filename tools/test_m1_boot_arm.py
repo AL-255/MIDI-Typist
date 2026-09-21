@@ -5,6 +5,7 @@ Only profile storage is replaced with erased reads and a rejecting writer.
 No device access, reset vector, application flash image or real flash writes.
 """
 import argparse
+import struct
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
                               UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR, UC_ARM_REG_FAULTMASK,
@@ -20,7 +21,7 @@ OFF, RAILS, LINKS, RADIO, APPLICATION, READY, FAILED, FATAL = range(8)
 class Boot(BatteryStartupArm):
     def __init__(self, path, external=True, failure=None):
         super().__init__(path, failure)
-        self.external=external
+        self.external=external;self.periodic_delivery=True
         self.attaches=self.cycles=self.elapsed_cycles=self.flags=self.pllu_polls=0
         self.trace_before=self.dwt_before=0;self.suspend_powerdown=False
         self.cpu.mem_map(DWT,0x1000)
@@ -84,6 +85,8 @@ class Boot(BatteryStartupArm):
         self.set_stamp(self.rtc_ticks+us//200)
         self.call('m1_boot_service',instructions=3000000)
         if self.call('m1_hal_capture_busy'):self.complete_capture()
+        elif self.periodic_delivery and self.call('m1_hal_periodic_active'):
+            self.put(TMR6+0x10,1);self.call('m1_hal_timer_irq');self.complete_capture()
 
     def until(self,state):
         for _ in range(500):
@@ -170,6 +173,12 @@ def faults(path):
     d=Boot(path);assert d.call('m1_boot_begin',6,0,1);d.until(APPLICATION)
     d.cpu.mem_write(FACTORY_UPPER+2047,b'\0');d.factory=bytes(d.cpu.mem_read(FACTORY_UPPER,len(d.factory)))
     d.tick();d.failed(9) # real application refuses malformed factory bounds
+    assert d.call('m1_boot_scan',0x2000c000,0x2000c200)
+    assert struct.unpack('<82H',d.cpu.mem_read(0x2000c000,164))==(3001,)*82
+    assert not d.call('m1_boot_scan',0,0x2000c200)
+    d=Boot(path);d.periodic_delivery=False
+    assert d.call('m1_boot_begin',6,0,1);d.until(FAILED);d.failed(2)
+    assert not d.call('m1_boot_scan',0x2000c000,0x2000c200)
     d=Boot(path);assert d.call('m1_boot_begin',6,0,1);d.until(APPLICATION)
     d.put(CRM+8,d.u32(CRM+8)|(8<<4));d.tick();d.failed(1)
     d=Boot(path);assert d.call('m1_boot_begin',6,0,1);d.until(APPLICATION)
@@ -199,11 +208,14 @@ def diagnostics(path):
     d.cpu.mem_map(0x08004000,0x1000)
     responses={'m1_usb_hw_running':1,'m1_usb_ready':1,'m1_usb_generation':1,
                'm1_usb_midi_take':0,'m1_boot_state':FAILED,'m1_boot_error':9,
-               'm1_live_factory_result':3,'m1_usb_midi_send':1}
+               'm1_live_factory_result':3,'m1_usb_midi_send':1,'m1_boot_scan':1}
     names={d.symbols[name]&~1:name for name in responses}
     def port(cpu,address,size,user):
         name=names.get(address)
         if not name:return
+        if name=='m1_boot_scan':
+            cpu.mem_write(cpu.reg_read(UC_ARM_REG_R0),struct.pack('<82H',*range(2000,2082)))
+            cpu.mem_write(cpu.reg_read(UC_ARM_REG_R1),struct.pack('<I',1234))
         if name=='m1_usb_midi_send':
             assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
             events=bytes(cpu.mem_read(cpu.reg_read(UC_ARM_REG_R0),cpu.reg_read(UC_ARM_REG_R1)))
@@ -237,8 +249,13 @@ def diagnostics(path):
     assert not send(sx.COMMAND,5,b'factory read') and messages[-1][0]==sx.ERROR
     d.put(0x40023c0c,0)
     assert not send(sx.COMMAND,6,b'factory read 0x08000000') and messages[-1][0]==sx.ERROR
+    assert not send(sx.COMMAND,7,b'boot scan') and messages[-1][0]==sx.ACK
+    assert messages[-2][0]==sx.DUMP and messages[-2][3]==(
+        b'M1BS\x01\x00\x52\x00'+struct.pack('<I82H',1234,*range(2000,2082)))
+    responses['m1_boot_scan']=0
+    assert not send(sx.COMMAND,8,b'boot scan') and messages[-1][0]==sx.ERROR
     d.put(0x08004800,0x55aa55aa)
-    assert send(sx.COMMAND,7,b'bootloader') and messages[-1][0]==sx.ACK
+    assert send(sx.COMMAND,9,b'bootloader') and messages[-1][0]==sx.ACK
     responses['m1_usb_generation']=2
     assert not service() and not d.call('midi_control_ready')
     responses['m1_boot_state']=READY

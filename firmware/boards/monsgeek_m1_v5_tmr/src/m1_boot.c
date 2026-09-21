@@ -6,6 +6,7 @@
 #include "m1_wireless.h"
 #include "m1_battery_hal.h"
 #include "m1_save.h"
+#include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
 
@@ -14,6 +15,9 @@ static m1_boot_error_t error;
 static m1_transport_t selected;
 static const m1_transport_ops_t *transport_ops;
 static bool external,board_owned,usb_owned,radio_owned;
+static bool scan_waiting,scan_valid;
+static uint32_t scan_since,scan_sequence;
+static uint16_t first_scan[M1_KEY_COUNT];
 
 static bool context(void)
 { return !__get_IPSR() && !__get_BASEPRI() && !__get_FAULTMASK() && !(__get_CONTROL()&1u); }
@@ -36,6 +40,12 @@ static void fail(m1_boot_error_t why)
 }
 m1_boot_state_t m1_boot_state(void) { return state; }
 m1_boot_error_t m1_boot_error(void) { return error; }
+bool m1_boot_scan(uint16_t samples[M1_KEY_COUNT],uint32_t *sequence)
+{
+    if(!scan_valid || !samples || !sequence)return false;
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)samples[i]=first_scan[i];
+    *sequence=scan_sequence;return true;
+}
 bool m1_boot_begin(m1_transport_t transport,const m1_transport_ops_t *ops,
                    bool cold_quiescent)
 {
@@ -71,6 +81,15 @@ void m1_boot_service(void)
         m1_startup_service(now.ms,now.us);
         if(m1_startup_fault()) { fail(M1_BOOT_STARTUP);return; }
         if(!m1_startup_ready())return;
+        /* Observe an actual completed acquisition before handing off. Keep a
+         * diagnostic copy even if calibration later rejects application boot.
+         * A dead scan may not keep startup pending forever. */
+        if(!scan_waiting) { scan_waiting=true;scan_since=now.ms; }
+        if(!m1_hal_frame(first_scan,&scan_sequence)) {
+            if((uint32_t)(now.ms-scan_since)>=SCAN_STALE_MS)fail(M1_BOOT_STARTUP);
+            return;
+        }
+        scan_valid=true;
         /* No live application exists yet: discard warmup/unread frames before
          * binding calibration/profile data and starting normal reports. */
         if(!m1_hal_pause()) { fail(M1_BOOT_PAUSE);return; }

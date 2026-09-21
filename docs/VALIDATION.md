@@ -147,6 +147,10 @@ per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;
 the control port returns the embedded Git identity and startup failure detail.
 Power-cycle and software-requested recovery return to the factory bootloader.
 Factory calibration range validation currently prevents keyboard startup.
+Read-only factory diagnostics return valid markers but resting values outside
+the assumed 12-bit domain. The first complete scan is retrievable independently:
+most readings are midrange, but some mapped positions are near zero. Neither a
+conversion factor nor the physical key mapping is established by these readings.
 No custom keyboard, MIDI, lighting, calibration or wireless behavior is claimed
 physically working. See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 

@@ -41,6 +41,13 @@ key order. The command exposes only these fixed calibration fields, never an
 arbitrary address or a flash write. ACK means the response was queued; ERROR
 means it was not. Private readbacks must stay outside Git.
 
+`boot scan` returns the first complete cold-start acquisition, not a live stream:
+`DUMP` magic `M1BS`, version byte 1, reserved byte 0, little-endian u16 key count
+(82), u32 scan sequence, then 82 u16 canonical samples (native ADC + 1) in
+compact sensor order. Total size is 176 bytes. It is retained after startup
+failure without restarting peripherals. A missing acquisition returns ERROR;
+cold startup times out after `SCAN_STALE_MS` rather than inventing samples.
+
 ## SysEx envelope
 
 `F0 7D 4D 54 03 KIND PACKED_BODY F7`
@@ -67,7 +74,7 @@ bits must be zero. Payloads are at most 2292 bytes; the largest SysEx is 2643 by
 | SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
 | LOG | 7 | Best-effort debug text, sequence 0 |
 | ERROR | 8 | ASCII rejection reason, command sequence |
-| DUMP | 9 | One HBD1 read response or M1FC calibration diagnostic, sequence 0 |
+| DUMP | 9 | One HBD1 read response, M1FC calibration or M1BS boot scan diagnostic, sequence 0 |
 | KEEPALIVE | 10 | Empty, sequence 0 |
 | CLOSE | 11 | Empty, sequence 0; stops GUI streaming |
 

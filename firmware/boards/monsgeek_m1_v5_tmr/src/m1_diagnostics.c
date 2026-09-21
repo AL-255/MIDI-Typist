@@ -21,6 +21,16 @@ static bool send(const uint8_t *events,uint32_t size)
 }
 static bool command(const char *line)
 {
+    if(!strcmp(line,"boot scan")) {
+        uint16_t samples[M1_KEY_COUNT];uint32_t sequence;
+        if(!m1_boot_scan(samples,&sequence))return false;
+        uint8_t payload[12u+2u*M1_KEY_COUNT]={'M','1','B','S',1,0,M1_KEY_COUNT,0};
+        for(unsigned i=0;i<4;++i)payload[8+i]=(uint8_t)(sequence>>(8*i));
+        for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+            payload[12+2*i]=(uint8_t)samples[i];payload[13+2*i]=(uint8_t)(samples[i]>>8);
+        }
+        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"factory read")) {
         /* Fixed calibration fields only: no arbitrary address, serial data,
          * bootloader code, unlock or erase operation is exposed. */
