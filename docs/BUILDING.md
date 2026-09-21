@@ -316,7 +316,7 @@ Only one GUI control session is supported. A new handshake replaces a previous
 owner; it is not an OS-level exclusive lock.
 
 If the GUI rejects telemetry, use the matching GUI from this checkout: the
-count-aware MTG3 layout requires SysEx version 3, and the device
+count-aware MTG4 layout requires SysEx version 3, and the device
 reports its build identity (`version`) for the record. If waiting for neutral,
 release every key; inspect threshold/raw values without repeatedly resetting
 the keyboard. A MIDI cleanup-pending indicator means the host has not yet

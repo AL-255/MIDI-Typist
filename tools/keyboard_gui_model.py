@@ -12,7 +12,7 @@ MAX_SIZE = HEADER_SIZE + MAX_KEYS*RECORD_SIZE + MAX_HID + 4
 MIDI_CONTROLS = {'Fn':'mode', 'RAl':'oct−', 'RCt':'oct+',
                  'LCt':'bend−', 'LAl':'bend+', 'LGu':'mod', 'Spc':'sustain'}
 # Current count-aware wire format. Board identity comes from SysEx READY.
-MAGIC = b'MTG3'
+MAGIC = b'MTG4'
 # Build identity answered by the `version` command: project version plus the
 # board model the firmware targets, e.g. v0.1.0-RZ03-0499.
 BUILD_RE = re.compile(r'build=(v(\d+\.\d+\.\d+)-([A-Za-z0-9_.-]+) '
@@ -77,6 +77,15 @@ class Snapshot:
     storage_generation: int = 0
     sample_hz: int = 0
     keyboard_mapping: tuple = ()
+    transport: int = 0
+    transport_flags: int = 0
+
+
+def transport_text(snapshot):
+    names=('Not reported','USB','Bluetooth 1','Bluetooth 2','Bluetooth 3','2.4 GHz')
+    if not snapshot.transport:return ''
+    state='switching' if snapshot.transport_flags & 2 else 'ready' if snapshot.transport_flags & 1 else 'waiting for host'
+    return f'{names[snapshot.transport]}: {state}'
 
 
 def parse_build(text):
@@ -108,7 +117,10 @@ def decode(data):
     if sum(struct.unpack_from(f'<{(size-4)//2}H',data)) & 0xffffffff != struct.unpack_from('<I',data,size-4)[0]:
         raise ValueError('GUI checksum mismatch')
     end = HEADER_SIZE+count*RECORD_SIZE
-    if any(data[78:80]) or any(data[end+hid_bytes:size-4]):
+    transport,transport_flags=data[78:80]
+    if transport>5 or transport_flags & ~3 or (not transport and transport_flags):
+        raise ValueError('invalid transport state')
+    if any(data[end+hid_bytes:size-4]):
         raise ValueError('invalid GUI padding')
     sequence,revision,ack,scan_errors,light_errors = struct.unpack_from('<5I',data,12)
     records = tuple(struct.iter_unpack('<HHHfIBBB',data[HEADER_SIZE:end]))
@@ -143,7 +155,8 @@ def decode(data):
                calibration_done=done,calibration_reason=reason,
                calibration_upper=upper,calibration_lower=lower,calibration_generation=generation,calibration_error=error,
                storage_flags=storage_flags,storage_slot=storage_slot,storage_generation=storage_generation,
-               sample_hz=sample_hz,keyboard_mapping=keycodes)
+               sample_hz=sample_hz,keyboard_mapping=keycodes,
+               transport=transport,transport_flags=transport_flags)
     return Snapshot(profile,count,flags,result,sequence,revision,ack,scan_errors,light_errors,
                     raw,press,release,down,bytes(data[end:end+hid_bytes]),mode,
                     velocity,captures,states,velocity_start,performance_mode,octave,mapping,bool(cleanup),errors,changes,**cal)

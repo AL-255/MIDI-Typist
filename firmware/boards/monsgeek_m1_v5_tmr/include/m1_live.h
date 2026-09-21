@@ -16,7 +16,8 @@ bool m1_live_update_requested(void);
  * The outer owner initializes the chosen USB/radio transport. Wireless init
  * requires a healthy scheduler configured for that exact mode; link readiness
  * may follow later. Optional transport ops must outlive this owner and prove
- * host release/physical selection (local radio idle is not that proof).
+ * neutral-output handoff/physical selection (local SPI completion is not a
+ * remote-host receipt acknowledgement).
  * NULL ops disable Fn transport selection, not wireless keyboard/battery use.
  * USB SysEx configuration stays available while typing over radio. Performance
  * MIDI is USB-only; HID goes to the selected transport. No pairing/power sequencing
@@ -47,7 +48,7 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us);
 /* Neutralizes application ownership and stops streams, not hardware/rails.
  * Continue service to drain neutral HID/MIDI cleanup before explicit init can
  * resume. Wireless restart also requires the existing transport ops to confirm
- * old-host releases. Reinitialization restores committed settings; USB epochs do not. */
+ * its neutral handoff. Reinitialization restores committed settings; USB epochs do not. */
 void m1_live_stop(uint32_t now_ms);
 /* RAM-preserving power handoff, unlike terminal stop/reinitialization.
  * suspend cancels transient key/velocity/calibration/menu state and the GUI

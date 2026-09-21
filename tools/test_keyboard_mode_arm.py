@@ -728,7 +728,7 @@ def main():
         key_push(dev,[3400]*61); dev.call('debug_service'); dev.call('debug_service')
         dev.call('scan_stream_gui'); push(101)
         assert [v.sequence for v in Decoder().feed(drain(dev, 5))] == [101]
-        print(f'PASS {"HS" if hs else "FS"} GUI: stable pending transfer, latest-only replacement, count-aware MTG3 framing')
+        print(f'PASS {"HS" if hs else "FS"} GUI: stable pending transfer, latest-only replacement, count-aware MTG4 framing')
 
 
 if __name__ == '__main__': main()

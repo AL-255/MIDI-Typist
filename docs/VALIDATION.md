@@ -32,10 +32,12 @@ independent timer/sequence wrap and release draining before explicit restart.
 It also connects the application to the real radio scheduler and SPI/DMA driver
 for all three Bluetooth slots and 2.4 GHz: mapped key press/release, duplicate
 destinations, backpressure, battery metadata, USB-only performance MIDI and GUI
-resets independent of wireless key ownership. Fn transport tests script the
-external host-release/selection callbacks but still require actual local drain
-and matching peer readiness; ambiguous selection fails closed. Those callbacks
-are an explicit evidence gap, not an implementation of physical switching.
+resets independent of wireless key ownership. Fn transport tests execute the
+runtime selection owner, local neutral-report drain, SPI mode requests and fresh
+matching peer status for every transport. They cover returning from an unpaired
+slot, unavailable USB, and release-before-rearm after a host becomes ready.
+Peer responses and transfer completion are scripted; local drain is not proof
+that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
@@ -136,7 +138,7 @@ and hardware persistence remain unverified.
 ## Physical checks
 
 The current Huntsman image builds and passes linked ARM execution audits, but
-the remapping, 30-byte HID and MTG3/SysEx version 3 integration has not been flashed or tested
+the remapping, 30-byte HID and MTG4/SysEx version 3 integration has not been flashed or tested
 on physical hardware. Offline USB tests are not evidence of physical
 enumeration, acquisition cadence or host/DAW interoperability.
 
@@ -159,16 +161,17 @@ scan are midrange, without near-zero positions, and all six DMA banks retain
 15 slots before triggering. The selector is independently checked against
 executed private reference instructions. The original startup RAM fallback is
 also instruction-checked. Provisional travel normalization permits neutral
-arming; no stock calibration scale conversion is inferred. With GUI telemetry
-active, a measured 10-second released-key interval consumed approximately 8,000 scans/s
-with zero additional loss events or HAL errors; input stayed valid and armed,
-all 82 keys stayed up, and MIDI cleanup stayed inactive. Foreground loop mean was
-81 µs during this interval. The one reported gap was the deliberate initial
-settings-save pause, not an overwritten acquisition. Queue order/wrap/overflow,
+arming; no stock calibration scale conversion is inferred. The matching GUI
+connection receives MTG4 telemetry and reports USB ready. With all keys released,
+a six-second check received 182 fresh snapshots with normalized readings from
+3985 to 4096; all 82 keys stayed up and input stayed valid and armed. The scan-gap
+counter remained at one after initial settings-save completion, with no light
+errors. The intentional save pause is included in that counter; this GUI check
+does not independently measure the declared 8 kHz acquisition rate. Queue order/wrap/overflow,
 pause invalidation, and released-key fast-path velocity semantics have offline
 tests. The per-key pending-strike bitmap is checked against every occupied slot
 through the native MIDI suite, including retrigger and overflow cleanup. These
-measurements do not establish sustained pressed-key/polyphonic
+checks do not establish sustained pressed-key/polyphonic
 performance or worst-case latency. Individual press-to-key mapping, full
 calibration, LED appearance and wireless behavior still require hardware checks.
 See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).

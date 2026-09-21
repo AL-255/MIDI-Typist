@@ -83,6 +83,7 @@ int main(void)
     receive(MT_COMMAND,"cfg key 9 81 135",3);
     assert(status.ack==9 && status.result==1 && raw.keycode[81]==135);
     status.sequence=42; status.storage_generation=0x12345678;
+    status.transport=MT_TRANSPORT_BT2;status.transport_flags=MT_TRANSPORT_READY;
     size_t size=keyboard_telemetry_encode(&app,&status,frame,sizeof(frame));
     assert(size==1508);
     assert(!keyboard_telemetry_encode(&app,&status,frame,size-1));

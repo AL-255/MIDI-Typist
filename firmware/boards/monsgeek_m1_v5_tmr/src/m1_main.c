@@ -8,6 +8,7 @@
 #include "m1_lighting.h"
 #include "m1_wireless.h"
 #include "m1_usb_hal.h"
+#include "m1_transport.h"
 #include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -60,7 +61,7 @@ void m1_main(void)
     gpio_init(GPIOC,&pin);
     bool external=wired();
     m1_transport_t transport=external?M1_TRANSPORT_USB:M1_DEFAULT_WIRELESS_TRANSPORT;
-    if(!m1_boot_begin(transport,NULL,true))halted(M1_MAIN_BOOT_FAULT,m1_boot_error());
+    if(!m1_boot_begin(transport,m1_transport_ops(),true))halted(M1_MAIN_BOOT_FAULT,m1_boot_error());
     m1_main_state=M1_MAIN_COLD;__enable_irq();
     for(;;) {
         m1_boot_service();

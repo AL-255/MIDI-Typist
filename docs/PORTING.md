@@ -387,23 +387,28 @@ example, not a dependency of USB-only boards.
 For wireless backends, enforce the MIDI permission at input processing, not
 just by hiding a menu hint: restored settings must not enable MIDI on a transport
 that cannot carry it. A transport change must release the old host's keys/notes,
-wait for physical delivery rather than queue acceptance, and then establish a
-neutral baseline on the new host. Radio/power handshakes belong to the board;
+finish the transport's documented neutral-output handoff, and establish a
+neutral baseline on the new host. Document exactly what the protocol can confirm;
+when it provides no host-delivery ACK, do not label local completion as one.
+Radio/power handshakes belong to the board;
 never perform them in the shared application or its lighting renderer.
 Translate the common mapped report at the transport boundary; do not remap
 physical keys again. The M1 radio adapter illustrates retaining per-report
 ownership when a peer splits keys between usage slots and a smaller bitmap.
 Bound every peer format independently of the USB descriptor. Queue acceptance,
 DMA completion, a peer mode reply and host delivery are separate facts: do not
-wire a local-idle predicate into a host-drained callback.
+claim a local-idle predicate proves remote host receipt.
 Keep GUI/control sessions independent from active keyboard host ownership when
 a board supports wired configuration alongside wireless typing. A GUI USB reset
 must not release keys on the radio host. Validate a transport adapter's selection
-against actual endpoint/peer readiness, latch its old-host release proof through
+against actual endpoint readiness or peer mode confirmation, latch its handoff boundary through
 asynchronous reconfiguration, and stop output if an attempted switch becomes
 ambiguous. The M1 foreground binding accepts the initial mode and optional
-transport callbacks explicitly; those callbacks are not replaced with local DMA
-completion or an assumed successful switch.
+transport callbacks explicitly. The runtime M1 owner waits for neutral SPI
+ownership before issuing the reference mode command, confirms its status reply,
+and leaves USB control available. Report eligibility is checked separately from
+mode selection so an unpaired slot can still switch back to USB. Telemetry carries
+portable transport/ready/switching fields, not raw radio mode bytes.
 Sleep commands need the same ownership discipline. Process activity/cable
 cancellation before submitting a queued power command; after transmission has
 started, require the board's real restoration path rather than just clearing a
@@ -569,7 +574,7 @@ Endpoint ownership and descriptors remain platform responsibilities.
 The Huntsman additionally retains its updater HID at interface 3.
 Feed newline-stripped configuration commands to `keyboard_app_command`;
 it implements get/set/all/enable/MIDI/velocity/clean/calibrate/cancel validation and ACK
-semantics. Use `keyboard_telemetry_encode` for count-aware MTG3 snapshots; supply
+semantics. Use `keyboard_telemetry_encode` for count-aware MTG4 snapshots; supply
 board fault/storage status with `keyboard_telemetry_status_t`. Feed its returned
 length to `scan_stream_gui_push`. Allocate using `MT_GUI_SIZE` for the selected
 capacity/HID report, not the protocol maximum. Board diagnostics and the MCU's
@@ -598,11 +603,11 @@ permission to enable flashing or claim complete runtime behavior.
 The configuration view selects physical geometry from `keyboard_boards.py` by
 build target, and binds host profiles to that target/layout. Register the allowed
 layout/count pairs, HID report length and declared sample rate; all are checked
-before accepting telemetry. MTG3 supports up to 128 sensors, with no fixed
+before accepting telemetry. MTG4 supports up to 128 sensors, with no fixed
 Huntsman-sized bitmaps. The GUI uses the same declared rate for capture velocity. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
 implement and register a separate adapter for each product, with its discovery,
 image checks, supported transitions and protected write boundary. Do not reuse
-Huntsman addresses for another platform. Preserve the shared SysEx/MTG3 contract;
+Huntsman addresses for another platform. Preserve the shared SysEx/MTG4 contract;
 a different host presentation can call the same common configuration command engine.
 Adapters declare `inspection_modes` separately from flash actions; identity-only
 support must also reject flashing in the privileged worker, not just hide a

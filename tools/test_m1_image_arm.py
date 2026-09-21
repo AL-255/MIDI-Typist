@@ -240,7 +240,8 @@ def main_loop(image):
             assert live==2 and times==[(0xfffffffc,125)]*2
             assert labels.index('m1_boot_service')<labels.index('m1_live_service')
             begin=next(x for x in trace if x[0]=='m1_boot_begin')
-            assert begin[1]==(6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'],0,1)
+            assert begin[1][0]==(6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'])
+            assert begin[1][1] and begin[1][2]==1 # runtime Fn transport callbacks bound
             assert begin[2]==1
             assert next(x for x in trace if x[0]=='m1_boot_service')[2]==0
         else:

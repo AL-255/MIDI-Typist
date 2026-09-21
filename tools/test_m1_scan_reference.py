@@ -11,6 +11,7 @@ from elftools.elf.elffile import ELFFile
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC
 from unicorn.arm_const import UC_ARM_REG_R4, UC_ARM_REG_R6, UC_ARM_REG_R7
+from unicorn.arm_const import UC_ARM_REG_R1, UC_ARM_REG_R5, UC_ARM_REG_R10
 from firmware_defaults import DEFAULTS as D
 
 
@@ -67,6 +68,20 @@ def check(elf_path, reference):
             fallback=hi<D['M1_FACTORY_RELEASE_MIN_RAW'] or hi>D['M1_FACTORY_RELEASE_MAX_RAW'] or lo==0
             assert observed==((2600,2600-D['M1_STARTUP_TRAVEL_RAW']) if fallback else (hi,lo))
     print('PASS private reference replaces out-of-range startup calibration in RAM with sample and sample-minus-700')
+    # Original mode-packet branch, ending before its DMA submission. In
+    # particular USB selection really carries mode 6 through opcode 0x93.
+    for mode in (0,1,2,5,6):
+        packet=base+0x10000;state=base+0x11000;runtime=base+0x12000
+        cpu.mem_write(packet,bytes(84));cpu.mem_write(state,bytes(32));cpu.mem_write(runtime,bytes(64))
+        cpu.mem_write(state+8,bytes((2,0,1)));cpu.mem_write(runtime+30,bytes((mode,)))
+        for reg,value in ((UC_ARM_REG_R1,state),(UC_ARM_REG_R4,packet),
+                          (UC_ARM_REG_R5,0),(UC_ARM_REG_R10,runtime)):
+            cpu.reg_write(reg,value)
+        cpu.emu_start(0x080180af,0x080186a2,count=100)
+        assert cpu.reg_read(UC_ARM_REG_PC)==0x080186a2
+        assert bytes(cpu.mem_read(packet,4))==bytes((0x93,1,mode,mode))
+        assert bytes(cpu.mem_read(state+9,2))==bytes((1,0))
+    print('PASS private reference mode-packet instructions: BT slots, RF and USB select via 0x93 before status query')
 
 
 if __name__ == '__main__':

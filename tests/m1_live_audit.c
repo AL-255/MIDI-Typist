@@ -7,6 +7,7 @@
 #include "m1_wireless.h"
 #include "scan_stream.h"
 #include "m1_storage.h"
+#include "m1_transport.h"
 #include <string.h>
 static uint16_t frame[M1_KEY_COUNT];
 static uint32_t sequence;
@@ -46,7 +47,7 @@ static bool drained(void *context) { (void)context;return host_drained; }
 static bool select_transport(void *context,m1_transport_t target)
 { (void)context;requested=target;++select_calls;return selection_ready; }
 uintptr_t m1_test_live_transports(void)
-{ static const m1_transport_ops_t ops={drained,select_transport,NULL};return (uintptr_t)&ops; }
+{ static const m1_transport_ops_t ops={drained,select_transport,NULL,NULL};return (uintptr_t)&ops; }
 void m1_test_live_transport_gate(unsigned drained,unsigned ready)
 { host_drained=drained!=0;selection_ready=ready!=0; }
 unsigned m1_test_live_selection(unsigned field) { return field?select_calls:requested; }
@@ -89,6 +90,7 @@ const void *const m1_live_test_exports[]={
     m1_live_power_suspend,m1_live_power_park,m1_live_power_resume,
     m1_live_factory_result,
     m1_live_storage_fault,m1_test_live_storage,m1_test_live_storage_gate,
+    m1_transport_ops,m1_wireless_selected,m1_wireless_switch_ready,m1_wireless_select,
     m1_test_live_storage_count,m1_test_live_storage_page,
     m1_test_live_frame,m1_test_live_periodic,m1_test_live_led,m1_test_live_get,
     scan_stream_lost,scan_stream_dropped,

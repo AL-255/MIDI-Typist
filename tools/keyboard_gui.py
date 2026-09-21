@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
 from keyboard_gui_transport import Connection, find_midi_device
+from keyboard_gui_model import transport_text
 from midi_backend import control_ports
 from keyboard_keycodes import CHOICES, keycode_name, parse_keycode
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
@@ -625,10 +626,13 @@ class App:
                 elif not self.hold_mode.get():
                     self.history.append(s.raw[self.selected])
             state = 'STALE / disconnected' if stale else 'REPORTING' if s.flags & 2 else 'Waiting for all keys released' if s.flags & 1 else 'Keyboard disabled'
+            if not stale and s.flags & 2 and s.transport and not s.transport_flags & 1:
+                state='Input armed — output waiting'
             if self.key_capture:
                 rate = f' {self.capture_rate:,.0f} samples/s' if self.capture_rate else ''
                 state = f'KEYSTROKE CAPTURE{rate} • press the selected key (telemetry paused)'
             if not stale and s.mode: state = f'FN trigger editor {s.mode} — Escape to exit; use GUI for raw thresholds'
+            if s.transport:state += ' | '+transport_text(s)
             state += f' | {"MIDI" if s.performance_mode else "KEYBOARD"} | octave {s.octave:+d} | MIDI errors={s.midi_errors}'
             if s.flags & FLAG_JANKO: state += ' | JANKÓ layout (Fn+J)'
             if s.midi_cleanup: state += ' | MIDI note cleanup pending'

@@ -162,8 +162,8 @@ Huntsman's whole-profile journal saves these mappings alongside calibration.
 ## Compatibility boundary
 
 The Huntsman port uses a 30-byte NKRO report, MIDI channel/packet encoding,
-GUI telemetry, MTG3/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
-record format and flash limits. Shared MTG3 telemetry and SysEx sessions serve
+GUI telemetry, MTG4/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
+record format and flash limits. Shared MTG4 telemetry and SysEx sessions serve
 both board capacities; the GUI selects verified board geometry instead of
 inferring it from sensor count. Unknown targets are rejected. Firmware-update
 and flash-dump operations remain board-specific.
@@ -171,6 +171,6 @@ and flash-dump operations remain board-specific.
 Generic builds default to 128 sensor slots and a wider NKRO usage bitmap.
 The Huntsman selects 65 slots, its 204-byte LED frame and HID usages through DF
 plus modifiers E0…E7. Up to 254 sensors fit the current opaque 8-bit ID/count interface;
-larger devices require a deliberate interface extension. MTG3 telemetry supports
+larger devices require a deliberate interface extension. MTG4 telemetry supports
 up to 128 sensors. USB descriptors must
 always match the selected report size.

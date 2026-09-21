@@ -108,7 +108,7 @@ bits must be zero. Payloads are at most 2292 bytes; the largest SysEx is 2643 by
 | READY | 2 | ASCII `build=vVERSION-TARGET git=HASH state=STATE`; confirms session |
 | COMMAND | 3 | One printable ASCII command, at most 96 bytes; no newline/NUL |
 | ACK | 4 | Command dispatched, echoes command sequence; empty except `git`, which returns provenance |
-| SNAPSHOT | 5 | One MTG3 snapshot, sequence 0 in envelope |
+| SNAPSHOT | 5 | One MTG4 snapshot, sequence 0 in envelope |
 | SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
 | LOG | 7 | Best-effort debug text, sequence 0 |
 | ERROR | 8 | ASCII rejection reason, command sequence |
@@ -125,7 +125,7 @@ a valid session command/heartbeat, streaming stops. Neither close nor expiry
 disables normal keyboard/MIDI performance. Only one GUI owner is supported.
 
 A COMMAND ACK means dispatch, not configuration acceptance or flash completion.
-For `cfg`, the GUI additionally requires matching MTG3 request ID, accepted
+For `cfg`, the GUI additionally requires matching MTG4 request ID, accepted
 result and applicable readback checks. Timeout is 3000 ms, with no automatic
 retry. Settings may already have applied when a response is lost.
 
@@ -139,7 +139,7 @@ run in main, not in the USB ISR. Buffer/timing defaults live in `defaults.h`.
 
 | Payload | Size | Selection | Delivery |
 | --- | --- | --- | --- |
-| MTG3 snapshot | count-dependent | `stream gui` | latest-only, at most once per 33 ms |
+| MTG4 snapshot | count-dependent | `stream gui` | latest-only, at most once per 33 ms |
 | HKL1 sample | 20 | `stream key THRESHOLD SESSION SENSOR` | every acquisition of the pinned sensor |
 | HBD1 read | 128 | `dump read ID ADDRESS` | diagnostic, one response per request |
 
@@ -162,7 +162,7 @@ received and decoded on the connected high-speed USB device.
 
 | Header offset | Encoding | Meaning |
 | --- | --- | --- |
-| 0 | 4 bytes | `MTG3` |
+| 0 | 4 bytes | `MTG4` |
 | 4 | u16 | total frame size |
 | 6, 7 | u8 each | board-local layout/profile ID, active sensor count |
 | 8 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó=64 |
@@ -184,7 +184,13 @@ received and decoded on the connected high-speed USB device.
 | 60, 62 | u16 each | selected electrical calibration candidate upper/lower endpoints, zero if absent |
 | 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
 | 76 | u16 | header size, 80 |
-| 78 | 2 bytes | zero reserved |
+| 78 | u8 | selected keyboard transport: unreported=0, USB=1, Bluetooth slots 1/2/3=2/3/4, 2.4 GHz=5 |
+| 79 | u8 flags | transport report-eligible=1, switching=2; zero when transport is unreported |
+
+Transport selection is distinct from report eligibility. A selected but unpaired
+Bluetooth slot reports waiting, not ready; neither flag proves reception by a
+remote host. The wired SysEx connection may coexist with wireless keyboard output.
+Unknown transport values/bits and unsupported snapshot magics are rejected.
 
 M1 storage errors at offset 68 use `0x31001`–`0x3100c` for backend failures
 (argument, context, unsafe, geometry, linker, busy, controller, record, unlock,
@@ -230,7 +236,7 @@ sensor records or fixed-size bitmaps. Layout/count zero represents no valid
 scan layout and requires rate zero; otherwise the layout/rate/count/HID length
 must match the target announced by READY. The GUI rejects an unknown target,
 cross-board layout, invalid value, reserved bit, padding, size or checksum.
-SysEx version 3 and `MTG3` are the only supported wire contract.
+SysEx version 3 and `MTG4` are the only supported wire contract.
 
 `cfg` commands are acknowledged **in this stream**, not as text: the snapshot
 carries the request ID in field 20 and accepted/rejected in field 9, and only
@@ -253,7 +259,7 @@ switching to a capture stream.
 
 Loss-detecting 20-byte records at the hardware scan rate for one selected sensor, used
 for keystroke capture and to reproduce the firmware's velocity fit on the host.
-The host uses the board's configured scan rate from its preceding MTG3 snapshot
+The host uses the board's configured scan rate from its preceding MTG4 snapshot
 for velocity calculations; actual acquisition cadence still needs measurement.
 
 | Offset | Encoding | Meaning |

@@ -77,6 +77,7 @@ const void *const m1_test_exports[]={
     m1_wireless_init,m1_wireless_service,m1_wireless_stop,m1_wireless_healthy,
     m1_wireless_ready,m1_wireless_offer,m1_wireless_local_idle,
     m1_wireless_reports_sent,m1_wireless_errors,m1_wireless_status,
+    m1_wireless_selected,m1_wireless_switch_ready,m1_wireless_select,
     m1_wireless_battery,m1_wireless_battery_sent,m1_wireless_request_sleep,
     m1_wireless_cancel_sleep,m1_wireless_sleep_sent,m1_test_wireless_battery,
     m1_test_wireless_battery_raw,m1_test_wireless_power_request,m1_test_wireless_power_status,

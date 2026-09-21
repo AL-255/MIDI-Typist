@@ -1,5 +1,6 @@
 #include "m1_wireless.h"
 #include "defaults.h"
+#include <string.h>
 
 enum { NONE, MODE, QUERY, POLL, KEYS, BITMAP, BATTERY, SLEEP };
 static bool active,faulted,confirmed,have_status,pending,mode_sent,query_sent,poll_sent,linked;
@@ -51,8 +52,25 @@ bool m1_wireless_mode(m1_transport_t *mode)
 { if(!mode || !m1_wireless_healthy())return false;*mode=target;return true; }
 bool m1_wireless_ready(void)
 {
-    return m1_wireless_healthy() && !sleep_command && confirmed && have_status && status.state==M1_RADIO_STATE_REPORTS &&
+    return target!=M1_TRANSPORT_USB && m1_wireless_healthy() && !sleep_command && confirmed && have_status && status.state==M1_RADIO_STATE_REPORTS &&
         (uint32_t)(now-status_at)<M1_RADIO_STATUS_TIMEOUT_US;
+}
+bool m1_wireless_selected(m1_transport_t mode)
+{ return m1_wireless_healthy() && !sleep_command && target==mode && confirmed && have_status &&
+    (uint32_t)(now-status_at)<M1_RADIO_STATUS_TIMEOUT_US; }
+bool m1_wireless_switch_ready(void)
+{ return m1_wireless_healthy() && !sleep_command && flight==NONE && m1_radio_ready() &&
+    neutral(&committed) && (!pending || neutral(&staged)); }
+bool m1_wireless_select(m1_transport_t mode,uint32_t tick)
+{
+    if(!m1_transport_valid(mode) || !m1_wireless_switch_ready())return false;
+    if(mode==target)return true;
+    target=mode;now=started=status_at=tick;
+    confirmed=have_status=mode_sent=query_sent=poll_sent=linked=false;
+    battery_known=battery_sent=false;
+    reports=0;pending=mode!=M1_TRANSPORT_USB;part=KEYS;
+    committed=(m1_radio_keyboard_t){0};staged=committed;
+    return true;
 }
 bool m1_wireless_local_idle(void)
 { return m1_wireless_healthy() && !pending && !battery_pending() &&
@@ -67,6 +85,13 @@ bool m1_wireless_status(m1_radio_status_t *out)
 }
 bool m1_wireless_offer(const keyboard_report_t *report)
 {
+    const keyboard_report_t empty={0};
+    /* Before a peer is report-eligible, its mandatory neutral baseline may
+     * satisfy another neutral offer. This is queue ownership, not delivery;
+     * non-neutral offers remain rejected and cannot be replayed on connect. */
+    if(report && m1_wireless_healthy() && target!=M1_TRANSPORT_USB && !sleep_command &&
+       !m1_wireless_ready() && pending && neutral(&committed) && neutral(&staged) &&
+       !memcmp(report,&empty,sizeof(empty)))return true;
     if(!report || !m1_wireless_ready() || pending)return false;
     staged=committed;
     if(!m1_radio_keyboard_update(&staged,report))return false;
@@ -74,7 +99,7 @@ bool m1_wireless_offer(const keyboard_report_t *report)
 }
 bool m1_wireless_battery(const m1_battery_t *battery)
 {
-    if(!m1_wireless_healthy() || sleep_command)return false;
+    if(!m1_wireless_healthy() || sleep_command || target==M1_TRANSPORT_USB)return false;
     if(!battery || !battery->valid || !battery->source_known ||
        !battery->percent || battery->percent>100u) {
         battery_known=battery_sent=false;return false;
@@ -119,7 +144,7 @@ static void receive(const uint8_t *bytes,size_t length)
         fail();return;
     }
     confirmed=mode_sent && received.mode==target;
-    if(confirmed && received.state==M1_RADIO_STATE_REPORTS)linked=true;
+    if(confirmed && target!=M1_TRANSPORT_USB && received.state==M1_RADIO_STATE_REPORTS)linked=true;
 }
 static bool send(unsigned kind,const m1_radio_packet_t *packet)
 {

@@ -10,12 +10,14 @@ typedef enum {
     M1_TRANSPORT_RADIO=5, M1_TRANSPORT_USB=6
 } m1_transport_t;
 typedef struct {
-    /* True only after all accepted old-transport reports reached the host.
+    /* True after the old transport's neutral-output handoff is complete.
+     * The SPI protocol has no host-delivery ACK; document that boundary.
      * select returns true when the radio/USB mode change is confirmed.
      * Neither callback may block or mutate shared application state. */
     bool (*drained)(void *context);
     bool (*select)(void *context,m1_transport_t target);
     void *context;
+    bool (*available)(void *context,m1_transport_t target); /* NULL: all offered */
 } m1_transport_ops_t;
 typedef struct {
     m1_transport_t current,target;

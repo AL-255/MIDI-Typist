@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "keyboard_app.h"
 
-/* MTG3: board-independent, explicit-sized header + compact sensor records.
+/* MTG4: board-independent, explicit-sized header + compact sensor records.
  * Addresses, hardware states and storage schemas never appear on this wire.
  * All multibyte fields are little endian; see docs/TELEMETRY.md. */
 #define MT_GUI_HEADER_SIZE 80u
@@ -12,10 +12,14 @@
 #define MT_GUI_MAX_HID 32u
 #define MT_GUI_SIZE(count,hid) (((MT_GUI_HEADER_SIZE + (count)*MT_GUI_RECORD_SIZE + (hid)+3u)&~3u) + 4u)
 #define MT_GUI_MAX_SIZE MT_GUI_SIZE(MT_GUI_MAX_KEYS,MT_GUI_MAX_HID)
+enum { MT_TRANSPORT_UNKNOWN,MT_TRANSPORT_USB,MT_TRANSPORT_BT1,
+       MT_TRANSPORT_BT2,MT_TRANSPORT_BT3,MT_TRANSPORT_RADIO };
+enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u };
 typedef struct {
     uint32_t now,sequence,ack,scan_errors,light_errors;
     uint32_t calibration_generation,storage_error,storage_generation;
     uint8_t result,storage_flags,storage_slot;
+    uint8_t transport,transport_flags;
     bool scan_fault,light_fault,calibration_saved,calibration_supported;
 } keyboard_telemetry_status_t;
 size_t keyboard_telemetry_encode(const keyboard_app_t *app,

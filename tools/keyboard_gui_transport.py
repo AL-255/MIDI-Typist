@@ -32,7 +32,7 @@ class Connection(threading.Thread):
         self.connected = False
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = deque(maxlen=1)  # latest requested display mode wins
-        self.stream_mode = 'gui'  # 'gui' (MTG3 telemetry) or 'key' (HKL1 samples)
+        self.stream_mode = 'gui'  # 'gui' (MTG4 telemetry) or 'key' (HKL1 samples)
         self.key_threshold = self.key_sensor = self.key_session = None
         self.samples = deque(maxlen=SAMPLE_CAPACITY)
         self.samples_lock = threading.Lock()

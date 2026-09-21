@@ -96,7 +96,7 @@ before deciding whether to apply again.
 
 ## GUI telemetry
 
-The shared application emits count-aware MTG3 telemetry, including MIDI fields,
+The shared application emits count-aware MTG4 telemetry, including MIDI fields,
 calibration status and per-key parallel-hold bits. SysEx version 3 identifies
 the protocol; READY binds each snapshot to a board target and build identity. The complete field
 table, the other streams and the text replies are documented in

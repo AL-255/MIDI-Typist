@@ -22,9 +22,9 @@ class Live(Device,RadioArm):
         super().__init__(path,high)
         self.samples=[3900]*82;self.sequence=sequence;self.time=time;self.commands=0
         self.messages=[];self.wire=bytearray();self.events=[];self.hid=bytes(30)
-        self.radio_packets=[];self.radio_complete=True;self.peer_mode=mode;self.peer_pending=False
+        self.radio_packets=[];self.radio_complete=True;self.peer_mode=mode;self.peer_pending=False;self.peer_state=3
         self.radio_slots=bytes(6);self.radio_bitmap=bytes(15);self.radio_modifiers=0
-        self.ops=self.call('m1_test_live_transports') if transports else 0
+        self.ops=self.call('m1_transport_ops' if transports=='runtime' else 'm1_test_live_transports') if transports else 0
         self.storage_ops=self.call('m1_test_live_storage') if storage else 0
         if mode!=6:self.start_radio(mode)
         pages=factory_memory(self)
@@ -67,7 +67,7 @@ class Live(Device,RadioArm):
                 self.radio_modifiers=packet[3];self.radio_slots=packet[4:10]
             if packet[0]==0x81 and packet[2]==2:self.radio_bitmap=packet[3:18]
             if packet[0]==9:
-                payload=bytes((0x10,0,3,self.peer_mode))
+                payload=bytes((0x10,0,self.peer_state,self.peer_mode))
                 reply=(bytes((0,4))+payload+bytes((sum(payload)&255,))).ljust(n,b'\0')
                 self.peer_pending=False
             self.put(GPIO+0xc10,0 if self.peer_pending else 4)
@@ -217,6 +217,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     integration(args.elf)
     wireless_integration(args.elf)
+    runtime_transports(args.elf)
     persistence(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
@@ -579,18 +580,18 @@ def wireless_integration(path):
     d.call('m1_test_live_transport_gate',1,1);d.run()
     assert d.call('m1_live_transport')==6 and not d.call('m1_live_transport_fault')
     d.samples[45]=3000;d.run();assert d.held(4) and not d.radio_held(4)
-    # Selection can stop/reinitialize the old radio after its release proof;
+    # Selection can stop/reinitialize the old radio after its neutral handoff;
     # there is no requirement to keep draining a driver that no longer exists.
     d=Live(path,True,mode=0,transports=True);d.run()
     d.call('m1_test_live_transport_gate',1,0);d.chord(2)
     assert d.call('m1_test_live_selection',1)>0 and d.call('m1_live_transport')==0
     d.call('m1_wireless_stop');d.start_radio(1);d.run()
     assert not d.call('m1_live_transport_fault') and d.call('m1_live_transport')==0
-    d.call('m1_test_live_transport_gate',0,1);d.run() # old proof already latched
+    d.call('m1_test_live_transport_gate',0,1);d.run() # old handoff already latched
     assert d.call('m1_live_transport')==1 and not d.call('m1_live_transport_fault')
     d.samples[45]=3000;d.run();assert d.radio_held(4)
     d.samples[45]=3900;d.run();d.call('m1_live_stop',d.time//1000);d.run()
-    assert not d.call('m1_live_init',1,d.ops,0) # local neutral is not host proof
+    assert not d.call('m1_live_init',1,d.ops,0) # outer owner still denies handoff
     d.call('m1_test_live_transport_gate',1,1)
     assert d.call('m1_live_init',1,d.ops,0)
     # An adapter claiming success for the wrong/not-ready radio cannot switch.
@@ -606,5 +607,39 @@ def wireless_integration(path):
     assert d.call('m1_test_live_selection',1)>0
     d.sequence+=1;d.tick();assert d.call('m1_live_transport_fault')
     d.samples[45]=3000;d.run();assert not d.held(4)
-    print('PASS M1 Fn transport integration: explicit host-release gate, actual mode confirmation, neutral routing and terminal ambiguous selection')
+    print('PASS M1 Fn transport integration: explicit neutral-handoff gate, actual mode confirmation, neutral routing and terminal ambiguous selection')
+def runtime_transports(path):
+    # Real runtime callbacks and SPI/SDK, not the permissive scripted adapter.
+    for high in (False,True):
+        d=Live(path,high,transports='runtime');d.run(160)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        for key,target,wire in ((1,0,2),(2,1,3),(3,2,4),(4,5,5),(5,6,1)):
+            d.chord(key);d.run(250)
+            assert d.call('m1_live_transport')==target and not d.call('m1_live_transport_fault')
+            # Discard pre-switch snapshots; the next one must identify the target.
+            d.messages=[m for m in d.messages if m[0]!=sx.SNAPSHOT]
+            s=d.snapshot();assert s.transport==wire and s.transport_flags==1
+            d.samples[45]=3000;d.run(250)
+            assert d.held(4)==(target==6) and d.radio_held(4)==(target!=6)
+            d.samples[45]=3900;d.run(250)
+            assert not d.radio_held(4) and not d.held(4)
+        assert {p[2] for p in d.radio_packets if p[0]==0x93}=={0,1,2,5,6}
+        d.peer_state=0;d.chord(1);d.run(250)
+        assert d.call('m1_live_transport')==0 and not d.call('m1_wireless_ready')
+        d.samples[45]=3000;d.run(250);assert not d.radio_held(4)
+        d.peer_state=3;d.run(1000)
+        assert d.call('m1_wireless_ready') and not d.radio_held(4) # no offline-held replay
+        d.samples[45]=3900;d.run(250);d.samples[45]=3000;d.run(250)
+        assert d.radio_held(4)
+        d.samples[45]=3900;d.run(250)
+        d.chord(5);d.run(250);assert d.call('m1_live_transport')==6
+        d.peer_state=0;d.chord(2);d.run(250)
+        assert d.call('m1_live_transport')==1 and not d.call('m1_wireless_ready')
+        d.call('m1_test_usb_event',2);d.chord(5);d.run(250)
+        assert d.call('m1_live_transport')==1 and not d.call('m1_live_transport_fault')
+        d.call('m1_test_usb_event',3);d.chord(5);d.run(250)
+        assert d.call('m1_live_transport')==6 # unpaired mode can return to USB
+        print(f'PASS M1 {"HS" if high else "FS"} runtime Fn transport owner: all slots/USB, routing, telemetry, unpaired escape and no held-key replay')
+
+
 if __name__=='__main__':main()

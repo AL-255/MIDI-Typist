@@ -36,7 +36,7 @@ bool scan_stream_gui_push(const uint8_t *report,size_t size)
 {
     if(!scan_stream_gui_enabled() || !midi_control_ready() || !report ||
        size<MT_GUI_HEADER_SIZE+4u || size>SCAN_STREAM_GUI_SIZE || size%4u ||
-       memcmp(report,"MTG3",4) || (report[4]|(unsigned)report[5]<<8)!=size)return false;
+       memcmp(report,"MTG4",4) || (report[4]|(unsigned)report[5]<<8)!=size)return false;
     memcpy(s_records,report,size);s_gui_size=size;s_count=1;return true;
 }
 void scan_stream_last_key(uint16_t threshold,uint32_t session,uint8_t sensor)

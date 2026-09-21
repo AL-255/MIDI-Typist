@@ -71,7 +71,7 @@ request ID and ACK result (1 accepted, 2 rejected). Start ACK means the routine
 started, **not** that flash was saved. Observe terminal state and generation.
 Cancellation is idempotent. One outstanding request is supported.
 
-The shared [MTG3 layout](TELEMETRY.md#gui-snapshot-stream-gui) is authoritative
+The shared [MTG4 layout](TELEMETRY.md#gui-snapshot-stream-gui) is authoritative
 for wire offsets. Header fields report state, completed count, selected sensor,
 active/saved/supported flags, reason, selected hold time and candidate bounds.
 Generation and storage errors are full 32-bit fields.

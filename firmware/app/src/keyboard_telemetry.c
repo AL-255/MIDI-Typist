@@ -21,7 +21,7 @@ size_t keyboard_telemetry_encode(const keyboard_app_t *app,
     size_t size=MT_GUI_SIZE(count,sizeof(app->sent));
     if(size>capacity) return 0;
     memset(out,0,size);
-    memcpy(out,"MTG3",4); u16(out+4,size);
+    memcpy(out,"MTG4",4); u16(out+4,size);
     out[6]=raw->profile; out[7]=count;
     out[8]=raw->enabled | (raw->armed<<1) | (raw->valid<<2) |
            (s->scan_fault<<3) | (s->light_fault<<4) | (midi->janko<<6);
@@ -45,6 +45,7 @@ size_t keyboard_telemetry_encode(const keyboard_app_t *app,
     }
     u32(out+64,s->calibration_generation); u32(out+68,s->storage_error);
     u32(out+72,s->storage_generation); u16(out+76,MT_GUI_HEADER_SIZE);
+    out[78]=s->transport;out[79]=s->transport_flags;
     for(unsigned i=0;i<count;++i) {
         uint8_t *p=out+MT_GUI_HEADER_SIZE+i*MT_GUI_RECORD_SIZE;
         const keyboard_velocity_t *v=&raw->velocity[i];

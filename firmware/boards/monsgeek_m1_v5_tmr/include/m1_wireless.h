@@ -18,6 +18,15 @@ bool m1_wireless_mode(m1_transport_t *mode);
 bool m1_wireless_ready(void);
 bool m1_wireless_offer(const keyboard_report_t *report);
 bool m1_wireless_local_idle(void);
+/* Mode selection does not require a connected wireless host. A fresh matching
+ * mode reply confirms selection; state 3 separately gates keyboard reports. */
+bool m1_wireless_selected(m1_transport_t mode);
+/* Neutral local boundary, not host receipt: no outstanding transfer or held
+ * committed/staged key. An unsent neutral baseline may be cancelled. */
+bool m1_wireless_switch_ready(void);
+/* Awake peer only. Keep SPI/rails initialized; cancel unsent neutral metadata,
+ * send 0x93 and query status. Mode 6 parks wireless reporting for USB. */
+bool m1_wireless_select(m1_transport_t mode,uint32_t now_us);
 uint32_t m1_wireless_reports_sent(void);
 uint32_t m1_wireless_errors(void);
 bool m1_wireless_status(m1_radio_status_t *out);

@@ -232,7 +232,7 @@ a fresh valid scan. Its ACK confirms erase, not the neutral gate. Neither
 path touches Razer data. Recover deleted calibration by recalibrating or using
 a private backup.
 
-MTG3 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
+MTG4 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
 reports the full 32-bit profile generation, and 64/68 calibration generation/error.
 See [telemetry](TELEMETRY.md). GUI flashing preserves compatible records by default; confirmed Fn+R
 explicitly clears them. Stock firmware may

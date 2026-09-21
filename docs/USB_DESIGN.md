@@ -61,7 +61,7 @@ control and endpoint paths, reset deferral and aligned copies with modeled
 peripherals. It does not execute the bootloader or model electrical reconnect.
 
 The complete image builds and passes modeled USB, SysEx, remapping and storage
-audits. Its 30-byte HID/MTG3 contract has not been flashed or physically tested.
+audits. Its 30-byte HID/MTG4 contract has not been flashed or physically tested.
 Updater HID remains interface 3. Custom writes remain restricted to the two
 tail pages.
 See [validation status](VALIDATION.md).

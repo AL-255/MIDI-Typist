@@ -28,7 +28,7 @@ keys, six in the selected-key panel). It performs no scaling or clamping.
 
 ## Shared wire format
 
-Each MTG3 sensor record contains a little-endian IEEE-754 float32 normalized
+Each MTG4 sensor record contains a little-endian IEEE-754 float32 normalized
 velocity at record offset 6, a completion counter at 10 and state flags at 14.
 The result-valid flag distinguishes a completed zero from no result. The decoder
 rejects NaN, infinity and out-of-range floats.

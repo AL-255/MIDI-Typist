@@ -65,7 +65,7 @@ class Device(threading.Thread):
         self.raw = None  # optional board-sized override for the next snapshots
         self.velocity_start = 1
         self.performance_mode = 0
-        self.stream_mode = 'gui'       # 'gui' MTG3 packets or 'key' HKL1 records
+        self.stream_mode = 'gui'       # 'gui' MTG4 packets or 'key' HKL1 records
         self.key_mode = None           # (session, threshold, sensor) while in key mode
         self.key_seq = 0; self.key_first = True
         self.key_rate = key_rate       # seconds between HKL1 records (8 ksps default)
@@ -155,6 +155,18 @@ def until(predicate,seconds=3):
 
 
 class Tests(unittest.TestCase):
+    def test_transport_status(self):
+        from keyboard_gui_model import transport_text
+        for transport in range(6):
+            for flags in range(4):
+                data=bytearray(packet());data[78:80]=bytes((transport,flags))
+                struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
+                if not transport and flags:
+                    with self.assertRaisesRegex(ValueError,'transport'):decode(data)
+                else:
+                    s=decode(data);self.assertEqual((s.transport,s.transport_flags),(transport,flags))
+                    self.assertEqual(bool(transport_text(s)),bool(transport))
+
     def test_capture_buffer_integrity(self):
         connection = Connection('/unused')
         connection.key_sensor = 32
@@ -197,7 +209,7 @@ class Tests(unittest.TestCase):
             struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
             return data
         s=decode(checksum(b)); self.assertTrue(s.calibration_done[0]); self.assertEqual(s.calibration_hold,500)
-        for offset,value in ((41,9),(42,2),(43,61),(44,4),(HEADER_SIZE+14,128),(45,5),(78,1),(46,8),(47,2)):
+        for offset,value in ((41,9),(42,2),(43,61),(44,4),(HEADER_SIZE+14,128),(45,5),(78,6),(79,4),(46,8),(47,2)):
             bad=bytearray(b); bad[offset]=value
             with self.assertRaises(ValueError): decode(checksum(bad))
         parallel=bytearray(packet(calibration_state=3,states=[8,8]+[0]*59))
@@ -227,7 +239,7 @@ class Tests(unittest.TestCase):
                 key['midi']=255
         p['keys'][32]['midi']=128
         with self.assertRaises(ValueError): validate_profile(p)
-        for offset,value in ((37,2),(38,11),(39,2),(40,2),(HEADER_SIZE+15,128),(78,1),(41,1)):
+        for offset,value in ((37,2),(38,11),(39,2),(40,2),(HEADER_SIZE+15,128),(78,6),(79,4),(41,1)):
             bad=bytearray(packet()); bad[offset]=value
             struct.pack_into('<I',bad,len(bad)-4,sum(struct.unpack_from(f'<{(len(bad)-4)//2}H',bad)))
             with self.assertRaises(ValueError): decode(bad)

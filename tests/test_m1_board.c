@@ -333,7 +333,7 @@ static bool accept_midi(uint8_t a,uint8_t b,uint8_t c,uint8_t d)
 static void controls(void)
 {
     static const keyboard_app_ops_t ops={0};
-    const m1_transport_ops_t transport={transport_drained,transport_select,NULL};
+    const m1_transport_ops_t transport={transport_drained,transport_select,NULL,NULL};
     m1_controls_t s;
     m1_battery_t battery;
     m1_battery_init(&battery);

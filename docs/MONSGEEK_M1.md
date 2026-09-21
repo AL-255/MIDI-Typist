@@ -74,7 +74,7 @@ python tools/keyboard_gui.py --demo --board MG-M1V5TMR
 
 The GUI reads the same key table, sizes its canvas for six rows, and binds
 profiles to a board target and layout. It never applies a Huntsman profile to
-M1. Shared MTG3 telemetry, SysEx services and the GUI support all 82 keys,
+M1. Shared MTG4 telemetry, SysEx services and the GUI support all 82 keys,
 including per-key capture. Native C-to-Python and mocked Tk tests exercise this
 path; the experimental application supplies live USB snapshots.
 
@@ -292,7 +292,9 @@ Huntsman's input policy is unchanged. These linear coordinates are not millimetr
 
 ## Power and transport components
 
-These are library APIs with offline tests, **not working wireless firmware**.
+The experimental image binds the Fn transport owner to the radio HAL/scheduler.
+Switching and routing have offline integration tests; **physical wireless delivery
+is not yet verified**. Automatic power/sleep integration remains incomplete.
 `m1_controls_bind` attaches board-specific input/lighting hooks to the shared
 application. Its table defines these Fn controls; bare F1–F5 remain normal keys:
 
@@ -306,12 +308,23 @@ application. Its table defines these Fn controls; bare F1–F5 remain normal key
 
 Transport names preview while held and selection starts on release. The old
 transport must accept a neutral keyboard report, finish MIDI cleanup when
-leaving USB, and confirm its output queue has drained. Only then may the adapter
-switch transport. A rejected or timed-out selection retains the previous
-transport; a successful selection requires neutral keys before rearming.
-The selector does not invent a radio acknowledgement. No physical radio adapter
-is bound yet. It must also reject selecting unpowered USB and coordinate cable
-changes, pairing and radio status with the power controller.
+leaving USB, and finish local output transfers. Radio switching additionally
+requires neutral committed/staged reports and no outstanding SPI transaction.
+An unsent neutral baseline on an unpaired slot may be cancelled. The protocol
+does not provide an old-host receipt acknowledgement; local completion must not
+be described as one. The owner then sends mode opcode `93` and waits for a fresh
+matching status reply. All selections, including USB mode 6, use that reference
+packet contract (`0x080180AE`); the mode branch is instruction-checked against
+the private image. No pairing, vendor forwarding or peer-update command is sent.
+The USB control link stays connected while keyboard output uses wireless.
+
+A matching mode selects the slot even if it is unpaired. State 3 separately
+permits reports; Fn menus remain usable while waiting. A newly eligible host
+requires neutral input, so offline-held keys cannot be replayed. Fn+F5 is not
+offered without ready USB. An attempted switch that times out or loses scan
+integrity is terminal, retaining wired diagnostics when available; it does not
+silently resume on an ambiguous host. Cable transitions and pairing remain
+outside this runtime owner. Transport selection is not yet persisted.
 
 Wireless forces keyboard mode, including a restored MIDI setting. The shared
 menu hides the MIDI entry hint. USB selection does not automatically enable MIDI.
@@ -576,8 +589,8 @@ USB generation changes always reset the GUI session, but invalidate key
 ownership only when USB is the active keyboard transport. Reconnecting the GUI
 must not release wireless keys. Stop neutralizes application state without
 changing rails; continue servicing releases before explicit reinitialization.
-Wireless restart additionally requires the outer owner's host-release proof;
-neither local idle nor a neutral SPI packet supplies that proof.
+Wireless restart additionally requires the outer owner's documented neutral-output
+handoff; a neutral SPI packet still does not prove receipt by the remote host.
 
 Power integration can use `m1_live_power_suspend`, continued foreground service,
 then `m1_live_power_park` to drain local neutral reports and relinquish foreground
@@ -593,17 +606,18 @@ fresh neutral acquisitions and a new GUI handshake. Stopping an already parked
 owner is terminal and does not reclaim hardware. The development main loop does
 not yet invoke this handoff automatically.
 
-Optional `m1_transport_ops_t` callbacks connect Fn+F1–F5 to the outer physical
-transport owner. Without these callbacks, selection hints/actions are disabled.
+`m1_transport_ops_t` callbacks connect Fn+F1–F5 to `m1_transport`, bound by the
+development main. Other callers can omit the callbacks to disable these actions.
+The optional availability callback hides/rejects unavailable USB selection.
 The foreground owner waits for neutral reports, USB MIDI cleanup where relevant,
-local drain **and** the external host-release confirmation before calling select.
-It latches that release proof while selection is in progress, since the old
+local drain and the outer owner's neutral-output handoff before calling select.
+It latches that boundary while selection is in progress, since the old
 driver may then be stopped. Confirmation also requires the selected USB endpoint
-or matching radio scheduler to be ready; a callback cannot bypass those checks.
+or a fresh matching radio mode to be confirmed; a callback cannot bypass those checks.
 An interrupted or timed-out attempted selection latches a terminal transport
 fault instead of resuming typing on an ambiguous host. A USB session change
 during an authorized selection resets control traffic without revoking the
-already established old-host release proof.
+already established old-transport handoff.
 
 `m1_live_audit.elf` exercises this coordinator through the real USB class and
 shared services at both packet sizes, decoding snapshots with the GUI codec;
@@ -617,9 +631,11 @@ GUI/Fn+C entry, parallel 82-key collection, held-key save, deferred gates,
 whole-profile restoration and cancellation/timeout/scan/USB/storage failures.
 The save-gate audit executes
 actual scanner/time/battery/LED HALs with scripted power and transport readiness;
-the flash driver has its own controller-model audit. Radio status, DMA completion and external transport callbacks
-are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
-The runtime power/transport coordinator, verified radio delivery and
+the flash driver has its own controller-model audit. Transport tests exercise
+both scripted callbacks and the runtime selection owner. Radio status and DMA
+completion remain scripted, not proof of host delivery, physical scans or
+measured 8 kHz operation.
+Automatic runtime power/cable coordination, verified radio delivery and
 power-cycle persistence remain unfinished in the installable experimental application. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
@@ -724,8 +740,8 @@ The foreground sequence is:
    while external power is present.
 4. For wireless selection, initialize SPI3, wait its full startup pulse and
    initialize the scheduler for that exact mode. No peer link is fabricated.
-5. Initialize battery inputs, resume scanning, then initialize the application
-   with restored profile/factory bounds and the actual `m1_save_ops()` gate.
+5. Initialize battery inputs and the application with restored profile/factory
+   bounds and the actual `m1_save_ops()` gate, then resume scanning.
 
 `READY` transfers ownership to the runtime caller, which must then service the
 application using fresh `m1_time_now` readings. It means initialization completed,
@@ -747,7 +763,7 @@ does no further peripheral cleanup and keeps interrupts masked. There is no
 automatic retry, profile erase or factory-data write. Offline tests execute
 the composed HAL/application chain; profile I/O and hardware effects are modeled.
 Failures before USB startup remain debugger-only diagnostics. Runtime cable
-transitions, host-release/pairing and sleep/wake coordination and physical
+transitions, pairing and sleep/wake coordination and physical
 validation remain required.
 
 ### Development ELF and reset entry

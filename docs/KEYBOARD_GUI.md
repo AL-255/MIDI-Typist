@@ -118,6 +118,10 @@ before offering a trial conversion, or checks USB-bound SysEx identity for custo
 reflashing. Live 82-key telemetry and released-key 8 kHz acquisition are checked;
 pressed-key performance and complete wireless/power operation remain unverified;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+The M1 status line identifies the selected USB/Bluetooth-slot/2.4 GHz keyboard
+transport and whether it is ready, waiting for a host, or switching. USB control
+connection does not imply that keyboard output is routed to USB. Select the
+transport with Fn+F1–F5; MIDI remains USB-only.
 If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard
 snapshot; recovery must use the flashing workflow supported by that backend.
@@ -212,7 +216,7 @@ SysEx message types and can coexist without corrupting one another.
 Commands have one outstanding nonzero decimal ID; snapshots carry the latest
 ACK/result. Malformed IDs receive no ACK. See [commands and JSON](MIDI_PROTOCOL.md).
 
-The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines count-aware MTG3
+The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines count-aware MTG4
 latest-only snapshots (Huntsman: at most one per 33 ms). GUI gaps are expected.
 After initial synchronization, framing/checksum errors fail the connection.
 Pinned `stream key THRESHOLD SESSION SENSOR` uses 20-byte HKL1 records and

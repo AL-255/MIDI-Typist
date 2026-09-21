@@ -8,6 +8,9 @@ static const struct { uint8_t sensor; m1_transport_t target; const char *label; 
     {5,M1_TRANSPORT_USB,"USB"},
 };
 enum { BATTERY_SENSOR=M1_SPACE_SENSOR, CHOICE_COUNT=sizeof(choices)/sizeof(choices[0]) };
+static bool available(const m1_controls_t *s,m1_transport_t target)
+{ return s->ops && s->ops->select && s->ops->drained &&
+    (!s->ops->available || s->ops->available(s->ops->context,target)); }
 bool m1_transport_valid(unsigned transport)
 {
     for(unsigned i=0;i<CHOICE_COUNT;++i)if(choices[i].target==transport)return true;
@@ -62,7 +65,7 @@ static bool system_input(keyboard_app_t *app,void *context,uint32_t now)
     if(!raw->armed || !raw->down[M1_FN_SENSOR] || !edges || (edges&(edges-1u)))return false;
     unsigned index=0;
     while(!(edges&(1u<<index)))++index;
-    if(index<CHOICE_COUNT && (!s->ops || !s->ops->select || !s->ops->drained))return false;
+    if(index<CHOICE_COUNT && !available(s,choices[index].target))return false;
     s->pending=index+1u; s->revision=raw->revision;
     s->battery_show=index==CHOICE_COUNT;
     if(!s->battery_show)keyboard_text_start(&s->text,raw->profile,choices[index].label,now);
@@ -76,6 +79,7 @@ static void system_lights(keyboard_app_t *app,void *context,uint8_t *frame,uint3
     if(app->raw->armed && app->raw->down[M1_FN_SENSOR]) {
         if(s->ops && s->ops->select && s->ops->drained)
             for(unsigned i=0;i<CHOICE_COUNT;++i) {
+                if(!available(s,choices[i].target))continue;
                 if(s->current==choices[i].target)
                     keyboard_light_set(M1_PROFILE,choices[i].sensor,frame,COLOR_CONFIRM);
                 else keyboard_light_set(M1_PROFILE,choices[i].sensor,frame,COLOR_WHITE);

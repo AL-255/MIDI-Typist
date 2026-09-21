@@ -17,7 +17,7 @@ the [project README](../README.md) for a project overview, and the
 | Integrate host tools | [Protocol](MIDI_PROTOCOL.md) and [GUI limits](KEYBOARD_GUI.md) |
 
 Physical layout, flash addresses and USB identities in feature guides describe
-Huntsman unless explicitly stated otherwise. MTG3 snapshots and HKL1 captures
+Huntsman unless explicitly stated otherwise. MTG4 snapshots and HKL1 captures
 are shared, count-aware protocols; HBD1 flash access remains board-specific.
 
 ## Current behavior and protocols
