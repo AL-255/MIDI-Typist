@@ -119,6 +119,8 @@ The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
 The foreground audit connects scripted scan/battery/LED boundaries to the real
 application, USB class and GUI codec, including discontinuity and release handling.
+The HAL audit also executes the wireless report scheduler through actual
+SPI/DMA drivers with scripted status replies; no radio host is simulated.
 The SDK package selector
 enables AT32F405 family headers; it does not establish the physical chip's exact
 package/density. See [M1 contracts and verification limits](MONSGEEK_M1.md).

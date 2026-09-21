@@ -776,6 +776,115 @@ def radio(elf):
     print('PASS M1 SPI3 radio: transfer bounds, pin/DMA ownership, RX/TX ordering, drain/backpressure, faults, wraparound and quiescence')
 
 
+class WirelessArm(RadioArm):
+    def __init__(self,elf,mode=0,start=0):
+        super().__init__(elf)
+        self.mode=mode;self.now=self.radio_init(start)
+        assert not self.call('m1_wireless_init',mode,0,self.now)
+        for invalid in (3,4,6,7,255,0x100):
+            assert not self.call('m1_wireless_init',invalid,1,self.now)
+        assert self.call('m1_wireless_init',mode,1,self.now)
+        assert not self.call('m1_wireless_init',mode,1,self.now)
+        self.put(GPIO+0xc10,0)
+        self.step()
+        assert self.packet()==bytes((9,))+bytes(67)
+        self.put(GPIO+0xc10,4)
+        self.finish(bytes((0,4,0x10,0,3,mode,0x13+mode)))
+        assert not self.call('m1_wireless_ready') # no mode command sent before this poll
+        assert self.packet()[:4]==bytes((0x93,1,mode,mode))
+        self.finish() # mode completion alone is not confirmation
+        assert not self.call('m1_wireless_ready')
+        assert self.packet()[:4]==bytes((0x92,1,0,0))
+        self.finish()
+    def step(self,us=125):
+        self.now=(self.now+us)&0xffffffff
+        self.call('m1_wireless_service',self.now)
+    def packet(self):
+        assert self.u32(DMA+0x1c)&1
+        return bytes(self.cpu.mem_read(self.u32(DMA+0x28),self.u32(DMA+0x20)))
+    def finish(self,reply=b''):
+        size=self.u32(DMA+0x34)
+        assert self.u32(DMA+0x30)&1 and len(reply)<=size
+        self.cpu.mem_write(self.u32(DMA+0x3c),reply+bytes(size-len(reply)))
+        self.put(DMA,0x330);self.put(RADIO_SPI+8,2);self.step()
+    def poll(self,state=3,mode=None,flags=0,valid=True):
+        self.put(GPIO+0xc10,0);self.step(D['M1_RADIO_POLL_US'])
+        assert self.packet()==bytes((9,))+bytes(67)
+        self.put(GPIO+0xc10,4)
+        payload=bytes((0x10,flags,state,self.mode if mode is None else mode))
+        reply=bytes((0,len(payload)))+payload+bytes(((sum(payload)+(not valid))&255,))
+        self.finish(reply)
+    def baseline(self):
+        self.poll(flags=0x25)
+        assert self.call('m1_wireless_ready') and not self.call('m1_wireless_local_idle')
+        assert self.packet()[:10]==bytes((0x81,8,1))+bytes(7)
+        self.finish();assert self.packet()[:18]==bytes((0x81,16,2))+bytes(15)
+        self.finish();assert self.call('m1_wireless_reports_sent')==1
+        assert self.call('m1_wireless_local_idle')
+    def offer(self,usages=(),modifiers=0):
+        report=bytearray(30);report[0]=modifiers
+        for usage in usages:report[2+(usage-4)//8]|=1<<((usage-4)%8)
+        self.cpu.mem_write(RADIO_OUT,bytes(report))
+        return self.call('m1_wireless_offer',RADIO_OUT)
+
+
+def wireless(elf):
+    for mode in (0,1,2,5):
+        d=WirelessArm(elf,mode,start=0xffffd000)
+        assert not d.offer((4,))
+        # Matching mode with not-yet-eligible states must wait, not fake a link.
+        d.poll(state=0);assert not d.call('m1_wireless_ready')
+        d.poll(state=1);assert d.call('m1_wireless_healthy')
+        assert not d.call('m1_wireless_ready')
+        d.baseline()
+        assert d.call('m1_wireless_status',RADIO_OUT)
+        assert bytes(d.cpu.mem_read(RADIO_OUT,3))==bytes((0x25,3,mode))
+        assert not d.call('m1_wireless_status',0)
+        assert d.offer(range(4,12),0xa5)
+        assert not d.offer((100,)) # full pair is immutable, even before its first DMA
+        gap=D['M1_RADIO_RF_REPORT_US'] if mode==5 else D['M1_RADIO_BT_REPORT_US']
+        d.step(gap);first=d.packet()
+        assert first[:10]==bytes((0x81,8,1,0xa5,4,5,6,7,8,9))
+        assert not d.call('m1_wireless_local_idle')
+        d.finish();second=d.packet()
+        expected=bytearray(15)
+        for usage in (10,11):expected[usage//8]|=1<<(usage%8)
+        assert second[:18]==bytes((0x81,16,2))+expected
+        assert d.call('m1_wireless_reports_sent')==1 # one subtype is not a pair
+        assert not d.offer(())
+        d.finish();assert d.call('m1_wireless_reports_sent')==2
+        assert d.call('m1_wireless_local_idle')
+        assert d.offer(())
+        d.step(gap);assert d.packet()[:10]==bytes((0x81,8,1))+bytes(7)
+        d.finish();assert d.packet()[:18]==bytes((0x81,16,2))+bytes(15)
+        d.finish();assert d.call('m1_wireless_reports_sent')==3
+        d.poll(mode=(mode+1)%3)
+        assert not d.call('m1_wireless_healthy') and not d.offer((4,))
+        assert d.call('m1_wireless_errors')==1
+        writes=len(d.writes);d.step(1000);assert len(d.writes)==writes
+        assert not d.call('m1_wireless_init',mode,1,d.now)
+        d.call('m1_wireless_stop');d.radio_init(d.now)
+        assert d.call('m1_wireless_init',mode,1,d.now+RADIO_PULSE)
+    # A poll before sending the requested mode cannot confirm it. Ordinary
+    # full-duplex command bytes must not be accepted as unsolicited status.
+    d=WirelessArm(elf);d.poll(valid=False)
+    assert d.call('m1_wireless_errors')==1 and not d.call('m1_wireless_ready')
+    d.step(D['M1_RADIO_MODE_TIMEOUT_US'])
+    assert not d.call('m1_wireless_healthy')
+    d=WirelessArm(elf);d.baseline();assert d.offer((4,))
+    d.step(D['M1_RADIO_BT_REPORT_US'])
+    assert d.packet()[0]==0x81
+    d.finish(bytes((0,4,0x10,0,3,0,0x13))) # plausible status, ignored outside a poll
+    d.finish()
+    d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert not d.call('m1_wireless_ready') and not d.call('m1_wireless_healthy')
+    d=WirelessArm(elf);d.baseline();assert d.offer((4,))
+    d.step(D['M1_RADIO_BT_REPORT_US']);d.put(DMA,8<<8);d.step()
+    assert not d.call('m1_wireless_healthy') and d.call('m1_wireless_reports_sent')==1
+    assert not d.call('m1_wireless_local_idle')
+    print('PASS M1 wireless: mode/status gating, neutral baseline, paired remapped reports, backpressure, stale/invalid status, DMA faults, wrap and explicit restart; no host-delivery claim')
+
+
 USB_HS = 0x40040000
 
 
@@ -870,6 +979,7 @@ def main():
     startup(args.elf)
     battery(args.elf)
     radio(args.elf)
+    wireless(args.elf)
     usb_power(args.elf)
     sleep_hal(args.elf)
 

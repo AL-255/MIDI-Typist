@@ -8,7 +8,8 @@ target_compile_options(midi_typist_app PRIVATE -Wall -Wextra -Werror)
 add_library(m1_board STATIC ${MT_BOARD_DIR}/src/m1_board.c ${MT_BOARD_DIR}/src/m1_scan.c
     ${MT_BOARD_DIR}/src/m1_lighting_encode.c ${MT_BOARD_DIR}/src/m1_battery.c
     ${MT_BOARD_DIR}/src/m1_controls.c ${MT_BOARD_DIR}/src/m1_power.c
-    ${MT_BOARD_DIR}/src/m1_radio_packet.c ${MT_BOARD_DIR}/src/m1_wake.c)
+    ${MT_BOARD_DIR}/src/m1_radio_packet.c ${MT_BOARD_DIR}/src/m1_radio_keyboard.c
+    ${MT_BOARD_DIR}/src/m1_wake.c)
 target_include_directories(m1_board PUBLIC ${MT_BOARD_DIR}/include firmware/app/include)
 target_compile_definitions(m1_board PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
 target_compile_options(m1_board PRIVATE -Wall -Wextra -Werror)
@@ -46,7 +47,7 @@ if(CMAKE_CROSSCOMPILING)
     add_library(m1_hal STATIC ${MT_BOARD_DIR}/src/m1_hal.c ${MT_BOARD_DIR}/src/m1_lighting_hal.c
         ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_startup.c
         ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c
-        ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_usb_power.c
+        ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c ${MT_BOARD_DIR}/src/m1_usb_power.c
         ${MT_BOARD_DIR}/src/m1_usb_class.c ${MT_BOARD_DIR}/src/m1_usb_descriptors.c
         ${MT_BOARD_DIR}/src/m1_usb_hal.c)
     target_link_libraries(m1_hal PUBLIC m1_board at32_sdk)

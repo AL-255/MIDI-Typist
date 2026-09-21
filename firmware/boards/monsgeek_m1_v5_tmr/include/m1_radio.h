@@ -12,7 +12,8 @@
 enum {
     M1_RADIO_POLL=0x09, M1_RADIO_REPORT=0x81, M1_RADIO_BATTERY=0x90,
     M1_RADIO_STATUS_REQUEST=0x92, M1_RADIO_MODE=0x93, M1_RADIO_CONTROL=0x94,
-    M1_RADIO_REPLY_STATUS=0x10
+    M1_RADIO_REPLY_STATUS=0x10,
+    M1_RADIO_STATE_REPORTS=3 /* observed reference report-eligibility state */
 };
 typedef struct {
     uint8_t bytes[M1_RADIO_BUFFER_BYTES];

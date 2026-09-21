@@ -4,6 +4,7 @@
 #include "m1_controls.h"
 #include "m1_power.h"
 #include "m1_radio.h"
+#include "m1_radio_keyboard.h"
 #include "m1_wake.h"
 #include "keyboard_app.h"
 #include "keyboard_layout.h"
@@ -400,6 +401,72 @@ static void radio_packets(void)
     reply.length=3; reply.kind=0; assert(!m1_radio_status(&reply,&decoded));
     assert(decoded.flags==0x25 && decoded.state==3 && decoded.mode==6);
 }
+static void check_radio_keys(const m1_radio_keyboard_t *s,const keyboard_report_t *report)
+{
+    m1_radio_packet_t a,b;
+    assert(m1_radio_keyboard_packet(s,1,&a) && m1_radio_keyboard_packet(s,2,&b));
+    assert(a.size==12 && a.bytes[0]==0x81 && a.bytes[1]==8 && a.bytes[2]==1);
+    assert(b.size==20 && b.bytes[0]==0x81 && b.bytes[1]==16 && b.bytes[2]==2);
+    assert(a.bytes[3]==report->modifiers && !s->rollover);
+    for(unsigned usage=4;usage<=KEYBOARD_NKRO_USAGE_MAX;++usage) {
+        unsigned found=0;
+        for(unsigned i=0;i<6;++i)found+=a.bytes[4+i]==usage;
+        if(usage<120)found+=!!(b.bytes[3+usage/8]&(1u<<(usage%8)));
+        assert(found==(unsigned)keyboard_report_get_usage(report,usage));
+    }
+    unsigned sum_a=0,sum_b=0;
+    for(unsigned i=2;i<10;++i)sum_a+=a.bytes[i];
+    for(unsigned i=2;i<18;++i)sum_b+=b.bytes[i];
+    assert(a.bytes[10]==(uint8_t)sum_a && !a.bytes[11]);
+    assert(b.bytes[18]==(uint8_t)sum_b && !b.bytes[19]);
+}
+static void radio_keyboard(void)
+{
+    m1_radio_keyboard_t state={0},saved;
+    keyboard_report_t report={0};
+    assert(!m1_radio_keyboard_update(NULL,&report));
+    assert(!m1_radio_keyboard_update(&state,NULL));
+    report.reserved=1;saved=state;
+    assert(!m1_radio_keyboard_update(&state,&report) && !memcmp(&state,&saved,sizeof(state)));
+    report.reserved=0;
+    for(unsigned usage=4;usage<=KEYBOARD_NKRO_USAGE_MAX;++usage) {
+        state=(m1_radio_keyboard_t){0};report=(keyboard_report_t){0};
+        assert(keyboard_report_set_usage(&report,usage,true));report.modifiers=0xa5;
+        assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+    }
+    state=(m1_radio_keyboard_t){0};report=(keyboard_report_t){0};
+    /* All normal-key usages at once, then independent releases: no bitmap
+     * owner migrates into a slot when the older six keys release. */
+    for(unsigned usage=4;usage<120;++usage)keyboard_report_set_usage(&report,usage,true);
+    assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+    for(unsigned usage=4;usage<120;++usage) {
+        keyboard_report_set_usage(&report,usage,false);
+        assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+        if(usage==9)for(unsigned i=0;i<6;++i)assert(!state.slots[i]);
+    }
+    /* Extended simultaneous remaps fit six slots, but cannot corrupt the
+     * 15-byte bitmap on a seventh extended usage. */
+    for(unsigned usage=120;usage<126;++usage)keyboard_report_set_usage(&report,usage,true);
+    assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+    keyboard_report_set_usage(&report,126,true);
+    assert(m1_radio_keyboard_update(&state,&report) && state.rollover);
+    m1_radio_packet_t packet;
+    assert(m1_radio_keyboard_packet(&state,1,&packet));
+    for(unsigned i=0;i<6;++i)assert(packet.bytes[4+i]==1);
+    keyboard_report_set_usage(&report,120,false);
+    assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+    assert(!m1_radio_keyboard_packet(&state,0,&packet));
+    assert(!m1_radio_keyboard_packet(NULL,1,&packet));
+    assert(!m1_radio_keyboard_packet(&state,1,NULL));
+    /* Deterministic evolving polyphony, modifiers and unordered releases. */
+    state=(m1_radio_keyboard_t){0};report=(keyboard_report_t){0};uint32_t random=7;
+    for(unsigned i=0;i<2000;++i) {
+        random=random*1664525u+1013904223u;unsigned usage=4+(random>>8)%116u;
+        keyboard_report_set_usage(&report,usage,!keyboard_report_get_usage(&report,usage));
+        report.modifiers=random>>24;
+        assert(m1_radio_keyboard_update(&state,&report));check_radio_keys(&state,&report);
+    }
+}
 static void wake_baseline(m1_wake_t *s,uint16_t *frame,uint32_t *sequence)
 {
     for(unsigned i=0;i<M1_WAKE_ACQUIRE_FRAMES;++i) {
@@ -475,7 +542,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); acquisition(); application(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); wake_policy();
+    mapping(); acquisition(); application(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

@@ -2,8 +2,8 @@
 
 The M1 backend contains scan, lighting, radio-transfer, battery-input, composite USB,
 USB power-down and RTC sleep HALs, clock/wired-startup
-components, an 82-key application library, transport-menu and power-policy
-components, and matching GUI geometry. Connected-device access is **read-only factory
+components, an 82-key application library, a wireless report scheduler,
+transport-menu and power-policy components, and matching GUI geometry. Connected-device access is **read-only factory
 identity inspection**, for internal model **ID2949**. There is no flashable M1
 application or flashing support. The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
@@ -302,8 +302,8 @@ Transfer completion proves only local SPI completion, **not radio acceptance,
 host delivery or sleep**. `m1_radio_quiesce` requires explicit caller permission
 and no outstanding/unconsumed transfer before applying the reference's inactive
 pin pattern. It does not infer permission from an opcode or an unknown reply.
-Radio scheduling, mode confirmation, pairing, report staging and sleep/retention
-coordination remain upper-layer integration work.
+The foreground scheduler below owns this HAL. Pairing, host-delivery proof and
+sleep/retention coordination remain integration work.
 
 Native tests cover every supported payload length, opcode rejection, checksum,
 padding, malformed lengths and status offsets. Linked Cortex-M4 tests execute
@@ -311,6 +311,54 @@ the actual HAL/SDK for pin configuration, DMA ordering, buffer ownership,
 separate RX/TX completion, drain, backpressure, faults and timer wraparound.
 They also check active scan/LED DMA survives radio operations. DMA movement and
 SPI status are scripted; no physical radio transmission is demonstrated.
+
+### Wireless report scheduler
+
+`m1_wireless` owns SPI3 from one foreground context. Initialization requires an
+idle initialized HAL, one of modes 0/1/2/5, and explicit permission from the outer
+coordinator that the previous host has been released. It sends mode (`93`) and
+status-request (`92`) packets, then polls (`09`) on the active-low data-ready pin.
+Only poll replies update status, matching the original parser's receive gate.
+The status request uses a deterministic zero payload rather than the reference's
+retained vendor-command byte. Peer compatibility still needs physical validation.
+
+A matching mode byte confirms only mode selection. Reports additionally require
+the reference's eligible state 3 and fresh status; LED flags are kept separate.
+An initial neutral pair precedes keyboard input. Lost status, changed mode/state
+after eligibility, or a HAL fault stops output and requires an explicit stop and
+restart, never replays queued keys automatically. Mode negotiation and status
+freshness have bounded deadlines. Poll/query/report intervals and deadlines are
+custom tunables in `defaults.h`, not inferred stock timer units.
+
+`m1_radio_keyboard` translates the common **already remapped** NKRO report into
+the peer's two `81` subtypes, reviewed against usage helpers `0x08007820`/
+`0x08007764` and scheduler `0x08017FDC`:
+
+| Subtype | Contents |
+| --- | --- |
+| 1 | Modifier byte and six usage slots; no USB reserved byte |
+| 2 | 15-byte bitmap indexed by usage itself, not by usage minus four |
+
+Still-held keys retain their list/bitmap ownership across reports. New extended
+usages receive free slots first; overflow usages below 120 use the bitmap.
+If an extended usage cannot fit, subtype 1 emits HID ErrorRollOver rather than
+writing beyond the peer bitmap as the original could. USB retains its full
+custom NKRO range. Actual peer handling of rollover and report aggregation is
+not established by the offline tests.
+
+The scheduler copies one complete keyboard state and rejects further offers
+until both subtype transactions complete. A release cannot overwrite half of an
+accepted press. `reports_sent` counts locally completed pairs; `local_idle`
+means only local work is drained. **Neither proves delivery to a wireless host**
+and neither may satisfy the Fn transport menu's host-drained callback.
+
+Native tests cover every common keycode, bitmap boundaries, ownership across
+releases, rollover recovery and evolving polyphony. Linked ARM tests execute
+the scheduler and official SPI/DMA drivers with scripted replies/completion,
+covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
+backpressure, stale/invalid status, faults and timer wrap. This component is not
+yet bound to `m1_live` or a complete transport/power coordinator. Battery packet
+scheduling, pairing, physical host delivery and sleep handshakes remain required.
 
 ### Composite USB class
 
@@ -524,8 +572,8 @@ one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
 timeouts and faults. Wake-to-host key restoration is not integrated yet.
 
 Complete power management still requires the wireless cold-start path,
-radio transaction scheduling/status/pairing, USB device initialization and
-power-helper integration, wake-check scheduling and full restoration of held keys. The
+binding the radio scheduler and pairing/sleep handshakes, integrating the USB
+lifecycle and power helpers, wake-check scheduling and full restoration of held keys. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
 not be replaced by an unconditional WFI or indiscriminate GPIO power-off.

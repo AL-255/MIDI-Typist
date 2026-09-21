@@ -6,6 +6,7 @@
 #include "m1_battery_hal.h"
 #include "m1_sleep.h"
 #include "m1_radio.h"
+#include "m1_wireless.h"
 #include "m1_usb_power.h"
 uint32_t m1_test_battery_status(void)
 {
@@ -25,5 +26,8 @@ const void *const m1_test_exports[]={
     m1_sleep_init,m1_sleep_ready,m1_sleep_wait,m1_sleep_irq,
     m1_radio_init,m1_radio_service,m1_radio_ready,m1_radio_healthy,m1_radio_errors,
     m1_radio_data_pending,m1_radio_exchange,m1_radio_take,m1_radio_stop,m1_radio_quiesce,
+    m1_wireless_init,m1_wireless_service,m1_wireless_stop,m1_wireless_healthy,
+    m1_wireless_ready,m1_wireless_offer,m1_wireless_local_idle,
+    m1_wireless_reports_sent,m1_wireless_errors,m1_wireless_status,
     m1_usb_power_down,m1_usb_power_ready,m1_usb_power_invalidate
 };

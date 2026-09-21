@@ -370,6 +370,12 @@ that cannot carry it. A transport change must release the old host's keys/notes,
 wait for physical delivery rather than queue acceptance, and then establish a
 neutral baseline on the new host. Radio/power handshakes belong to the board;
 never perform them in the shared application or its lighting renderer.
+Translate the common mapped report at the transport boundary; do not remap
+physical keys again. The M1 radio adapter illustrates retaining per-report
+ownership when a peer splits keys between usage slots and a smaller bitmap.
+Bound every peer format independently of the USB descriptor. Queue acceptance,
+DMA completion, a peer mode reply and host delivery are separate facts: do not
+wire a local-idle predicate into a host-drained callback.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

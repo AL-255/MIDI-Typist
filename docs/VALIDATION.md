@@ -21,6 +21,11 @@ to the actual application, USB class and GUI decoder. It covers remapping,
 MIDI, capture loss, unsupported storage actions, session reset, stale input,
 independent timer/sequence wrap and release draining before explicit restart.
 It does not measure real acquisition or foreground execution time.
+Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
+with scripted peer status and completion. They cover mode gates, paired report
+ownership, neutral startup, stale/invalid replies and failures; native tests
+cover list/bitmap mapping and rollover. These do not simulate a radio host or
+prove delivery, pairing, report aggregation or complete transport switching.
 
 ## Automated checks
 
