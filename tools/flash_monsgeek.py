@@ -78,7 +78,7 @@ class MonsGeekAdapter:
     control_inspection_modes = ('custom_candidate', 'custom')
     default_image = str(Path(__file__).resolve().parents[1]/'build-m1-hal/m1_development.bin')
     filetypes = (('M1 application or factory dump', '*.bin'),)
-    safety = ('M1 trial USB diagnostics work, but calibration validation blocks keyboard startup; not for daily use. '
+    safety = ('M1 trial keyboard/GUI operation uses provisional calibration when factory bounds cannot be imported; not for daily use. '
               'Experimental conversion: factory entry resets stock user settings. '
               'Bootloader code and factory sensor calibration are preserved. '
               'Every update erases custom saves. Trial startup arms reset-to-IAP recovery; '

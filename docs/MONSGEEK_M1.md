@@ -64,7 +64,28 @@ including its byte-indexed TBB and actual GPIO helpers. Reconstructed prose or
 halfword-formatted hex dumps are not substitutes for that instruction check.
 
 The rotary encoder is a separate digital input (PC10/PC12, button PC11), not
-an 83rd analog sensor. Its firmware/UI operation is not implemented yet.
+an 83rd analog sensor. Its HAL samples at the periodic scanner's cadence and
+publishes bounded digital events; host reports and GUI knob controls are not
+connected yet. The read-only `runtime encoder` diagnostic is documented in
+[Telemetry](TELEMETRY.md#m1-digital-encoder).
+
+The shared SDK-free `keyboard_encoder` decoder accepts consecutive stable
+phase samples, rejects two-bit jumps, and emits one event per complete
+quadrature cycle. Electrical sequence `0,1,3,2,0` is positive; physical clockwise
+orientation is not established. The original sampler's PC10/PC12 order and both
+legal cycle directions are checked by executing its instructions. Custom
+debouncing requires consecutive samples, rather than the reference's accumulated
+mismatch counter. Button debounce is time-scaled from the board scan rate.
+Starting or resuming discards partial turns and requires release of a held button.
+Knob events do not participate in analog calibration or velocity calculation.
+
+The ISR-to-foreground queue never wraps over unread events: overflow discards
+the queue and latches an auxiliary fault until explicit reinitialization.
+That fault does not stop analog acquisition. A foreground report consumer is
+still required; until it is connected, the diagnostic queue fills after
+`ENCODER_EVENT_CAPACITY` event-producing samples. Pausing/stopping acquisition
+also discards queued knob events. Debounce and capacity are defined in
+`defaults.h`, not hidden in the driver.
 
 Preview the board without opening hardware:
 

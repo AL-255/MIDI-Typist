@@ -26,6 +26,11 @@
 #define DEFAULT_MIDI_OCTAVE 0
 #define DEFAULT_MIDI_VELOCITY_START 1u
 
+/* Digital auxiliary inputs: consecutive samples, separate from analog keys. */
+#define ENCODER_PHASE_STABLE_SAMPLES 2u
+#define ENCODER_BUTTON_DEBOUNCE_MS 5u
+#define ENCODER_EVENT_CAPACITY 32u
+
 /* Velocity: triggering sample is included, bottom-out sample normally isn't. */
 #define RAW_BOTTOM_OUT 1500u
 #define RAW_VELOCITY_WINDOW 10u

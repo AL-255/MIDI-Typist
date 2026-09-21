@@ -15,6 +15,12 @@ one-shot/invalid contexts and latched faults, discard unread/battery samples,
 preserve IRQ masks and ADC configuration, and require a fresh complete frame
 after restart. Register guards prohibit power-rail and unrelated-DMA changes;
 ADC settling and resumed sample accuracy still require physical validation.
+Encoder tests cover the SDK-free quadrature/button decoder and the M1 SDK GPIO
+adapter, periodic timer binding, bounded event queue, explicit overflow, pause
+invalidation, held-button restart suppression and IRQ-mask preservation. The
+private reference audit executes the original sampler to check PC10/PC12 order
+and both legal electrical cycles. These tests do not establish physical detent
+orientation, switch bounce characteristics or host consumer-report delivery.
 Timebase tests execute SDK TMR2 setup with scripted counter progression through
 masked intervals, counter/millisecond wrap and suspend/resume gaps. Clock and
 sleep transitions reject a running timebase. Tests verify fractional carry,
@@ -164,7 +170,7 @@ also instruction-checked. Provisional travel normalization permits neutral
 arming; no stock calibration scale conversion is inferred. The matching GUI
 connection receives MTG4 telemetry and reports USB ready. With all keys released,
 a six-second check received 182 fresh snapshots with normalized readings from
-3985 to 4096; all 82 keys stayed up and input stayed valid and armed. The scan-gap
+3938 to 4096; all 82 keys stayed up and input stayed valid and armed. The scan-gap
 counter remained at one after initial settings-save completion, with no light
 errors. The intentional save pause is included in that counter; this GUI check
 does not independently measure the declared 8 kHz acquisition rate. Queue order/wrap/overflow,
@@ -174,6 +180,11 @@ through the native MIDI suite, including retrigger and overflow cleanup. These
 checks do not establish sustained pressed-key/polyphonic
 performance or worst-case latency. Individual press-to-key mapping, full
 calibration, LED appearance and wireless behavior still require hardware checks.
+The live encoder diagnostic reports phase 3 (both phases high), button released,
+and zero movement, invalid transitions or queue overflows with the knob untouched.
+Its sampling counter advances alongside periodic acquisition. Rotation/button
+presses have not been physically exercised, and the host-report consumer is not
+connected yet.
 See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 Velocity uses each board's declared scan rate, not USB delivery timestamps.

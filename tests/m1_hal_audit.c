@@ -2,6 +2,7 @@
  * The harness loads this synthetic-address ELF into Unicorn, never a device. */
 #include "m1_lighting.h"
 #include "m1_hal.h"
+#include "m1_encoder.h"
 #include "m1_time.h"
 #include "m1_startup.h"
 #include "m1_battery_hal.h"
@@ -60,6 +61,7 @@ void m1_test_wireless_power_critical(void)
 }
 __attribute__((used,section(".test_exports")))
 const void *const m1_test_exports[]={
+    m1_encoder_start,m1_encoder_stop,m1_encoder_irq,m1_encoder_take,m1_encoder_status,
     m1_lighting_init,m1_lighting_stop,m1_lighting_offer,m1_lighting_service,
     m1_lighting_ready,m1_lighting_healthy,m1_lighting_errors,
     m1_hal_init,m1_hal_start,m1_hal_stop,m1_hal_timer_irq,m1_hal_dma_irq,

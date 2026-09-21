@@ -383,6 +383,63 @@ def scanner(elf):
     print('PASS M1 linked scanner/SDK: ADC ranks, six DMA rows, bank pins, complete-frame ownership, cadence/DMA/calibration faults')
 
 
+def encoder(elf):
+    d=M1Arm(elf,scanner=True)
+    def pins(phase,pressed=False):
+        d.put(GPIO+0x810,((phase&1)<<10)|((phase>>1)<<12)|(0 if pressed else 0x800))
+    def status():
+        assert d.call('m1_encoder_status',RGB)
+        return struct.unpack('<5I5B3x',d.cpu.mem_read(RGB,28))
+    def step(phase,pressed=False,ticks=None):
+        pins(phase,pressed)
+        for _ in range(ticks if ticks is not None else D['ENCODER_PHASE_STABLE_SAMPLES']):
+            d.call('m1_encoder_irq')
+    def cycle(positive=True):
+        for phase in ((1,3,2,0) if positive else (2,3,1,0)):step(phase)
+    def take():
+        return d.cpu.mem_read(RGB+32,1)[0] if d.call('m1_encoder_take',RGB+32) else 0
+    pins(0)
+    assert d.call('m1_hal_init') and d.call('m1_hal_start')
+    # Only C10/C11/C12 become pull-up inputs; no output latch writes for them.
+    for pin in (10,11,12):
+        assert d.u32(GPIO+0x800)>>(pin*2)&3==0
+        assert d.u32(GPIO+0x80c)>>(pin*2)&3==1
+    assert status()==(0,0,0,0,0,0,0,False,True,False)
+    cycle();cycle(False)
+    assert take()==1 and take()==2 and not take()
+    ticks=(D['M1_SCAN_HZ']*D['ENCODER_BUTTON_DEBOUNCE_MS']+999)//1000
+    step(0,True,ticks);step(0,False,ticks)
+    assert take()==4 and take()==8 and not take()
+    cycle();assert status()[6]==1
+    assert d.call('m1_hal_pause')
+    assert not status()[6] and not status()[8] and not take()
+    pins(3,True);assert d.call('m1_hal_resume')
+    assert status()[5:]==(3,0,True,True,False)
+    step(3,False,ticks);assert not take() # no old held button replay
+    # A real periodic timer interrupt samples exactly once, never on one-shot.
+    before=status()[0]
+    d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+    assert status()[0]==before+1
+    assert d.call('m1_hal_pause')
+    assert d.call('m1_hal_resume')
+    # Queue order and explicit loss: overflow cannot alias old events.
+    pins(0);d.call('m1_encoder_start')
+    for _ in range(D['ENCODER_EVENT_CAPACITY']):cycle()
+    assert status()[6]==D['ENCODER_EVENT_CAPACITY'] and not status()[9]
+    cycle();assert status()[4]==1 and status()[9] and not status()[6] and not take()
+    assert d.call('m1_hal_healthy') # auxiliary loss does not stop analog keys
+    before=status();cycle();assert status()==before
+    d.call('m1_encoder_start');assert not status()[9]
+    cycle();cycle(False)
+    for mask in (0,1):
+        d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        assert take()==(1 if mask==0 else 2)
+        status();assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+    d.cpu.reg_write(UC_ARM_REG_PRIMASK,0)
+    d.call('m1_hal_stop');before=status();step(1);assert status()==before and not take()
+    print('PASS M1 encoder SDK/HAL: pin roles, directions/button, timer binding, pause baseline, bounded overflow and IRQ preservation')
+
+
 def scanner_pause(elf):
     def begin(d):
         d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
@@ -1741,6 +1798,7 @@ def main():
     timebase(args.elf)
     lighting(args.elf)
     scanner(args.elf)
+    encoder(args.elf)
     scanner_pending_adc(args.elf)
     scanner_pause(args.elf)
     scanner_capture(args.elf)

@@ -82,6 +82,20 @@ def check(elf_path, reference):
         assert bytes(cpu.mem_read(packet,4))==bytes((0x93,1,mode,mode))
         assert bytes(cpu.mem_read(state+9,2))==bytes((1,0))
     print('PASS private reference mode-packet instructions: BT slots, RF and USB select via 0x93 before status query')
+    # Execute the stock quadrature sampler and its actual SDK GPIO reader.
+    # Legal complete cycles establish pin order/direction queue identity only;
+    # our debounce/overflow policy is intentionally independent.
+    for phases,expected in (((1,3,2,0),(1,0)),((2,3,1,0),(0,1))):
+        cpu.mem_write(base+0xc29f,bytes(12))
+        for phase in phases:
+            cpu.mem_write(0x40020810,struct.pack('<I',((phase&1)<<10)|((phase>>1)<<12)|0x800))
+            for _ in range(2):
+                cpu.reg_write(UC_ARM_REG_SP,base+0x17000);cpu.reg_write(UC_ARM_REG_LR,0x0803f001)
+                cpu.emu_start(0x0801a8bd,0x0803f000,count=300)
+                assert cpu.reg_read(UC_ARM_REG_PC)==0x0803f000
+        observed=(cpu.mem_read(base+0xc2a2,1)[0],cpu.mem_read(base+0xc2a4,1)[0])
+        assert observed==expected,(phases,observed)
+    print('PASS private reference encoder GPIO pin order and both complete electrical-cycle directions')
 
 
 if __name__ == '__main__':

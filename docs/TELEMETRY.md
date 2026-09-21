@@ -86,6 +86,32 @@ Maximums and counters reset at live initialization. Early returns can give stage
 different call counts. This is elapsed software time, not ADC conversion timing;
 no sample or timer is synthesized for the measurement.
 
+## M1 digital encoder
+
+`runtime encoder` queues a read-only 32-byte `DUMP` (`M1EN`, version 1) during
+normal M1 operation. The same single-response-slot rule as `runtime stats`
+applies. It neither consumes queued input events nor resets counters/faults.
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| 0 | 4 bytes | `M1EN` |
+| 4 | u8 | Version 1 |
+| 5 | u8 | Flags: active bit 0, queue fault bit 1, debounced button pressed bit 2 |
+| 6 | u16 LE | Total size, 32 bytes |
+| 8 | u8 | Debounced phase: PC10 in bit 0, PC12 in bit 1 |
+| 9 | u8 | Number of queued event-producing samples |
+| 10 | 2 bytes | Reserved zero |
+| 12 | u32 LE | Sampling calls |
+| 16 | u32 LE | Positive complete cycles (`0,1,3,2,0`) |
+| 20 | u32 LE | Negative complete cycles (`0,2,3,1,0`) |
+| 24 | u32 LE | Rejected two-bit phase transitions |
+| 28 | u32 LE | Queue overflows |
+
+Counters persist across scanner pauses and wrap modulo 2³²; they reset at MCU
+startup. Inactive/faulted sampling does not advance them. Directions describe
+electrical cycles, not physically verified clockwise/counterclockwise motion.
+The diagnostic does not prove consumer/HID delivery; knob reporting is unfinished.
+
 ## SysEx envelope
 
 `F0 7D 4D 54 03 KIND PACKED_BODY F7`
@@ -112,7 +138,7 @@ bits must be zero. Payloads are at most 2292 bytes; the largest SysEx is 2643 by
 | SAMPLES | 6 | 1…32 consecutive HKL1 records, sequence 0 in envelope |
 | LOG | 7 | Best-effort debug text, sequence 0 |
 | ERROR | 8 | ASCII rejection reason, command sequence |
-| DUMP | 9 | One HBD1 read response, M1FC calibration or M1BS boot scan diagnostic, sequence 0 |
+| DUMP | 9 | One HBD1 read response or M1FC/M1BS/M1PF/M1EN diagnostic, sequence 0 |
 | KEEPALIVE | 10 | Empty, sequence 0 |
 | CLOSE | 11 | Empty, sequence 0; stops GUI streaming |
 

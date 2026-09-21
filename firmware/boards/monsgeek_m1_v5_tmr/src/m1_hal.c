@@ -3,6 +3,7 @@
  * This module is not a startup image and does not enter the factory updater.
  */
 #include "m1_hal.h"
+#include "m1_encoder.h"
 #include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -55,6 +56,7 @@ static void arm_row(void)
 }
 static void fail(void)
 {
+    m1_encoder_stop();
     healthy=false; busy=false; running=false; paused=false;
     tmr_counter_enable(TMR6,FALSE);
     tmr_counter_enable(TMR3,FALSE);
@@ -94,6 +96,9 @@ bool m1_hal_init(void)
     gpio.gpio_pins=GPIO_PINS_0|GPIO_PINS_1|GPIO_PINS_2|GPIO_PINS_3|GPIO_PINS_4|GPIO_PINS_5;
     gpio_init(GPIOC,&gpio);
     gpio.gpio_pins=GPIO_PINS_0; gpio_init(GPIOB,&gpio);
+    gpio.gpio_mode=GPIO_MODE_INPUT;gpio.gpio_pull=GPIO_PULL_UP;
+    gpio.gpio_pins=GPIO_PINS_10|GPIO_PINS_11|GPIO_PINS_12;gpio_init(GPIOC,&gpio);
+    gpio.gpio_pull=GPIO_PULL_NONE;
     gpio.gpio_mode=GPIO_MODE_OUTPUT; gpio.gpio_drive_strength=GPIO_DRIVE_STRENGTH_MODERATE;
     gpio.gpio_pins=GPIO_PINS_7|GPIO_PINS_8|GPIO_PINS_9;
     gpio_init(GPIOB,&gpio); select_bank(0);
@@ -159,6 +164,7 @@ bool m1_hal_start(void)
     NVIC_EnableIRQ(DMA1_Channel6_IRQn);
     NVIC_EnableIRQ(TMR6_GLOBAL_IRQn);
     tmr_counter_value_set(TMR6,0); tmr_flag_clear(TMR6,TMR_OVF_FLAG);
+    m1_encoder_start();
     running=true;
     tmr_counter_enable(TMR6,TRUE);
     return true;
@@ -194,6 +200,7 @@ bool m1_hal_pause(void)
     bank=scan.next_bank=0;
     busy=running=scan.battery_valid=false;scan.pending=0;
     paused=true;
+    m1_encoder_stop();
     __DMB(); __set_PRIMASK(mask);
     return true;
 }
@@ -254,6 +261,7 @@ void m1_hal_stop(void)
     if(!initialized) return;
     NVIC_DisableIRQ(DMA1_Channel6_IRQn); NVIC_DisableIRQ(TMR6_GLOBAL_IRQn);
     tmr_counter_enable(TMR6,FALSE); tmr_counter_enable(TMR3,FALSE);
+    m1_encoder_stop();
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
     adc_enable(ADC1,FALSE);
     busy=running=healthy=paused=false; scan.pending=false;
@@ -265,6 +273,7 @@ void m1_hal_timer_irq(void)
     if(!running || !healthy || single) return;
     if(busy) { fail(); return; } /* Never silently change velocity's timebase. */
     bank=0; busy=true; arm_row();
+    m1_encoder_irq();
 }
 void m1_hal_dma_irq(void)
 {

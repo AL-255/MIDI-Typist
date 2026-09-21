@@ -11,6 +11,7 @@
 #include "m1_storage.h"
 #include "m1_image.h"
 #include "m1_transport.h"
+#include "m1_encoder.h"
 #include "at32f402_405_conf.h"
 #include <string.h>
 
@@ -131,6 +132,17 @@ static bool decimal(const char **text,uint32_t *value)
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
+    if(!strcmp(line,"runtime encoder")) {
+        m1_encoder_status_t input;
+        if(!m1_encoder_status(&input))return false;
+        uint8_t payload[32]={'M','1','E','N',1,0,32,0};
+        payload[5]=input.active | (input.fault<<1) | (input.pressed<<2);
+        payload[8]=input.phase;payload[9]=input.queued;
+        put32(payload+12,input.samples);put32(payload+16,input.positive);
+        put32(payload+20,input.negative);put32(payload+24,input.invalid);
+        put32(payload+28,input.overflows);
+        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"runtime stats")) {
         uint8_t payload[24u+12u*TIMING_COUNT]={'M','1','P','F',1,TIMING_COUNT};
         payload[6]=sizeof(payload);payload[7]=sizeof(payload)>>8;

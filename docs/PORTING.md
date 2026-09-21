@@ -290,6 +290,19 @@ windows; require neutral before rearming. If a lossless per-key stream is
 active, call `scan_stream_lost()` to emit a terminal loss marker after accepted
 records drain. One-shot wake scans must not enter the periodic velocity path.
 
+### Digital auxiliary inputs
+
+Do not add rotary phases or buttons as artificial analog sensors. The SDK-free
+`keyboard_encoder` module accepts two-bit quadrature samples and a logical button
+state at a declared cadence; it returns direction and button-edge event bits,
+not HID usages. Debounce tuning lives in `defaults.h`. The board owns GPIO reads,
+regular sampling, ISR-to-foreground queue ownership and explicit overflow
+reporting. Rebaseline after sampling gaps; do not replay movement across a
+transport change or turn a held-at-start button into a new press. Keep event-to-
+action mapping separate from this decoder and from USB packet construction.
+M1 has this capture HAL, but its host-report consumer and GUI knob configuration
+remain unfinished; it is not an example of complete auxiliary output routing.
+
 ## 4. Connect the common lifecycle
 
 Allocate `keyboard_raw_t`, `keyboard_midi_t`, `keyboard_menu_t`,

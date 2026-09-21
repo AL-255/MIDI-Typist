@@ -2,14 +2,14 @@
 #define MIDI_TYPIST_M1_HAL_H
 #include "m1_board.h"
 /* Board startup must establish the verified 216 MHz clock and sensor power.
- * Init configures owned ADC/mux pins only, leaves acquisition stopped, and
+ * Init configures owned ADC/mux and digital encoder pins, leaves acquisition stopped, and
  * fails on incompatible clocks or bounded ADC calibration timeout.
  * No bootloader, flash, radio, LED-power or factory-record writes occur here.
  */
 bool m1_hal_init(void);
 bool m1_hal_start(void);
 /* Foreground-only periodic pause/resume, preserving PRIMASK. Pause stops
- * ADC/timers/DMA and discards partial/unread frames and battery data, retaining
+ * ADC/timers/DMA and discards partial/unread frames, encoder events and battery data, retaining
  * ADC configuration/calibration and complete-frame sequence/errors. Not valid
  * for one-shot captures. A latched DMA/overrun fault fails instead of pausing.
  * Resume requires the original clocks/rails retained by the owner, starts at

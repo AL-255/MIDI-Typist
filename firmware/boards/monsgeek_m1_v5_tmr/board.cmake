@@ -68,6 +68,7 @@ if(CMAKE_CROSSCOMPILING)
     set_property(TARGET m1_storage_audit APPEND PROPERTY LINK_DEPENDS
         ${CMAKE_SOURCE_DIR}/tests/m1_storage_audit.ld ${MT_BOARD_DIR}/linker/storage_ram.ld)
     add_library(m1_hal STATIC ${MT_BOARD_DIR}/src/m1_hal.c ${MT_BOARD_DIR}/src/m1_lighting_hal.c
+        ${MT_BOARD_DIR}/src/m1_encoder_hal.c
         ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_time.c ${MT_BOARD_DIR}/src/m1_startup.c ${MT_BOARD_DIR}/src/m1_factory_hal.c
         ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c ${MT_BOARD_DIR}/src/m1_sleep_time.c ${MT_BOARD_DIR}/src/m1_power_gpio.c
         ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c ${MT_BOARD_DIR}/src/m1_usb_power.c
@@ -151,6 +152,10 @@ if(CMAKE_CROSSCOMPILING)
     endforeach()
 else()
     enable_testing()
+    add_executable(m1_encoder_tests tests/test_keyboard_encoder.c)
+    target_link_libraries(m1_encoder_tests PRIVATE midi_typist_app)
+    target_compile_options(m1_encoder_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME m1_encoder COMMAND m1_encoder_tests)
     add_executable(m1_device_store_tests tests/test_device_store.c)
     target_link_libraries(m1_device_store_tests PRIVATE midi_typist_services m1_board)
     target_compile_options(m1_device_store_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
