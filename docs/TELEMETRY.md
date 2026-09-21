@@ -12,7 +12,8 @@ active SysEx control session only if the factory IAP flag is armed. It requests
 a reset after stopping local peripherals; disconnect, not an ACK alone, is the
 transition. The factory updater then erases the application and custom saves.
 The M1 control port enumerates at USB high speed and provides live 82-key
-snapshots. Frequent foreground acquisition losses still prevent stable operation.
+snapshots. Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry
+active; pressed-key performance remains unverified.
 
 ## Cold-start failure reporting
 
@@ -57,6 +58,33 @@ means it was not. Private readbacks must stay outside Git.
 compact sensor order. Total size is 176 bytes. It is retained after startup
 failure without restarting peripherals. A missing acquisition returns ERROR;
 cold startup times out after `SCAN_STALE_MS` rather than inventing samples.
+
+## M1 foreground timing
+
+During normal M1 operation, `runtime stats` queues one read-only `DUMP` with
+magic `M1PF`, version 1. Stop GUI/capture streaming and drain its in-flight
+response before requesting this dump: a busy bulk-response slot returns ERROR
+(`unsupported command`); ACK means the dump was queued, not already delivered.
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| 0 | 4 bytes | `M1PF` |
+| 4 | u8 | Version 1 |
+| 5 | u8 | Eight timing stages |
+| 6 | u16 LE | Total size, 120 bytes |
+| 8 | u32 LE | Current application milliseconds |
+| 12 | u32 LE | Last consumed acquisition sequence |
+| 16 | u32 LE | Loss/gap events, including intentional flash-save pauses |
+| 20 | u32 LE | Scanner HAL error count |
+| 24 | Eight 12-byte records | Calls, total microseconds, maximum microseconds; all u32 LE |
+
+Stage order is HAL services, frame processing, profile storage, report output,
+transport controls, lighting, USB control/telemetry, and the complete live loop.
+Timing reads the existing 1 MHz TMR2 counter through the SDK and includes interrupt
+preemption. Totals/calls wrap modulo 2³²; use differences for interval averages.
+Maximums and counters reset at live initialization. Early returns can give stages
+different call counts. This is elapsed software time, not ADC conversion timing;
+no sample or timer is synthesized for the measurement.
 
 ## SysEx envelope
 

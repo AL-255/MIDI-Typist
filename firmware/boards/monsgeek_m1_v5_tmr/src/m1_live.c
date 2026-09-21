@@ -10,6 +10,7 @@
 #include "device_store.h"
 #include "m1_storage.h"
 #include "m1_image.h"
+#include "at32f402_405_conf.h"
 #include <string.h>
 
 static keyboard_app_t app;
@@ -31,6 +32,23 @@ static bool storage_fault,storage_gap;
 static bool update_requested;
 bool m1_live_update_requested(void) { return update_requested; }
 static uint32_t last_save_attempt;
+/* Foreground wall-time, including interrupt preemption. Read the already owned
+ * 1 MHz TMR2 through the SDK; never reset/reconfigure a peripheral for profiling.
+ * Unsigned totals/counters wrap. MAX is since live initialization. */
+enum { TIMING_HAL,TIMING_FRAME,TIMING_STORE,TIMING_OUTPUT,TIMING_CONTROLS,
+       TIMING_LIGHTS,TIMING_CONTROL,TIMING_LOOP,TIMING_COUNT };
+static struct { uint32_t calls,total,maximum; } timing[TIMING_COUNT];
+static void timing_add(unsigned index,uint32_t elapsed)
+{
+    ++timing[index].calls;timing[index].total+=elapsed;
+    if(elapsed>timing[index].maximum)timing[index].maximum=elapsed;
+}
+static uint32_t timing_step(unsigned index,uint32_t start)
+{
+    uint32_t end=tmr_counter_value_get(TMR2);timing_add(index,end-start);return end;
+}
+static void put32(uint8_t *out,uint32_t value)
+{ for(unsigned i=0;i<4;++i)out[i]=(uint8_t)(value>>(8*i)); }
 static enum { POWER_AWAKE,POWER_DRAINING,POWER_PARKED,POWER_STOPPED } power_state;
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal);
 static const keyboard_app_ops_t app_ops={.save_calibration=save_calibration};
@@ -109,6 +127,18 @@ static bool decimal(const char **text,uint32_t *value)
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
+    if(!strcmp(line,"runtime stats")) {
+        uint8_t payload[24u+12u*TIMING_COUNT]={'M','1','P','F',1,TIMING_COUNT};
+        payload[6]=sizeof(payload);payload[7]=sizeof(payload)>>8;
+        put32(payload+8,now);put32(payload+12,scan_sequence);
+        put32(payload+16,losses);put32(payload+20,m1_hal_errors());
+        for(unsigned i=0;i<TIMING_COUNT;++i) {
+            put32(payload+24+12*i,timing[i].calls);
+            put32(payload+28+12*i,timing[i].total);
+            put32(payload+32+12*i,timing[i].maximum);
+        }
+        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"factory read")) {
         uint8_t payload[M1_FACTORY_DUMP_BYTES];
         return m1_factory_read_dump(payload)==M1_FACTORY_OK &&
@@ -165,6 +195,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
         memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
     }
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
+    memset(timing,0,sizeof(timing));
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
     update_requested=false;
     power_state=POWER_AWAKE;
@@ -313,9 +344,11 @@ static void snapshot(void)
 void m1_live_service(uint32_t now_ms,uint32_t now_us)
 {
     if(!initialized || power_state>=POWER_PARKED)return;
+    uint32_t started=tmr_counter_value_get(TMR2),mark=started;
     now=now_ms;check_epoch();
     m1_hal_service(now_us);m1_lighting_service(now_us);m1_battery_hal_service(now);
     m1_wireless_service(now_us);
+    mark=timing_step(TIMING_HAL,mark);
     if(power_state==POWER_DRAINING) {
         /* No new scan, configuration, battery packet, LED frame or flash
          * transaction may compete with the neutral-output handoff. */
@@ -339,20 +372,23 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
                            controls.switching || output_ready(),now);
         /* The save callback has now finished publishing/discarding bounds.
          * Invalidation inside it would destroy the candidate prematurely. */
-        if(publish_storage_gap()) { snapshot();return; }
+        if(publish_storage_gap()) { snapshot();timing_step(TIMING_FRAME,mark);timing_step(TIMING_LOOP,started);return; }
         /* Capture and GUI values share the control domain used for velocity,
          * not the electrical samples retained for calibration. */
         scan_stream_push(raw.raw,M1_KEY_COUNT,M1_PROFILE,now_us);
     }
+    mark=timing_step(TIMING_FRAME,mark);
     bool fresh=source_healthy && seen && (uint32_t)(now-app.last_frame)<SCAN_STALE_MS;
     if(!fresh)scan_stream_lost();
     /* Before queuing this iteration's heartbeat/GUI/LED traffic, so the
      * periodic output refresh cannot starve an otherwise idle pending save. */
-    if(persist(fresh)) { snapshot();return; }
+    bool saved=persist(fresh);mark=timing_step(TIMING_STORE,mark);
+    if(saved) { snapshot();timing_step(TIMING_LOOP,started);return; }
     /* Keyboard/performance traffic has first use of each endpoint. MIDI
      * control chunks are bounded and never overwrite an in-flight report. */
     keyboard_app_service(&app,now,fresh && (controls.switching || output_ready()),send_keyboard,
                          controls.current==M1_TRANSPORT_USB?send_midi:NULL);
+    mark=timing_step(TIMING_OUTPUT,mark);
     bool switching=controls.switching;
     m1_transport_t old=controls.current;
     m1_controls_service(&controls,&app,now);
@@ -364,14 +400,17 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
         }
         selection_attempted=false;
     }
+    mark=timing_step(TIMING_CONTROLS,mark);
     if(m1_lighting_ready() && (!light_sent || (uint32_t)(now-last_light)>=LIGHTING_FRAME_PERIOD_MS)) {
         keyboard_app_lights(&app,lower,upper,lights,now);
         if(m1_lighting_offer(lights,sizeof(lights),now_us)) { last_light=now;light_sent=true; }
     }
+    mark=timing_step(TIMING_LIGHTS,mark);
     uint8_t events[M1_USB_HS_PACKET];unsigned n=m1_usb_midi_take(events,sizeof(events));
     uint32_t mask=lock();
     if(n && usb_ready())midi_control_receive_usb(events,n);
     unlock(mask);
     check_epoch();
     midi_control_service();snapshot();(void)scan_stream_service();
+    timing_step(TIMING_CONTROL,mark);timing_step(TIMING_LOOP,started);
 }

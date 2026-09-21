@@ -122,6 +122,13 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3959,)*82
+        d.command('runtime stats');diagnostic=d.wait(sx.DUMP)[3]
+        assert diagnostic[:8]==b'M1PF\x01\x08\x78\x00' and len(diagnostic)==120
+        stamp,sequence,losses,hal_errors=struct.unpack_from('<4I',diagnostic,8)
+        assert stamp and sequence and losses==hal_errors==0
+        for stage in range(8):
+            calls,total,maximum=struct.unpack_from('<3I',diagnostic,24+12*stage)
+            assert calls and total==maximum==0 # modeled TMR2 is stationary, not physical timing
         assert s.calibration_flags==2 and s.storage_flags in (0,2) and s.storage_slot==255
         d.command('cfg calibrate 1');assert d.snapshot(1).result==2
         d.command('cfg clean 2');assert d.snapshot(2).result==2

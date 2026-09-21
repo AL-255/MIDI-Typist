@@ -2,6 +2,7 @@
 #define MIDI_TYPIST_M1_BOARD_H
 #include <stdbool.h>
 #include <stdint.h>
+#include "defaults.h"
 
 #define M1_KEY_COUNT 82u
 #define M1_PROFILE 1u
@@ -31,14 +32,15 @@ uint8_t m1_led_index(unsigned sensor);
 unsigned m1_factory_cell(unsigned sensor);
 
 /* Single owner, or callers must hold the scanner's IRQ critical section.
- * Only complete, ordered six-bank acquisitions are published. */
+ * Only complete, ordered six-bank acquisitions are published. Queue overflow
+ * is an acquisition fault: never silently overwrite velocity samples. */
 typedef struct {
     uint16_t rows[M1_BANK_COUNT][M1_ADC_RANKS];
-    uint16_t latest[M1_KEY_COUNT];
+    uint16_t frames[M1_SCAN_QUEUE_FRAMES][M1_KEY_COUNT];
     uint16_t battery;
-    uint32_t sequence, errors, overwritten;
-    uint8_t next_bank;
-    bool pending, battery_valid;
+    uint32_t sequence, errors;
+    uint8_t next_bank, head, pending;
+    bool battery_valid;
 } m1_scan_t;
 void m1_scan_init(m1_scan_t *scan);
 void m1_scan_fault(m1_scan_t *scan);

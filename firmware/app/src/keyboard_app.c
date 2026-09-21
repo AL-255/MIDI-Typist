@@ -33,6 +33,7 @@ void keyboard_app_init(keyboard_app_t *s,keyboard_raw_t *raw,keyboard_midi_t *mi
                        const keyboard_app_ops_t *ops)
 {
     *s=(keyboard_app_t){.raw=raw,.midi=midi,.menu=menu,.cal=cal,.ops=ops};
+    for(unsigned i=0;i<MT_KEY_CAPACITY;++i) { s->input_lower[i]=1;s->input_upper[i]=4096; }
     defaults(s);
 }
 void keyboard_app_invalidate(keyboard_app_t *s,uint32_t now)
@@ -74,18 +75,16 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
     uint16_t normalized[MT_KEY_CAPACITY];
     const uint16_t *input=samples;
+    const uint16_t *input_lo=lo,*input_hi=hi;
     if(policy && policy->normalize_travel) {
         valid=valid && calibration_bounds_valid(profile,count,lo,hi);
         for(unsigned i=0;i<count;++i) {
             normalized[i]=0;
             if(!samples[i] || samples[i]>4096u)valid=false;
             if(valid)(void)keyboard_sample_normalize(samples[i],hi[i],lo[i],&normalized[i]);
-            s->input_lower[i]=1; s->input_upper[i]=4096;
         }
         input=normalized;
-    } else {
-        memcpy(s->input_lower,lo,count*sizeof(*lo));
-        memcpy(s->input_upper,hi,count*sizeof(*hi));
+        input_lo=s->input_lower;input_hi=s->input_upper;
     }
     keyboard_raw_frame(raw,input,count,profile,valid);
     s->frame_valid=valid && raw->valid;
@@ -101,7 +100,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         }
     }
     bool consumed=s->system_input && s->system_input(s,s->system_context,now);
-    uint8_t action=consumed?MENU_NONE:keyboard_menu_frame(s->menu,raw,s->input_lower,s->input_upper,&before,now,
+    uint8_t action=consumed?MENU_NONE:keyboard_menu_frame(s->menu,raw,input_lo,input_hi,&before,now,
         calibration_active(s->cal),s->midi->lower_muted,&s->midi->music,s->midi->velocity_start);
     if(action==MENU_MODE) keyboard_midi_toggle(s->midi,raw,now);
     if(action==MENU_LOWER) keyboard_midi_toggle_lower(s->midi,raw);
@@ -129,12 +128,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     }
     if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(raw);
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
-    if(!policy || !policy->normalize_travel) {
-        /* A load/save callback can have changed electrical bounds this frame. */
-        memcpy(s->input_lower,lo,count*sizeof(*lo));
-        memcpy(s->input_upper,hi,count*sizeof(*hi));
-    }
-    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,s->input_lower,s->input_upper,now);
+    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,input_lo,input_hi,now);
 }
 void keyboard_app_service(keyboard_app_t *s,uint32_t now,bool healthy,
                           keyboard_send_fn keyboard_send,midi_send_fn midi_send)

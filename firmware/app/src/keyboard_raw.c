@@ -6,7 +6,7 @@
 
 void keyboard_raw_invalidate(keyboard_raw_t *s)
 {
-    s->armed = s->valid = false;
+    s->armed = s->valid = s->neutral_idle = false;
     memset(s->down, 0, sizeof(s->down));
     for (unsigned i = 0; i < RAW_KEY_COUNT; ++i) {
         keyboard_velocity_t *v = &s->velocity[i];
@@ -185,11 +185,12 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
     if (!keyboard_layout_valid(profile,count)) {
         keyboard_raw_invalidate(s); return;
     }
+    const keyboard_layout_t *layout=keyboard_layout(profile);
     if (s->profile != profile || s->count != count || s->keymap_profile != profile) {
         s->profile = profile; s->count = count;
         s->keymap_profile = profile;
         for(unsigned i=0;i<count;++i)
-            s->keycode[i]=keyboard_layout(profile)->keymap[keyboard_key_for_sensor(profile,i)];
+            s->keycode[i]=layout->keymap[keyboard_key_for_sensor(profile,i)];
         keyboard_raw_invalidate(s);
     }
     bool neutral = true;
@@ -205,21 +206,28 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
         memset(s->down, 0, sizeof(s->down));
         s->armed = true;
     }
+    /* Samples still get copied and validated above. A previous fully released
+     * frame with no unfinished velocity fits has no edges or fits to service.
+     * Never take this path during a press, release edge or pending fit. */
+    if (neutral && s->neutral_idle) return;
+    bool pending=false;
     bool changed[RAW_KEY_COUNT]={false};
     unsigned fn=RAW_KEY_COUNT;
     for (unsigned i = 0; i < count; ++i) {
         const bool next = s->down[i] ? raw[i] <= s->release[i] : raw[i] < s->press[i];
-        velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], raw[i] > s->release[i],keyboard_layout(profile)->sample_hz);
+        velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], raw[i] > s->release[i],layout->sample_hz);
+        pending |= s->velocity[i].pending!=0u;
         if (next == s->down[i]) continue;
         s->down[i] = next;
         changed[i]=true;
-        if (keyboard_key_for_sensor(profile,i)==keyboard_layout(profile)->fn) fn=i;
+        if (keyboard_key_for_sensor(profile,i)==layout->fn) fn=i;
     }
+    s->neutral_idle=neutral && !pending;
     if (s->armed && !s->midi_mode) {
         /* Resolve simultaneous chords independently of ASIC sensor order. */
         if (fn<count) {
-            if(s->menu_managed)(void)keyboard_application_event(&s->engine,keyboard_layout(profile)->fn,s->down[fn]);
-            else (void)keyboard_engine_event(&s->engine,keyboard_layout(profile)->fn,s->down[fn]);
+            if(s->menu_managed)(void)keyboard_application_event(&s->engine,layout->fn,s->down[fn]);
+            else (void)keyboard_engine_event(&s->engine,layout->fn,s->down[fn]);
         }
         for (unsigned i=0; i<count; ++i)
             if (changed[i] && i!=fn && !(s->menu_managed && !s->engine.config.mode &&

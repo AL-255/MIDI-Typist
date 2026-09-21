@@ -192,7 +192,7 @@ bool m1_hal_pause(void)
     tmr_flag_clear(TMR3,TMR_OVF_FLAG); tmr_flag_clear(TMR6,TMR_OVF_FLAG);
     NVIC_ClearPendingIRQ(DMA1_Channel6_IRQn); NVIC_ClearPendingIRQ(TMR6_GLOBAL_IRQn);
     bank=scan.next_bank=0;
-    busy=running=scan.pending=scan.battery_valid=false;
+    busy=running=scan.battery_valid=false;scan.pending=0;
     paused=true;
     __DMB(); __set_PRIMASK(mask);
     return true;

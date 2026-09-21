@@ -166,7 +166,9 @@ static void acquisition(void)
         assert(frame[i]==1001u+m1_keys[i].bank*15u+m1_keys[i].rank);
     assert(!m1_scan_take(&scan,frame,&sequence));
     frame_set(&scan,2000); frame_set(&scan,3000);
-    assert(scan.overwritten==1 && m1_scan_take(&scan,frame,&sequence) && sequence==3);
+    assert(scan.pending==2 && m1_scan_take(&scan,frame,&sequence) && sequence==2);
+    assert(frame[81]==2090);
+    assert(m1_scan_take(&scan,frame,&sequence) && sequence==3);
     assert(frame[81]==3090);
     assert(m1_scan_bank(&scan,0,row));
     assert(!m1_scan_take(&scan,frame,&sequence));
@@ -180,6 +182,22 @@ static void acquisition(void)
     frame_set(&scan,0);
     assert(!m1_scan_take(&scan,NULL,&sequence) && scan.pending);
     assert(m1_scan_take(&scan,frame,&sequence) && frame[0]==1);
+    m1_scan_init(&scan);scan.sequence=UINT32_MAX-2u;
+    for(unsigned round=0;round<3;++round) {
+        for(unsigned i=0;i<M1_SCAN_QUEUE_FRAMES;++i)frame_set(&scan,i);
+        for(unsigned i=0;i<M1_SCAN_QUEUE_FRAMES;++i) {
+            assert(m1_scan_take(&scan,frame,&sequence));
+            assert(sequence==(uint32_t)(UINT32_MAX-1u+round*M1_SCAN_QUEUE_FRAMES+i));
+            assert(frame[0]==i+1u);
+        }
+        assert(!scan.pending && !scan.errors);
+    }
+    for(unsigned i=0;i<M1_SCAN_QUEUE_FRAMES;++i)frame_set(&scan,1000);
+    memset(row,0,sizeof(row));
+    for(unsigned i=0;i<M1_BANK_COUNT-1u;++i)assert(m1_scan_bank(&scan,i,row));
+    assert(!m1_scan_bank(&scan,M1_BANK_COUNT-1u,row));
+    assert(scan.errors==1 && !scan.pending && !scan.battery_valid);
+    assert(!m1_scan_take(&scan,frame,&sequence));
 }
 static void battery(void)
 {

@@ -39,8 +39,9 @@ void calibration_tick(keyboard_calibration_t *s, bool healthy, uint32_t now)
 bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo, const uint16_t *hi)
 {
     if (!layout_ok(profile,count)) return false;
+    unsigned minimum=calibration_min_span(profile);
     for (unsigned i=0; i<count; ++i)
-        if (!lo[i] || hi[i] > 4096u || hi[i] < lo[i]+calibration_min_span(profile)) return false;
+        if (!lo[i] || hi[i] > 4096u || hi[i] < lo[i]+minimum) return false;
     return true;
 }
 void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool valid, bool neutral, uint32_t now)

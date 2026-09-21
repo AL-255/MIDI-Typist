@@ -159,6 +159,8 @@
 
 /* M1 acquisition cadence is a requested custom rate, not a stock measurement. */
 #define M1_SCAN_HZ 8000u
+/* Absorb short foreground LED/control work without losing velocity samples. */
+#define M1_SCAN_QUEUE_FRAMES 32u
 #define M1_ADC_CALIBRATION_WAIT_LOOPS 1000000u
 /* Finite SDK polling budgets. Physical flash timing still needs validation. */
 #define M1_FLASH_ERASE_WAIT_LOOPS 1000000u
@@ -251,6 +253,9 @@
 
 #if RAW_DEFAULT_PRESS < 1 || RAW_DEFAULT_PRESS >= RAW_DEFAULT_RELEASE || RAW_DEFAULT_RELEASE >= 4096
 #error "Default Schmitt thresholds must satisfy 1 <= press < release < 4096"
+#endif
+#if M1_SCAN_QUEUE_FRAMES < 2 || M1_SCAN_QUEUE_FRAMES > 255
+#error "M1 scan queue must fit its bounded counter"
 #endif
 #if M1_FLASH_ERASE_WAIT_LOOPS < 1 || M1_FLASH_PROGRAM_WAIT_LOOPS < 1 || M1_FLASH_ERASE_WAIT_LOOPS > 1000000u || M1_FLASH_PROGRAM_WAIT_LOOPS > 1000000u
 #error "Invalid M1 flash polling budget"

@@ -94,7 +94,8 @@ not claimed as separate physical conversion tests. See [validation](VALIDATION.m
 ## MonsGeek M1 experimental conversion
 
 **Flashing, reset-to-IAP recovery and live 82-key USB telemetry work on the test
-keyboard. Frequent foreground scan losses prevent stable operation. Do not install
+keyboard. Released-key acquisition holds 8 kHz with GUI telemetry active; pressed-key
+performance and complete wireless/power behavior remain unverified. Do not install
 this trial for normal use.**
 
 Select the M1 model and use **Read firmware details…** to confirm internal

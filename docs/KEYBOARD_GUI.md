@@ -115,7 +115,8 @@ reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
 The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
 before offering a trial conversion, or checks USB-bound SysEx identity for custom
-reflashing. Live 82-key telemetry works, but frequent foreground scan losses prevent stable operation;
+reflashing. Live 82-key telemetry and released-key 8 kHz acquisition are checked;
+pressed-key performance and complete wireless/power operation remain unverified;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard

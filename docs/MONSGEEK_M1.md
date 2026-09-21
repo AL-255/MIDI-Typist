@@ -7,7 +7,8 @@ transport-menu and power-policy components, an experimental application image,
 and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Flashing, recovery and live 82-key high-speed USB telemetry are hardware-checked.
-Frequent foreground scan losses prevent stable operation. This is not a daily-use build.
+Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry active;
+pressed-key performance is not yet established. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.
@@ -75,7 +76,7 @@ The GUI reads the same key table, sizes its canvas for six rows, and binds
 profiles to a board target and layout. It never applies a Huntsman profile to
 M1. Shared MTG3 telemetry, SysEx services and the GUI support all 82 keys,
 including per-key capture. Native C-to-Python and mocked Tk tests exercise this
-path. Live configuration still requires a complete M1 USB application.
+path; the experimental application supplies live USB snapshots.
 
 ## Scanner HAL and application libraries
 
@@ -89,6 +90,15 @@ chains six TMR3-triggered rows. DMA completes before selecting the next bank;
 each rearm disables ADC DMA requests and drains the old result/status before
 enabling the new destination and reconnecting the producer. Pretrigger DMA
 counts remain available through cold-start diagnostics to detect stale transfers.
+Complete acquisitions enter a bounded `M1_SCAN_QUEUE_FRAMES` FIFO (32 frames,
+4 ms at the declared rate), preserving order through short foreground delays.
+Overflow faults the scanner instead of overwriting velocity samples. Pause/stop
+discard queued frames; startup resumes acquisition only after the application
+has loaded its profile. Battery telemetry uses the newest complete acquisition.
+The shared released-key fast path still copies and validates every sample;
+it skips edge/velocity work only after all keys are released and no fit is pending.
+Read-only [`runtime stats`](TELEMETRY.md#m1-foreground-timing) measures foreground
+wall time, including interrupts, without changing the timer configuration.
 Only a complete, correctly ordered frame is published. Raw ADC `0…4095` maps
 to canonical `1…4096`, decreasing with travel. ADC rails are not per-key travel
 calibration. A short IRQ critical section protects the latest complete-frame

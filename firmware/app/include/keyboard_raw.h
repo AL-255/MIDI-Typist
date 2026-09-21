@@ -20,7 +20,7 @@ typedef struct {
     bool down[RAW_KEY_COUNT];
     uint8_t count, profile, keymap_profile;
     bool enabled, armed, valid, midi_mode;
-    bool menu_managed;
+    bool menu_managed, neutral_idle;
     uint32_t revision;
     keyboard_velocity_t velocity[RAW_KEY_COUNT];
     uint8_t keycode[RAW_KEY_COUNT]; /* base keyboard outputs; physical/Fn/MIDI unchanged */

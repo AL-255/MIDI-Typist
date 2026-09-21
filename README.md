@@ -18,7 +18,9 @@ scan/lighting/radio/battery/power HAL components, an 82-key application library,
 transport/power policies, an experimental application image and a matching GUI preview.
 Application flashing, recovery and live 82-key USB telemetry are hardware-checked.
 Startup uses provisional travel bounds when factory records cannot be imported.
-Frequent foreground scan losses still prevent stable operation; this is not a daily-use port.
+Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry active.
+Pressed-key performance and complete wireless/power behavior remain unverified;
+this is not a daily-use port.
 See the [M1 trial and recovery limits](docs/DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Each hardware backend builds separately—not one universal binary.
 

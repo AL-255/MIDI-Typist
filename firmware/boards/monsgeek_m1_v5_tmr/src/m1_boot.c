@@ -114,8 +114,10 @@ void m1_boot_service(void)
         state=M1_BOOT_APPLICATION;return;
     case M1_BOOT_APPLICATION:
         m1_battery_hal_init();
-        if(!m1_hal_resume()) { fail(M1_BOOT_RESUME);return; }
         if(!m1_live_init(selected,transport_ops,m1_save_ops(),first_scan)) { fail(M1_BOOT_APP);return; }
+        /* Profile decoding has no scan consumer. Resume only after the live
+         * owner is ready, so initialization cannot fill the bounded queue. */
+        if(!m1_hal_resume()) { fail(M1_BOOT_RESUME);return; }
         state=M1_BOOT_READY;return;
     default: return;
     }
