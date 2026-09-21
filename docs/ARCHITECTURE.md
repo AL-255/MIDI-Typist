@@ -33,7 +33,7 @@ firmware/
       board.cmake                native tests and ARM libraries, no flash image
       include/ + src/            82-key wiring/layout, ADC scanner and SPI LED HALs
   services/
-    include/ + src/              portable SysEx sessions and scan-stream queues
+    include/ + src/              SysEx sessions, scan queues and profile journal
   platform/
     nxp_lpc55/                   NXP USB integration and silicon workarounds
     at32f405/                    official Artery driver configuration
@@ -112,8 +112,10 @@ before submission. Board code must not apply that global scale a second time.
 [keyboard_app.h](../firmware/app/include/keyboard_app.h) defines the lifecycle
 and storage hooks. Storage callbacks own erase sizes, slot addresses, record
 formats, device identity and bounds validation. The shared application requests
-load/save/clear operations; it cannot erase a flash address. Huntsman's MTP2 whole-profile
-serializer and two-page journal remain entirely inside its board directory.
+load/save/clear operations; it cannot erase a flash address. The SDK-free
+`services/device_store` serializer and two-slot journal use board-selected
+record sizes and identities. Huntsman's writer and physical addresses stay in
+its board directory; M1 currently tests the journal with memory callbacks only.
 
 ## Scheduling and outputs
 

@@ -27,7 +27,7 @@ set(KEYBOARD_LOGIC_SOURCES
     ${MT_APP_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/layout_port.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c
-    firmware/boards/huntsman_v3_pro_mini/src/device_store.c
+    firmware/services/src/device_store.c
     firmware/boards/huntsman_v3_pro_mini/src/optical_key.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c
@@ -47,7 +47,9 @@ add_library(huntsman_core STATIC
     ${HUNTSMAN_BOARD_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/updater_protocol.c
 )
-target_include_directories(huntsman_core PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
+target_include_directories(huntsman_core PUBLIC firmware/app/include firmware/services/include firmware/boards/huntsman_v3_pro_mini/include)
+set(HUNTSMAN_STORE_DEFINITIONS MT_STORE_PAGE_SIZE=512 MT_STORE_MAGIC="MTP2" MT_STORE_INVALID_READ=116)
+target_compile_definitions(huntsman_core PUBLIC ${HUNTSMAN_STORE_DEFINITIONS})
 target_compile_definitions(huntsman_core PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204)
 target_compile_definitions(huntsman_core PUBLIC MT_BUILD_VERSION="${PROJECT_VERSION}" MT_BUILD_TARGET="${MT_BOARD_TARGET}")
 target_compile_options(huntsman_core PRIVATE -Wall -Wextra -Werror)
@@ -97,7 +99,8 @@ if(NOT HUNTSMAN_BUILD_FIRMWARE)
     add_test(NAME midi_sysex COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_midi_sysex.py)
     # Host ABI for comparison against executed production ARM instructions.
     add_library(keyboard_logic SHARED ${KEYBOARD_LOGIC_SOURCES})
-    target_include_directories(keyboard_logic PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
+    target_include_directories(keyboard_logic PUBLIC firmware/app/include firmware/services/include firmware/boards/huntsman_v3_pro_mini/include)
+    target_compile_definitions(keyboard_logic PRIVATE ${HUNTSMAN_STORE_DEFINITIONS})
     target_compile_definitions(keyboard_logic PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204)
     target_compile_options(keyboard_logic PRIVATE -Wall -Wextra -Werror)
     mt_audit_target(audit-keyboard reference-keyboard)

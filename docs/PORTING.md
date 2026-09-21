@@ -215,10 +215,11 @@ remapping command. All output transports must consume the resulting mapped
 report, including wireless paths. Preserve duplicate-destination ownership.
 
 Implement durable board/layout-bound storage for this array alongside all
-other settings. Huntsman's lossless 512-byte format is board-specific, not
-permission to truncate another board or borrow factory pages. M1 has runtime
-and GUI-model coverage but no allocated profile storage or complete USB/wireless
-application yet. Follow the [mapping contract](../AGENTS.md#physical-key-mapping-contract).
+other settings. The shared journal retains Huntsman's lossless 512-byte format
+and tests a separate 2048-byte M1 format; neither permits borrowing factory
+pages. M1 has runtime and GUI-model coverage but no allocated profile storage
+or installable application yet. Follow the
+[mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
 differs. A keyboard missing a menu letter cannot show that letter or offer
@@ -447,8 +448,8 @@ and calibration commands reject entry without a save callback. Other board
 capability exclusions use `keyboard_menu_t.disabled_options`, with bit
 `MENU_* - 1`; disabled options neither execute nor receive menu hints.
 Never claim a persistent save without verified storage. The simulator saves only in
-its process RAM. Huntsman's writer and MTP2 whole-profile journal are examples for that board,
-not a universal flash layout.
+its process RAM. Huntsman's writer is a board-specific example, not a universal
+flash layout. The reusable journal is described below.
 Read-only stored calibration may set telemetry's saved flag while leaving the
 calibration-supported flag clear. It must not advertise a writable profile or
 invent a journal generation; the GUI renders this combination as read-only.
@@ -472,6 +473,18 @@ single-owner storage context. Loading is attempted once after a valid layout
 frame, not continuously. The board owns storage generation/error telemetry. The shared application
 exposes the chosen Fn-menu levels and flags through `keyboard_menu_t`,
 `keyboard_midi_t` and `keyboard_raw_t`; the board owns their persistence.
+The SDK-free `firmware/services/src/device_store.c` journal requires the board
+build to define `MT_STORE_PAGE_SIZE`, a four-character `MT_STORE_MAGIC`, and
+`MT_STORE_INVALID_READ` (the recoverable invalid-content error, or zero for none).
+Propagate these definitions to every journal caller; include
+`firmware/services/include`. Size is one complete slot, including its CRC.
+Select a distinct format identity for each board/layout namespace and validate
+capacity for every layout with `tests/test_device_store.c`. The callbacks take
+only slot 0 or 1, never caller-supplied addresses. The writer must own both slots,
+blank-verify erasure and program the whole record; reads and erase verification
+must report controller faults. No SDK headers or physical addresses belong in
+the journal. See [record formats and limits](DEVICE_CONFIG_STORAGE.md).
+
 Huntsman's `device_store` loads whole-profile snapshots through the calibration
 callback, applies settings immediately after `keyboard_app_frame` and before
 output service, then checks committed changes every 20 ms. Saving waits for

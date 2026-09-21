@@ -14,7 +14,10 @@ target_include_directories(m1_board PUBLIC ${MT_BOARD_DIR}/include firmware/app/
 target_compile_definitions(m1_board PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
 target_compile_options(m1_board PRIVATE -Wall -Wextra -Werror)
 add_library(midi_typist_services STATIC
-    firmware/services/src/midi_control.c firmware/services/src/scan_stream.c)
+    firmware/services/src/midi_control.c firmware/services/src/scan_stream.c
+    firmware/services/src/device_store.c)
+target_compile_definitions(midi_typist_services PUBLIC
+    MT_STORE_PAGE_SIZE=2048 MT_STORE_MAGIC="M1P1" MT_STORE_INVALID_READ=0)
 target_include_directories(midi_typist_services PUBLIC firmware/services/include)
 target_link_libraries(midi_typist_services PUBLIC midi_typist_app)
 target_compile_options(midi_typist_services PRIVATE -Wall -Wextra -Werror)
@@ -88,6 +91,10 @@ if(CMAKE_CROSSCOMPILING)
     endforeach()
 else()
     enable_testing()
+    add_executable(m1_device_store_tests tests/test_device_store.c)
+    target_link_libraries(m1_device_store_tests PRIVATE midi_typist_services m1_board)
+    target_compile_options(m1_device_store_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME m1_device_store COMMAND m1_device_store_tests)
     add_executable(m1_board_tests tests/test_m1_board.c)
     target_link_libraries(m1_board_tests PRIVATE m1_board midi_typist_app)
     target_compile_options(m1_board_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)

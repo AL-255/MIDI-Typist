@@ -1,12 +1,13 @@
 #ifndef DEVICE_STORE_H
 #define DEVICE_STORE_H
 #include "keyboard_calibration.h"
-#define CAL_PAGE_SIZE 512u
-/* The only two flash pages the application may erase or program. They sit in
- * the original allocator's verified-FF free payload, away from the primary
- * settings and serial number at 0x49000..0x49400. */
-#define CAL_SLOT_A 0x78000u
-#define CAL_SLOT_B 0x78200u
+/* The board build supplies its current record size, four-byte format identity
+ * and recoverable invalid-content read error (zero means none). Addresses and
+ * controller operations belong exclusively to the board's slot callbacks. */
+#if !defined(MT_STORE_PAGE_SIZE) || !defined(MT_STORE_MAGIC) || !defined(MT_STORE_INVALID_READ)
+#error "The board must define its profile journal contract"
+#endif
+#define CAL_PAGE_SIZE MT_STORE_PAGE_SIZE
 typedef uint32_t (*cal_read_fn)(unsigned slot, uint8_t *page);
 typedef uint32_t (*cal_write_fn)(unsigned slot, const uint8_t *page);
 typedef uint32_t (*cal_erase_fn)(unsigned slot);

@@ -1,4 +1,4 @@
-# Huntsman device settings storage
+# Device settings storage
 
 The complete application persists settings and calibration in two reserved
 **512-byte tail pages: 0x78000 and 0x78200**. The Razer primary settings and
@@ -6,8 +6,10 @@ serial-number region at **0x49000..0x49400** is never a write target.
 Bootloader, application image, factory/security/PFR and secondary ASIC storage
 are also outside this writer.
 M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration),
-not a custom profile writer. Importing stored bounds does not save keyboard
-mappings or other edits; no M1 profile pages are allocated.
+not a custom profile writer. Its 82-key journal codec is tested with in-memory
+callbacks only. Importing stored bounds does not save keyboard mappings or other
+edits; no M1 profile pages are allocated. The operational instructions below
+apply to the complete Huntsman application.
 
 ## What is saved
 
@@ -45,12 +47,25 @@ Save failures latch for the session, avoiding infinite retries and wear.
 
 ## Complete snapshot format
 
-One little-endian MTP2 record occupies one page.
+The SDK-free `firmware/services/src/device_store.c` owns the codec and two-slot
+journal. Board builds select record size, identity and recoverable read error;
+board callbacks alone own physical addresses and controller operations.
+
+| Board | Identity | Record size | CRC offset | Integration |
+| --- | --- | --- | --- | --- |
+| Huntsman | MTP2 | 512 | 508 | Application and bounded NXP writer |
+| M1 | M1P1 | 2048 | 2044 | Library and native memory-callback tests only |
+
+The distinct identities bind board-local layout numbers to their physical
+namespace. Neither format accepts the other or migrates older records.
+Both use the following little-endian fields; page-end offsets below describe
+Huntsman. M1 extends the all-ones padding through byte 2043 and stores its CRC
+over bytes 0…2043 at byte 2044.
 
 | Offset | Field |
 | --- | --- |
-| 0 | Magic MTP2 |
-| 4 | Optical profile; sensor count derived from the board layout |
+| 0 | Four-byte format identity |
+| 4 | Board-local layout; sensor count derived from the board description |
 | 5 | Calibration present, 0/1 |
 | 6 | u32 whole-profile generation |
 | 10 | u32 calibration generation |
@@ -129,7 +144,10 @@ reclaim this custom tail space.
 
 Native tests cover all layouts, packed fields, unchanged-state wear,
 neutral debounce, settings/calibration preservation, corruption, controller
-faults and all 512 byte-cut points in an inactive-page write.
+faults and all 512 byte-cut points in an inactive-page write. The same native
+suite tests all 82 M1 sensors and all 2048 byte-cut points, including calibration
+and mappings, wrong-format records with valid CRCs, and board-specific error
+handling. This does not exercise an M1 flash controller or save on a device.
 Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity/keycodes, reboot,
 blank-ECC initialization, corrupt-page recovery and unsupported-schema rejection.
 The controller model rejects commands outside the tail pages and compares

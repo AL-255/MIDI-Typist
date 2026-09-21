@@ -75,7 +75,11 @@ Storage tests cover all supported layouts, settings/calibration preservation,
 keyboard mappings including disabled/international/modifier destinations,
 MIDI+Jankó boot restoration, missing/corrupt saves, fallback generations,
 unsupported-schema rejection, controller faults and all 512 byte-cut points
-of an inactive-page write. The model rejects writes outside the two tail slots.
+of a Huntsman inactive-page write. The controller model rejects writes outside
+the two tail slots. M1 runs the same shared-journal native suite for all 82 keys
+and 2048 byte-cut points using memory callbacks, including board identity and
+error-code isolation. It has no integrated custom flash writer or physical
+persistence validation.
 
 ## Physical checks
 

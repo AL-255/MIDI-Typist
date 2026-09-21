@@ -13,9 +13,9 @@ uint32_t calibration_crc32(const uint8_t *p, unsigned n)
     return ~crc;
 }
 
-enum { GLOBAL_OFFSET=14, SENSOR_OFFSET=19, CRC_OFFSET=508, GENERATION_OFFSET=6, CAL_GENERATION_OFFSET=10 };
-_Static_assert(CAL_KEYS<=65,"review snapshot capacity for a new board");
-_Static_assert(CAL_SLOT_A==0x78000 && CAL_SLOT_B==0x78200,"review storage addresses before changing");
+enum { GLOBAL_OFFSET=14, SENSOR_OFFSET=19, CRC_OFFSET=CAL_PAGE_SIZE-4, GENERATION_OFFSET=6, CAL_GENERATION_OFFSET=10 };
+_Static_assert(CAL_PAGE_SIZE>SENSOR_OFFSET+4,"snapshot header capacity");
+_Static_assert(sizeof(MT_STORE_MAGIC)==5,"snapshot identity must contain four bytes");
 _Static_assert(MIDI_SCALE_COUNT<=16 && MIDI_OCTAVE_LIMIT<=10,"snapshot global field capacity");
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static void put32(uint8_t *p,uint32_t v) { for(unsigned i=0;i<4;++i) p[i]=v>>(8*i); }
@@ -106,7 +106,7 @@ static void seal(uint8_t *p) { put32(p+CRC_OFFSET,calibration_crc32(p,CRC_OFFSET
 bool device_record_valid(const uint8_t *p)
 {
     unsigned count=keyboard_layout_count(p[4]);
-    if(memcmp(p,"MTP2",4) || !count || count>CAL_KEYS || p[5]>1 ||
+    if(memcmp(p,MT_STORE_MAGIC,4) || !count || count>CAL_KEYS || p[5]>1 ||
        sensor_end(p[4],count)>CRC_OFFSET*8u ||
        u32(p+CRC_OFFSET)!=calibration_crc32(p,CRC_OFFSET))return false;
     uint8_t g[13];globals_get(p,g);
@@ -129,7 +129,7 @@ static bool capture(uint8_t *p,const device_store_t *s,const keyboard_app_t *app
     const keyboard_config_t *c=&r->engine.config;
     if(!keyboard_layout_valid(r->profile,r->count) || sensor_end(r->profile,r->count)>CRC_OFFSET*8u)
         return false;
-    memset(p,255,CAL_PAGE_SIZE); memcpy(p,"MTP2",4);p[4]=r->profile;p[5]=cal!=NULL || s->saved;
+    memset(p,255,CAL_PAGE_SIZE); memcpy(p,MT_STORE_MAGIC,4);p[4]=r->profile;p[5]=cal!=NULL || s->saved;
     put32(p+GENERATION_OFFSET,s->generation+1u);
     put32(p+CAL_GENERATION_OFFSET,s->calibration_generation+(cal!=NULL));
     const uint8_t globals[]={m->mode,m->janko,m->lower_muted,app->menu->brightness,m->velocity_start,
@@ -173,7 +173,7 @@ void device_store_load(device_store_t *s,uint8_t profile,uint8_t count,uint16_t 
         const uint32_t error=read(slot,p);
         /* Only invalid content/ECC is recoverable by initializing our owned
          * slots. Timeouts, geometry and other controller faults never erase. */
-        if(error && error!=116u) { fault=error; continue; }
+        if(error && error!=MT_STORE_INVALID_READ) { fault=error; continue; }
         if(error || !device_record_valid(p) || p[4]!=profile || keyboard_layout_count(p[4])!=count) continue;
         if(!s->valid || (int32_t)(u32(p+GENERATION_OFFSET)-s->generation)>0) accept(s,p,slot);
     }
@@ -222,8 +222,8 @@ bool device_store_update(device_store_t *s,keyboard_app_t *app,const keyboard_ca
     seal(p);
     if(!device_record_valid(p)) { s->error=0x20001; return false; }
     unsigned slot=s->slot<2 ? s->slot^1u : 0u;
-    /* Never fall back to overwriting the sole good snapshot. The writer only
-     * accepts a slot, verifies erase with CMD5, and programs the whole page. */
+    /* Never fall back to overwriting the sole good snapshot. The board writer
+     * must restrict the slot, blank-verify erase and program the whole page. */
     s->error=write(slot,p);
     if(!s->error) s->error=read(slot,verify);
     if(!s->error && (memcmp(p,verify,CAL_PAGE_SIZE) || !device_record_valid(verify))) s->error=0x20003;
@@ -252,8 +252,8 @@ bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,cal
 bool device_store_clear(device_store_t *s,cal_read_fn read,cal_erase_fn erase)
 {
     (void)read;
-    /* The user has reserved precisely these two pages for custom state, even
-     * if contents/ECC are invalid. erase() must independently blank-verify. */
+    /* The board must prove ownership of both slots, including when their
+     * contents are invalid. erase() must independently blank-verify. */
     const unsigned first_slot=s->slot<2 ? s->slot^1u : 0u;
     for(unsigned i=0;i<2;++i) {
         s->error=erase(first_slot^i);

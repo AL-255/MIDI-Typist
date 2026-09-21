@@ -183,7 +183,12 @@ Entering the factory bootloader is **destructive before an image is sent**:
 the application entry command erases settings, and the bootloader erases its
 application range before USB enumeration. Do not use bootloader entry as an
 identity or connectivity test. No custom storage region is allocated for M1;
-Huntsman storage addresses are not portable to it.
+Huntsman storage addresses are not portable to it. The SDK-free profile journal
+is compiled with the distinct `M1P1` identity and a 2048-byte record, and native
+tests round-trip settings, mappings and calibration for all 82 keys. They test
+every byte-cut point using memory callbacks, not an M1 flash writer. The
+foreground application does not load or save these records yet; see
+[device storage](DEVICE_CONFIG_STORAGE.md) for the format and safety contract.
 
 An M1 firmware port still requires verified startup/power behavior, physical
 confirmation of the inferred key/sensor/LED mapping, USB clock/PHY and runtime binding,
