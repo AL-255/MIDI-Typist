@@ -227,6 +227,17 @@ The GUI runtime needs python-rtmidi, but not PySerial or Pillow.
 
 ## Optional reference-backed audits
 
+For M1 scan-bank wiring, execute the original selector from your read-only,
+boot-prefixed ID2949/v410 image and compare its GPIO writes with the compiled
+board table (no device access):
+
+```sh
+python tools/test_m1_scan_reference.py build-m1-hal/m1_development.elf --reference /path/to/private/M1-V5-TMR-ID2949-v410.bin
+```
+
+This tests instruction behavior, not electrical acquisition timing. No original
+image or extracted executable bytes are distributed with the test.
+
 For the complete offline suite, install the optional Python dependencies above
 plus Tk and Xvfb, then run:
 

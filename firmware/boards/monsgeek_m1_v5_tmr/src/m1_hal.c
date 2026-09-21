@@ -11,6 +11,8 @@ static m1_scan_t scan;
 static uint16_t row[M1_ADC_RANKS];
 static volatile bool initialized, running, busy, healthy, single, paused;
 static uint32_t capture_since;
+static volatile uint32_t pretrigger_counts;
+uint32_t m1_hal_pretrigger_counts(void) { return pretrigger_counts; }
 static uint8_t bank;
 _Static_assert(M1_CORE_HZ%M1_SCAN_HZ==0,"M1 scan cadence must divide timer clock");
 _Static_assert(M1_CORE_HZ/M1_SCAN_HZ<=65536u,"M1 timer period exceeds 16 bits");
@@ -38,7 +40,10 @@ static void arm_row(void)
     tmr_counter_value_set(TMR3,0);
     tmr_flag_clear(TMR3,TMR_OVF_FLAG);
     dma_channel_enable(DMA1_CHANNEL6,TRUE);
-    __DMB();
+    __DSB();
+    uint32_t shift=5u*bank;
+    pretrigger_counts=(pretrigger_counts&~(31u<<shift)) |
+        ((dma_data_number_get(DMA1_CHANNEL6)&31u)<<shift);
     tmr_counter_enable(TMR3,TRUE);
 }
 static void fail(void)
@@ -56,6 +61,7 @@ bool m1_hal_init(void)
     if(initialized) m1_hal_stop();
     initialized=healthy=paused=false;
     m1_scan_init(&scan);
+    pretrigger_counts=0;
     crm_clocks_freq_type clocks;
     crm_clocks_freq_get(&clocks);
     if(clocks.sclk_freq!=M1_CORE_HZ || clocks.ahb_freq!=M1_CORE_HZ ||

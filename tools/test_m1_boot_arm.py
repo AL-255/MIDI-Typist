@@ -236,7 +236,7 @@ def diagnostics(path):
     assert not service() and not messages  # no unsolicited traffic without HELLO
     assert not send(sx.HELLO)
     assert messages[0][0]==sx.READY and b'MG-M1V5TMR' in messages[0][3]
-    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Boot failed: application factory=0x00000003'
+    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Boot failed: application factory=0x00000003 dma=0x00000000'
     assert not send(sx.COMMAND,1,b'cfg set 7 1 2500 2800') and messages[-1][0]==sx.ERROR
     assert not send(sx.COMMAND,2,b'bootloader') and messages[-1][0]==sx.ERROR
     assert not send(sx.COMMAND,3,b'boot status') and messages[-1][0]==sx.LOG

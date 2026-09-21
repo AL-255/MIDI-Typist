@@ -57,6 +57,11 @@ mistaken for the physical key order. The 82-LED chain snakes across successive
 rows. All key/HID/Fn and LED bindings have been checked against the reference.
 Keycap widths use ANSI conventions; case gaps in the drawing are schematic.
 
+The PB9/PB8/PB7 selector patterns for banks 0…5 are `6, 0, 4, 2, 1, 3`.
+These are checked by executing the private reference selector at `0x080132B4`,
+including its byte-indexed TBB and actual GPIO helpers. Reconstructed prose or
+halfword-formatted hex dumps are not substitutes for that instruction check.
+
 The rotary encoder is a separate digital input (PC10/PC12, button PC11), not
 an 83rd analog sensor. Its firmware/UI operation is not implemented yet.
 

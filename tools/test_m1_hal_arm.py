@@ -305,7 +305,7 @@ def scanner(elf):
         assert dev.u32(DMA+0x70)&65535==15
         assert dev.u32(DMA+0x74)==ADC+0x4c
         assert dev.u32(DMA+0x6c)&1 and dev.u32(TMR3)&1
-        assert (dev.u32(GPIO+0x414)>>7)&7==[0,6,2,4,3,1][bank]  # B7..B9
+        assert (dev.u32(GPIO+0x414)>>7)&7==[6,0,4,2,1,3][bank]  # B7..B9
         dev.cpu.mem_write(dev.u32(DMA+0x78),struct.pack('<15H',*(1000+bank*15+i for i in range(15))))
         dev.put(DMA,3<<20);dev.call('m1_hal_dma_irq')
     begin()
@@ -355,7 +355,7 @@ def scanner_pause(elf):
         d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
 
     def complete(d,bank,base):
-        assert (d.u32(GPIO+0x414)>>7)&7==[0,6,2,4,3,1][bank]
+        assert (d.u32(GPIO+0x414)>>7)&7==[6,0,4,2,1,3][bank]
         d.cpu.mem_write(d.u32(DMA+0x78),struct.pack('<15H',
             *(base+bank*15+i for i in range(15))))
         d.put(DMA,3<<20);d.call('m1_hal_dma_irq')
@@ -464,7 +464,7 @@ def scanner_capture(elf):
         for bank in range(6):
             assert not dev.call('m1_hal_frame',RGB,RGB+200)
             assert dev.u32(DMA+0x70)==15 and dev.u32(DMA+0x6c)&1
-            assert (dev.u32(GPIO+0x414)>>7)&7==[0,6,2,4,3,1][bank]
+            assert (dev.u32(GPIO+0x414)>>7)&7==[6,0,4,2,1,3][bank]
             dev.cpu.mem_write(dev.u32(DMA+0x78),struct.pack('<15H',*(2000+bank*15+i for i in range(15))))
             dev.put(DMA,3<<20);dev.call('m1_hal_dma_irq')
             assert dev.call('m1_hal_capture_busy')==(bank!=5)

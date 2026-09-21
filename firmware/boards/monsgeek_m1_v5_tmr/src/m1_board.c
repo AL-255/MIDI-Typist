@@ -10,7 +10,9 @@ const m1_key_t m1_keys[M1_KEY_COUNT] = {
 #undef M1_KEY
 };
 const uint8_t m1_adc_channels[M1_ADC_RANKS]={10,11,12,13,0,1,2,3,4,5,6,7,14,15,8};
-const uint8_t m1_bank_bits[M1_BANK_COUNT]={0,6,2,4,3,1};
+/* Verified by executing the reference bank selector, not by reading paired
+ * hex halfwords as bytes: its TBB entries are byte-indexed. Bits are B9/B8/B7. */
+const uint8_t m1_bank_bits[M1_BANK_COUNT]={6,0,4,2,1,3};
 static const keyboard_action_t actions[M1_KEY_COUNT] = {
 #define M1_KEY(id,bank,rank,usage,x,y,w,label) \
     [id]={.key=(id)+1u,.type=(usage)?2:0x11,.length=8, \

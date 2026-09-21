@@ -41,4 +41,7 @@ bool m1_hal_healthy(void);
 /* One-shot wake captures must never enter the periodic velocity pipeline. */
 bool m1_hal_periodic_active(void);
 uint32_t m1_hal_errors(void);
+/* Six packed 5-bit DMA remaining counts, bank 0 in low bits, sampled after
+ * enabling DMA but before starting each row's trigger. Read-only diagnostics. */
+uint32_t m1_hal_pretrigger_counts(void);
 #endif

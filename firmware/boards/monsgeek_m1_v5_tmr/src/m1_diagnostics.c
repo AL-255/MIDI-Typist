@@ -2,6 +2,7 @@
 #include "m1_boot.h"
 #include "m1_image.h"
 #include "m1_factory.h"
+#include "m1_hal.h"
 #include "m1_usb.h"
 #include "m1_usb_hal.h"
 #include "midi_control.h"
@@ -61,6 +62,9 @@ static size_t failure_text(char *text)
     strcpy(text,"Boot failed: ");strcat(text,name);strcat(text," factory=0x");
     size_t length=strlen(text);uint32_t factory=m1_live_factory_result();
     for(unsigned i=0;i<8;++i)text[length++]= "0123456789abcdef"[(factory>>(28u-4u*i))&15u];
+    text[length]=0;strcat(text," dma=0x");length=strlen(text);
+    uint32_t counts=m1_hal_pretrigger_counts();
+    for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(counts>>(28u-4u*i))&15u];
     text[length]=0;return length;
 }
 bool m1_diagnostics_service(uint32_t now_ms)

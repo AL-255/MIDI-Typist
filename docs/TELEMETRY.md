@@ -22,8 +22,11 @@ ends its configuration session and does not accept it as a scan snapshot. This
 contract is board-independent; the text after the prefix is board-specific.
 
 The M1 cold-start owner reports, for example,
-`Boot failed: application factory=0x00000003`. The named error follows
+`Boot failed: application factory=0x00000003 dma=0x1ef7bdef`. The named error follows
 `m1_boot_error_t`; the eight hexadecimal digits hold `m1_factory_result_t`.
+The `dma` word packs six 5-bit DMA counts (bank 0 in the lowest bits), sampled
+after DMA enable but before the row trigger starts. Each should still be 15;
+zero means that bank has not been armed since initialization.
 `boot status` requests the current failure log. Build/git and the guarded
 `bootloader` request remain available on an established control link, while
 configuration writes are rejected. The GUI's `stream gui`/`cfg get` read probes
