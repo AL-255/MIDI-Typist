@@ -46,7 +46,7 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_definitions(at32_sdk PUBLIC AT32F405RCT7 HEXT_VALUE=12000000)
     add_library(m1_hal STATIC ${MT_BOARD_DIR}/src/m1_hal.c ${MT_BOARD_DIR}/src/m1_lighting_hal.c
         ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_startup.c
-        ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c
+        ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c ${MT_BOARD_DIR}/src/m1_power_gpio.c
         ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c ${MT_BOARD_DIR}/src/m1_usb_power.c
         ${MT_BOARD_DIR}/src/m1_usb_class.c ${MT_BOARD_DIR}/src/m1_usb_descriptors.c
         ${MT_BOARD_DIR}/src/m1_usb_hal.c)

@@ -382,6 +382,11 @@ started, require the board's real restoration path rather than just clearing a
 software flag. A stronger shutdown request must invalidate completion of an
 earlier retention-only command. Keep battery metadata latest-only without
 letting it overwrite in-flight packets or delay accepted key releases.
+When a power transition repurposes an input as an output, give it explicit
+ownership: invalidate its normal telemetry and prevent other HAL initialization
+from reclaiming it until restoration succeeds. Preserve unowned pin latches
+and debug pins. Do not translate sequential wake-pin reads into synthetic key
+events without the platform's filtering and restoration logic.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

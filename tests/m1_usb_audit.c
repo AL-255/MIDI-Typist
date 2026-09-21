@@ -2,6 +2,7 @@
 #include "m1_usb.h"
 #include "m1_usb_hal.h"
 #include "m1_usb_power.h"
+#include "m1_power_gpio.h"
 #include "midi_control.h"
 #include "scan_stream.h"
 #include "keyboard_telemetry.h"
@@ -97,5 +98,5 @@ const void *const m1_test_exports[]={
     m1_usb_midi_send,m1_usb_midi_take,m1_usb_generation,m1_usb_errors,m1_usb_leds,
     m1_test_usb_control_init,m1_test_usb_service,m1_test_usb_publish,
     m1_usb_hw_start,m1_usb_hw_stop,m1_usb_hw_running,m1_usb_hw_irq,
-    m1_usb_power_down,m1_usb_power_ready
+    m1_usb_power_down,m1_usb_power_ready,m1_power_gpio_prepare,m1_power_gpio_restore
 };

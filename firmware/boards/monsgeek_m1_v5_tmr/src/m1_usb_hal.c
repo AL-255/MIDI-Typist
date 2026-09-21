@@ -1,6 +1,7 @@
 #include "m1_usb_hal.h"
 #include "m1_usb.h"
 #include "m1_usb_power.h"
+#include "m1_power_gpio.h"
 #include "m1_board.h"
 #include "defaults.h"
 #include "usbd_int.h"
@@ -112,7 +113,7 @@ void m1_usb_hw_irq(void)
 m1_usb_hw_result_t m1_usb_hw_start(bool platform_quiescent)
 {
     if(!context())return M1_USB_HW_CONTEXT;
-    if(!platform_quiescent)return M1_USB_HW_BUSY;
+    if(!platform_quiescent || m1_power_gpio_prepared())return M1_USB_HW_BUSY;
     uint32_t mask=__get_PRIMASK();__disable_irq();
     m1_usb_hw_result_t result=M1_USB_HW_OK;
     if(busy())result=M1_USB_HW_BUSY;

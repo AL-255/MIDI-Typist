@@ -520,6 +520,44 @@ battery-powered startup and stops on cable loss rather than applying the wired
 sequence to the unimplemented wireless path. This is an implementation limit,
 not a wired-only product policy.
 
+### Sleep/wake pin ownership
+
+`m1_power_gpio` uses the official GPIO driver for the reference transitions at
+`0x08017BCC` and `0x0801A814`. These pins change roles; they are not ordinary
+backlight or sensor-power controls:
+
+| Pin | Prepared for sleep | Restored for normal operation |
+| --- | --- | --- |
+| PB12 | Input, no pull | Push-pull output, then driven low |
+| PB10 | Push-pull output, then driven low | Pull-up input for charge-status sampling |
+| PA11 | Push-pull output, **existing latch preserved** | Pull-up input |
+| PC10/PC12/PC11 | Unchanged by prepare | Pull-up inputs for encoder phases/button |
+
+Prepare requires explicit platform permission, restored main clocks, idle
+ADC/timers/output DMA/SPI, no live USB owner/IRQs/endpoints, PC13 configured as
+an input, and successful USB PHY power reduction. Restore applies the same
+quiescence checks but permits cold initialization or a cable arriving while
+asleep; USB must remain idle until pin restoration finishes. Both preserve the
+caller’s interrupt mask and unrelated pins, including debug and power rails.
+They neither enter sleep nor shut down the radio or sensor supplies.
+
+While prepared, battery service invalidates readings without consuming scans;
+battery initialization, wired startup and USB startup cannot take over the pins.
+If battery initialization was attempted during that interval, initialize it
+again after restoration. A failed restore retains sleep ownership.
+
+Restore samples PC10 and PC12 separately and returns their two-bit encoder
+baseline. The read-only switch helper samples PC10, PC12 and PC11 into bits
+0–2, requiring input configuration. These are raw sequential reads, not an
+atomic physical snapshot, debounced movement or a keyboard event. Encoder
+reporting remains separate integration work.
+
+Linked ARM audits check the ordered SDK writes, drive/pull modes, preserved
+PA11 latch, switch changes between reads, busy/context rejection, battery and
+USB exclusion, and cable-arrival restoration. Register effects are scripted;
+electrical pin roles beyond the observed sequence and full battery startup/
+sleep/wake operation are not established by these tests.
+
 ### RTC sleep HAL
 
 `m1_sleep_init` configures the reference LICK clock, 7/7 RTC dividers, CK_B

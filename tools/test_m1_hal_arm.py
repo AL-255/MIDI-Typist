@@ -11,7 +11,7 @@ from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_
 from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M4, UC_ARM_REG_R0,
     UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP,
     UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
-    UC_ARM_REG_FAULTMASK)
+    UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
 from firmware_defaults import DEFAULTS as D
 from keyboard_boards import m1_records
 
@@ -1095,6 +1095,144 @@ def usb_power(elf):
     print('PASS M1 USB power: official SDK HEXT path, live-stack/DMA guards, bounded timeout, cable changes and ownership')
 
 
+class PowerGpioArm(UsbPowerArm):
+    def __init__(self,elf):
+        super().__init__(elf)
+        self.put(GPIO+0x800,self.u32(GPIO+0x800)&~(3<<26)) # PC13 input, battery power
+        self.put(GPIO+0x804,self.u32(GPIO+0x804)&~(1<<13)) # SDK default push-pull
+        self.cpu.mem_write(GPIO,b'\x5a'*0x40)
+        self.pin_guard={p:bytes(self.cpu.mem_read(p,0x40)) for p in (GPIO,GPIO+0x400,GPIO+0x800)}
+        self.input_script=[]
+        self.cpu.hook_add(UC_HOOK_MEM_READ,self.read_switch,begin=GPIO+0x810,end=GPIO+0x813)
+        self.battery_reads=0
+        address=self.symbols['m1_hal_battery']&~1
+        self.cpu.hook_add(UC_HOOK_CODE,self.read_battery,begin=address,end=address)
+        self.cpu.reg_write(UC_ARM_REG_PRIMASK,1);self.call('m1_battery_hal_init')
+        self.cpu.reg_write(UC_ARM_REG_PRIMASK,0);self.writes.clear()
+    def read_battery(self,cpu,address,size,user):
+        self.battery_reads+=1
+    def read_switch(self,cpu,access,address,size,value,user):
+        if self.input_script:self.put(address,(self.u32(address)&~0x1c00)|self.input_script.pop(0))
+    def write(self,cpu,access,address,size,value,user):
+        for port in (GPIO,GPIO+0x400,GPIO+0x800):
+            if port<=address<port+0x40:
+                assert address-port in (0,4,8,12,0x28),hex(address)
+                assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
+                self.writes.append((address,size,value))
+                if address==port+0x28:self.put(port+0x14,self.u32(port+0x14)&~value)
+                return
+        super().write(cpu,access,address,size,value,user)
+    def check_guards(self):
+        for port,owned in ((GPIO,{11}),(GPIO+0x400,{10,12}),(GPIO+0x800,{10,11,12})):
+            before=self.pin_guard[port]
+            for offset,width in ((0,2),(4,1),(8,2),(12,2),(20,1)):
+                original=struct.unpack_from('<I',before,offset)[0]
+                mask=sum(((1<<width)-1)<<(width*pin) for pin in set(range(16))-owned)
+                assert self.u32(port+offset)&mask==original&mask,(hex(port),offset)
+            assert bytes(self.cpu.mem_read(port+0x20,8))==before[0x20:0x28]
+    def pin(self,port,pin,mode,pull):
+        assert (self.u32(port)>>(pin*2))&3==mode
+        assert (self.u32(port+12)>>(pin*2))&3==pull
+        assert not self.u32(port+4)&(1<<pin) # push-pull, including default input config
+        assert (self.u32(port+8)>>(pin*2))&3==1 # SDK stronger-drive default
+    def order(self,start,initial,expected,reset):
+        writes=self.writes[start:]
+        configs=[(i,a,v) for i,(a,_,v) in enumerate(writes) if a in initial]
+        assert len(configs)==len(expected)*2
+        for index,(port,pin,mode) in enumerate(expected):
+            _,address,clear=configs[index*2]
+            _,again,value=configs[index*2+1]
+            assert address==again==port
+            assert clear==initial[port]&~(3<<(pin*2))
+            assert value==clear|(mode<<(pin*2))
+            initial[port]=value
+        address,value,after=reset
+        reset_at=next(i for i,(a,_,v) in enumerate(writes) if a==address and v==value)
+        assert configs[after*2+1][0]<reset_at<configs[(after+1)*2][0]
+    def restore(self):
+        start=len(self.writes);initial={p:self.u32(p) for p in self.pin_guard}
+        assert self.call('m1_power_gpio_restore',1,RADIO_OUT)
+        self.order(start,initial,((GPIO+0x400,12,1),(GPIO+0x400,10,0),
+            (GPIO,11,0),(GPIO+0x800,10,0),(GPIO+0x800,12,0),(GPIO+0x800,11,0)),
+            (GPIO+0x428,1<<12,0))
+        self.pin(GPIO+0x400,12,1,0);assert not self.u32(GPIO+0x414)&(1<<12)
+        for port,pin in ((GPIO+0x400,10),(GPIO,11),(GPIO+0x800,10),(GPIO+0x800,12),(GPIO+0x800,11)):
+            self.pin(port,pin,0,1)
+        assert not self.call('m1_power_gpio_prepared')
+    def prepare(self):
+        assert self.call('m1_usb_power_down',1)==0
+        start=len(self.writes);initial={p:self.u32(p) for p in self.pin_guard}
+        assert self.call('m1_power_gpio_prepare',1)
+        self.order(start,initial,((GPIO+0x400,12,0),(GPIO+0x400,10,1),(GPIO,11,1)),
+            (GPIO+0x428,1<<10,1))
+        assert self.call('m1_power_gpio_prepared')
+        self.pin(GPIO+0x400,12,0,0);self.pin(GPIO+0x400,10,1,0);self.pin(GPIO,11,1,0)
+        assert not self.u32(GPIO+0x414)&(1<<10)
+
+
+def power_gpio(elf):
+    for mask in (0,1):
+        d=PowerGpioArm(elf);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        # Cold restore is allowed without powering up an unused USB core.
+        pa11=d.u32(GPIO+0x14)&(1<<11)
+        d.input_script=[1<<10,1<<12];d.restore()
+        assert d.cpu.mem_read(RADIO_OUT,1)[0]==3 and not d.input_script
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+        for bits in range(8):
+            d.input_script=[(bits&1)<<10,((bits>>1)&1)<<12,((bits>>2)&1)<<11]
+            assert d.call('m1_power_gpio_switches',RADIO_OUT)
+            assert d.cpu.mem_read(RADIO_OUT,1)[0]==bits and not d.input_script
+        assert not d.call('m1_power_gpio_prepare',1) # explicit USB power-down first
+        d.call('m1_battery_hal_service',1);assert d.battery_reads==1
+        d.prepare();assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+        assert d.u32(GPIO+0x14)&(1<<11)==pa11 # PA11 latch is never invented
+        writes=len(d.writes)
+        assert not d.call('m1_power_gpio_prepare',1)
+        d.call('m1_battery_hal_service',2);assert d.battery_reads==1
+        d.call('m1_battery_hal_init');d.call('m1_battery_hal_service',1000)
+        assert d.call('m1_test_battery_status')==0 and len(d.writes)==writes and d.battery_reads==1
+        assert not d.call('m1_startup_begin',0)
+        assert d.call('m1_usb_hw_start',1)==2 # BUSY, before any USB/clock writes
+        assert len(d.writes)==writes
+        # Reconnect while asleep: restoring input roles is still required and
+        # allowed before starting USB. The PC13 input latch is external stimulus.
+        d.put(GPIO+0x810,d.u32(GPIO+0x810)&~(1<<13))
+        d.restore();assert d.u32(GPIO+0x14)&(1<<11)==pa11
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+        d.cpu.reg_write(UC_ARM_REG_PRIMASK,1);d.call('m1_battery_hal_init')
+        d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        d.call('m1_battery_hal_service',1001);assert d.battery_reads==2
+    # Permission, malformed output, active peripherals and live USB all reject
+    # before GPIO/clock writes. Failed restore retains the prepared ownership.
+    d=PowerGpioArm(elf)
+    assert not d.call('m1_power_gpio_restore',0,RADIO_OUT)
+    assert not d.call('m1_power_gpio_restore',1,0)
+    assert not d.call('m1_power_gpio_prepare',0)
+    assert not d.call('m1_power_gpio_switches',0) and not d.writes
+    cases=[(CRM+8,0),(TMR3,1),(TMR6,1),(ADC+8,1),(SPI+8,128),(RADIO_SPI+8,128)]
+    cases.extend((DMA+offset,1) for offset in (8,0x1c,0x30,0x6c))
+    cases.extend((0xe000e108,1<<irq) for irq in (10,11,12,13))
+    cases.extend((USB_HS+offset,1) for offset in (8,0x14))
+    cases.extend((USB_HS+base+ep*0x20,1<<31) for base in (0x900,0xb00) for ep in range(8))
+    for address,value in cases:
+        d=PowerGpioArm(elf);d.restore()
+        assert d.call('m1_usb_power_down',1)==0
+        d.put(address,value);writes=len(d.writes)
+        assert not d.call('m1_power_gpio_prepare',1),(hex(address),value)
+        assert len(d.writes)==writes and not d.call('m1_power_gpio_prepared')
+        d=PowerGpioArm(elf);d.restore();d.prepare();d.put(address,value)
+        writes=len(d.writes);d.cpu.mem_write(RADIO_OUT,b'\xcd')
+        assert not d.call('m1_power_gpio_restore',1,RADIO_OUT),(hex(address),value)
+        assert len(d.writes)==writes and d.cpu.mem_read(RADIO_OUT,1)[0]==0xcd
+        assert d.call('m1_power_gpio_prepared')
+    for register,value in ((UC_ARM_REG_BASEPRI,1),(UC_ARM_REG_FAULTMASK,1),
+                           (UC_ARM_REG_CONTROL,1),(UC_ARM_REG_IPSR,3)):
+        d=PowerGpioArm(elf);d.cpu.reg_write(register,value)
+        assert not d.call('m1_power_gpio_restore',1,RADIO_OUT)
+        assert not d.call('m1_power_gpio_prepare',1) and not d.writes
+    print('PASS M1 sleep GPIO: exact owned pin roles/order, retained PA11 latch, sequential switch reads, idle/USB/context guards, battery/USB exclusion and cable-arrival restoration')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf')
@@ -1108,6 +1246,7 @@ def main():
     wireless(args.elf)
     wireless_power(args.elf)
     usb_power(args.elf)
+    power_gpio(args.elf)
     sleep_hal(args.elf)
 
 

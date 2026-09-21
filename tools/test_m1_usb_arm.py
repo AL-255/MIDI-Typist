@@ -103,6 +103,8 @@ def hardware(path):
         assert d.u32(0xe000e108)&(1<<13) # IRQ77 only
         writes=len(d.writes)
         assert d.call('m1_usb_hw_start',1)==2 and len(d.writes)==writes
+        assert not d.call('m1_power_gpio_restore',1,OUTPUT)
+        assert not d.call('m1_power_gpio_prepare',1) and len(d.writes)==writes
         epoch=d.call('m1_usb_generation')
         d.flags=1<<12;d.call('m1_usb_hw_irq') # actual SDK reset dispatch
         assert d.call('m1_usb_generation')==epoch+1 and not d.call('m1_usb_ready')

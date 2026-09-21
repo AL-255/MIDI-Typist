@@ -31,6 +31,10 @@ radio metadata and sleep-control transfers: latest-only percentages, neutral
 gates, cancellation boundaries, retention escalation, both-DMA/SPI completion,
 timeout rejection and quiet handoff. It does not establish peer sleep or execute
 a complete battery-powered startup/sleep/wake cycle.
+Sleep-GPIO tests execute ordered SDK pin changes and switch reads, preserving
+unrelated pins and the reference's untouched latch. They check quiescence,
+battery/USB ownership exclusion and restoration after cable arrival. This is
+register-level evidence, not electrical charging or wake validation.
 
 ## Automated checks
 

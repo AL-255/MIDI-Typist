@@ -3,7 +3,9 @@
 #include "m1_battery.h"
 /* Serialized foreground owner, independent of scan/lighting DMA channels.
  * Init only configures PB10/PC13 as pull-up inputs. No charger enable,
- * supply control, USB/radio mode change or flash operation is performed. */
+ * supply control, USB/radio mode change or flash operation is performed.
+ * While sleep GPIO owns PB10, service invalidates readings and init defers
+ * without changing pins. If init was attempted then, call it after restore. */
 void m1_battery_hal_init(void);
 void m1_battery_hal_service(uint32_t now_ms);
 const m1_battery_t *m1_battery_hal_status(void);

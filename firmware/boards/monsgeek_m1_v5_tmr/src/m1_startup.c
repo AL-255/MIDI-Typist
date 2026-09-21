@@ -1,6 +1,7 @@
 #include "m1_startup.h"
 #include "m1_hal.h"
 #include "m1_lighting.h"
+#include "m1_power_gpio.h"
 #include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -35,7 +36,7 @@ void m1_startup_stop(void)
 static void fail(void) { m1_startup_stop(); state=FAILED; }
 bool m1_startup_begin(uint32_t now_ms)
 {
-    if(state!=OFF)return false;
+    if(state!=OFF || m1_power_gpio_prepared())return false;
     crm_clocks_freq_type clocks;
     crm_clocks_freq_get(&clocks);
     if(clocks.sclk_freq!=M1_CORE_HZ || clocks.ahb_freq!=M1_CORE_HZ ||
