@@ -3,6 +3,7 @@ import queue
 import re
 import sys
 from firmware_defaults import DEFAULTS as D
+from keyboard_boards import BOARDS
 
 
 def clients():
@@ -18,8 +19,9 @@ def is_control_port(name):
     # ALSA limits raw-MIDI subdevice names to 31 bytes: the product prefix
     # truncates the jack string to "MIDI-". Match this board's second cable,
     # never its performance cable. The versioned handshake verifies the peer.
-    return 'MIDI-Typist Control' in name or bool(re.fullmatch(
-        r'Huntsman V3 Pro Mini MIDI:Huntsman V3 Pro Mini MIDI MIDI- \d+:1', name))
+    return 'MIDI-Typist Control' in name or any(re.fullmatch(
+        re.escape(board.midi_product)+':'+re.escape(board.midi_product)+r' MIDI-[^:]* \d+:1',name)
+        for board in BOARDS.values())
 
 
 def control_ports():

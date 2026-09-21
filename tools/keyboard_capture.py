@@ -3,21 +3,22 @@ from firmware_defaults import DEFAULTS as D
 import struct
 
 SIZE = 20
-ASSUMED_SCAN_HZ = D['HUNTSMAN_ASSUMED_SCAN_HZ']
 BOTTOM_OUT = D['RAW_BOTTOM_OUT']      # velocity window closes below this raw value (excluded)
 VELOCITY_WINDOW = D['RAW_VELOCITY_WINDOW']   # maximum readbacks per fit, triggering sample included
 
 
-def press_velocity(samples):
+def press_velocity(samples,sample_hz):
     """Velocity of a closed window, matching the MCU fit.
 
     ``samples`` is the window including the triggering readback: up to ten
     consecutive values, cut before the first sample below BOTTOM_OUT. The
     speed is the total drop divided by the interval count at the assumed
-    8 kHz. Windows longer than five samples additionally discard the single
+    board scan rate. Windows longer than five samples additionally discard the single
     interval furthest from the median (earliest wins ties); host output
     retains fractional counts/s, before the MCU's 0..1 clamp.
     """
+    if type(sample_hz) is not int or sample_hz<=0:
+        raise ValueError('A positive integer board scan rate is required')
     if len(samples) < 2 or len(samples) > VELOCITY_WINDOW:
         raise ValueError(f'velocity requires 2..{VELOCITY_WINDOW} window readbacks')
     delta = [a-b for a,b in zip(samples,samples[1:])]
@@ -26,7 +27,7 @@ def press_velocity(samples):
         twice_median = ordered[(len(delta)-1)//2] + ordered[len(delta)//2]
         outlier = max(range(len(delta)),key=lambda i:abs(2*delta[i]-twice_median))
         del delta[outlier]
-    return sum(delta) * ASSUMED_SCAN_HZ / len(delta)
+    return sum(delta) * sample_hz / len(delta)
 
 
 def velocity_window(points):

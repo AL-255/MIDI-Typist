@@ -1,6 +1,7 @@
 #ifndef MIDI_TYPIST_CONTROL_H
 #define MIDI_TYPIST_CONTROL_H
 #include "midi_sysex.h"
+/* Main-loop protocol shared by every USB platform. */
 void midi_control_init(void);
 void midi_control_command_handler(bool (*handler)(const char *));
 void midi_control_usb_reset(void);

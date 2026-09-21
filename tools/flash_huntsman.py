@@ -6,7 +6,7 @@ import re
 import struct
 import secrets
 import time
-from flash_models import ConnectedDevice, FirmwareImage, FlashAction
+from flash_models import ConnectedDevice, FirmwareImage, FlashAction, matching_build
 import firmware_flasher as backend
 
 INSTALL = FlashAction('install','Install MIDI-Typist','custom','Convert this keyboard to MIDI-Typist.')
@@ -17,6 +17,8 @@ RESTORE = FlashAction('restore','Restore Razer firmware','razer','Install a Raze
 class HuntsmanAdapter:
     id = 'razer-huntsman-v3-pro-mini'
     name = 'Razer Huntsman Pro Mini V3'
+    build_target = 'RZ03-0499'
+    inspection_modes = ('custom','razer')
     default_image = str(backend.REPO_ROOT/'build-huntsman/huntsman_firmware.bin')
     filetypes = (('Application / Razer resources','*.bin *.hex *.resources'),('All files','*'))
     safety = ('Application only · 128 KiB. Bootloader, Razer settings/serial, security data '
@@ -60,6 +62,7 @@ class HuntsmanAdapter:
 
     def identify(self, device, build_hint=None, control_available=True):
         if device.mode!='custom':return device
+        build_hint=matching_build(build_hint,self.build_target)
         if build_hint:return replace(device,version=build_hint)
         if not control_available:return replace(device,version='Configuration connection is acquiring the build identity')
         from midi_backend import MidiBackend, find_midi_device
@@ -79,7 +82,8 @@ class HuntsmanAdapter:
                 kind,reply_session,_,payload=sx.decode(wire)
                 if kind==sx.READY and reply_session==session:
                     build=parse_build(payload+b'\n')
-                    if build:return replace(device,version=build[0])
+                    if build and build[2]==self.build_target:return replace(device,version=build[0])
+                    raise ValueError('Control peer does not identify the selected Huntsman build target')
             raise TimeoutError('SysEx build query timed out')
         except Exception as error:
             return replace(device,version='Unavailable',details={**device.details,'Build query':str(error)})

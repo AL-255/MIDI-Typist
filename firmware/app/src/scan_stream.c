@@ -3,7 +3,7 @@
 #include "defaults.h"
 #include <string.h>
 
-/* GUI is latest-only; capture is loss-detecting and fail-stop. Both use the
+/* Board-independent GUI is latest-only; capture is loss-detecting and fail-stop. Both use the
  * SysEx control cable. Publication copies the entire payload before return. */
 #define RECORDS MIDI_CONTROL_DEVICE_RECORDS
 #define BATCH MIDI_CONTROL_SAMPLE_BATCH

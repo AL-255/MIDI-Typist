@@ -25,9 +25,10 @@ endfunction()
 
 set(KEYBOARD_LOGIC_SOURCES
     ${MT_APP_SOURCES}
+    ${MT_TELEMETRY_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/layout_port.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c
-    firmware/boards/huntsman_v3_pro_mini/src/device_store.c
+    ${MT_STORE_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/optical_key.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c
@@ -54,6 +55,11 @@ target_compile_options(huntsman_core PRIVATE -Wall -Wextra -Werror)
 
 if(NOT HUNTSMAN_BUILD_FIRMWARE)
     enable_testing()
+    add_executable(control_runtime_tests tests/test_control_runtime.c
+        ${MT_CONTROL_SOURCES} firmware/app/src/midi_sysex.c)
+    target_include_directories(control_runtime_tests PRIVATE firmware/app/include)
+    target_compile_options(control_runtime_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME control_runtime COMMAND control_runtime_tests)
     # Independent port: no Huntsman sources, include paths, SDK or reference data.
     add_executable(portable_app_tests ${MT_APP_SOURCES}
         firmware/boards/synthetic/src/synthetic_board.c tests/test_portable_app.c)
@@ -91,6 +97,30 @@ if(NOT HUNTSMAN_BUILD_FIRMWARE)
     add_test(NAME latest_only COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_latest_only.py)
     add_test(NAME build_identity COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_build_identity.py)
     add_test(NAME device_flashing COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_device_flashing.py)
+    add_test(NAME monsgeek_iap COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_monsgeek_iap.py)
+    set(FUN60_BOARD ${CMAKE_CURRENT_SOURCE_DIR}/firmware/boards/monsgeek_fun60_pro_wired)
+    add_executable(fun60_tests tests/test_fun60.c
+        ${FUN60_BOARD}/src/fun60_matrix.c ${FUN60_BOARD}/src/layout_port.c ${MT_APP_SOURCES})
+    target_include_directories(fun60_tests PRIVATE ${FUN60_BOARD}/include firmware/app/include)
+    target_compile_definitions(fun60_tests PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=183)
+    target_compile_options(fun60_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME fun60_matrix COMMAND fun60_tests)
+    add_executable(fun60_store_tests tests/test_device_store.c
+        ${FUN60_BOARD}/src/fun60_matrix.c ${FUN60_BOARD}/src/layout_port.c ${MT_APP_SOURCES} ${MT_STORE_SOURCES})
+    target_include_directories(fun60_store_tests PRIVATE ${FUN60_BOARD}/include firmware/app/include)
+    target_compile_definitions(fun60_store_tests PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=183 MT_HID_USAGE_MAX=0x73)
+    target_compile_options(fun60_store_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME fun60_store COMMAND fun60_store_tests)
+    add_executable(telemetry_huntsman tests/telemetry_fixture.c)
+    target_link_libraries(telemetry_huntsman PRIVATE huntsman_core)
+    target_compile_options(telemetry_huntsman PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_executable(telemetry_fun60 tests/telemetry_fixture.c
+        ${FUN60_BOARD}/src/fun60_matrix.c ${FUN60_BOARD}/src/layout_port.c ${MT_APP_SOURCES} ${MT_TELEMETRY_SOURCES})
+    target_include_directories(telemetry_fun60 PRIVATE ${FUN60_BOARD}/include firmware/app/include)
+    target_compile_definitions(telemetry_fun60 PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=183 MT_HID_USAGE_MAX=0x73)
+    target_compile_options(telemetry_fun60 PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    add_test(NAME keyboard_telemetry COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_telemetry.py
+        --huntsman $<TARGET_FILE:telemetry_huntsman> --fun60 $<TARGET_FILE:telemetry_fun60>)
     add_test(NAME image_reservation COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_image_reservation.py)
     add_test(NAME midi_sysex COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_midi_sysex.py)
     # Host ABI for comparison against executed production ARM instructions.
@@ -131,7 +161,8 @@ add_executable(huntsman_firmware
     ${NXP_ROOT}/component/lists/fsl_component_generic_list.c
     firmware/boards/huntsman_v3_pro_mini/src/board.c
     firmware/platform/nxp_lpc55/src/debug.c
-    firmware/platform/nxp_lpc55/src/midi_control.c
+    ${MT_CONTROL_SOURCES}
+    firmware/platform/nxp_lpc55/src/control_port.c
     firmware/platform/nxp_lpc55/src/usb_composite.c
     firmware/boards/huntsman_v3_pro_mini/src/usb_descriptors.c
     firmware/platform/nxp_lpc55/src/usb_errata.c
@@ -142,7 +173,6 @@ target_sources(huntsman_firmware PRIVATE
     firmware/boards/huntsman_v3_pro_mini/src/optical_bus.c
     firmware/boards/huntsman_v3_pro_mini/src/optical_transport.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_live.c
-    firmware/platform/nxp_lpc55/src/scan_stream.c
     firmware/boards/huntsman_v3_pro_mini/src/flash_dump.c
     firmware/boards/huntsman_v3_pro_mini/src/travel_lighting.c
     firmware/boards/huntsman_v3_pro_mini/src/lighting_bus.c

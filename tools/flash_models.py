@@ -37,6 +37,8 @@ class FirmwareImage:
 class FlashAdapter(Protocol):
     id: str
     name: str
+    build_target: str
+    inspection_modes: tuple[str, ...]
     default_image: str
     filetypes: tuple
     safety: str
@@ -49,8 +51,17 @@ class FlashAdapter(Protocol):
     def flash(self, token: str, action: str, path: str, digest: str, progress, status): ...
 
 
+def matching_build(value, target):
+    """Never borrow another board's configuration connection as provenance."""
+    if not isinstance(value,str): return None
+    from keyboard_gui_model import parse_build
+    parsed=parse_build('build='+value+'\n')
+    return parsed[0] if parsed and parsed[2]==target else None
+
+
 def adapters():
     # Adding a board requires an adapter, not model branches in the Tk view.
     from flash_huntsman import HuntsmanAdapter
-    adapter = HuntsmanAdapter()
-    return {adapter.id: adapter}
+    from flash_fun60 import Fun60Adapter
+    models=(HuntsmanAdapter(),Fun60Adapter())
+    return {adapter.id:adapter for adapter in models}

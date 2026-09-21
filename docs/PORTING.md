@@ -12,8 +12,9 @@ owns acquisition, key identity, LED wiring, MCU startup, transport and storage.
 The same shared C11 application supplies typing, MIDI, menus, thresholds,
 velocity, calibration and effect composition.
 
-The repository contains one physical port, Huntsman V3 Pro Mini/LPC5528, and
-one SDK-free reference port. Another keyboard is not ready to flash until its
+The repository contains the complete Huntsman V3 Pro Mini/LPC5528 port, an
+SDK-free reference port, and the [FUN60 PRO HAL](MONSGEEK_FUN60_PRO.md).
+Another keyboard is not ready to flash until its
 board implementation and hardware checks are complete. This guide does not
 authorize overwriting an unknown bootloader or factory data.
 
@@ -386,13 +387,18 @@ single-owner storage context. Loading is attempted once after a valid layout
 frame, not continuously. The board owns storage generation/error telemetry. The shared application
 exposes the chosen Fn-menu levels and flags through `keyboard_menu_t`,
 `keyboard_midi_t` and `keyboard_raw_t`; the board owns their persistence.
-Huntsman's `device_store` loads whole-profile snapshots through the calibration
+The optional shared `device_store` loads whole-profile snapshots through the calibration
 callback, applies settings immediately after `keyboard_app_frame` and before
 output service, then checks committed changes every 20 ms. Saving waits for
 250 ms stability and neutral input with no editor/preview/calibration active.
 Every snapshot preserves calibration. Report pending/saved/error separately
 from RAM command ACKs. Restore outputs as neutral, never as sounding notes.
-A new port must choose its own schema, geometry and safe write scheduling.
+A new port may compile `MT_STORE_SOURCES` for the current MTP1 schema (up to
+65 keys); otherwise it must provide its own bounded store. `CAL_PAGE_SIZE`
+is the 512-byte logical record, not the hardware erase size. Each slot must
+occupy independently erasable, proven-owned storage. Board callbacks translate
+slot numbers and report controller faults separately from invalid content.
+Choose geometry and safe write scheduling for the actual MCU.
 
 Prove page ownership, execution/interrupt safety during erase, watchdog
 behavior, timeouts and power-loss recovery on the actual MCU. FF bytes alone
@@ -402,15 +408,32 @@ safe by implication for an MCU executing from the bank being erased.
 USB exposes NKRO HID and two-cable USB-MIDI through the platform's stack:
 performance on cable 0, bidirectional GUI SysEx on cable 1. Preserve the
 separate control port, envelope framing/CRC, bounded command mailbox and
-main-context dispatch. The portable codec is `midi_sysex.c`; NXP endpoint
-ownership and session handling are in `midi_control.c`. A new platform must
-provide equivalent reset/lease handling and update host port discovery.
+main-context dispatch. Compile `MT_CONTROL_SOURCES` for the shared
+`midi_control.c` session/lease handling and `scan_stream.c` framing; the codec
+is in `MT_APP_SOURCES`. Implement `control_port.h`: wraparound milliseconds
+(also readable in USB IRQ), mask/restore the receive interrupt, connection
+state, and nonblocking all-or-nothing event copying. A successful write must
+not retain the caller's pointer. Call both USB-reset notifications when the
+device is reset or deconfigured; service the protocol in main, with performance
+MIDI offered before control chunks. Endpoint ownership remains platform code.
+Update host port discovery for the new board identity.
 The Huntsman additionally retains its updater HID at interface 3.
 Feed newline-stripped configuration commands to `keyboard_app_command`;
 it implements get/set/all/enable/MIDI/velocity/clean/calibrate/cancel validation and ACK
-semantics. Board diagnostics, telemetry serialization and the MCU's firmware
+semantics. Board diagnostics, telemetry scheduling and the MCU's firmware
 update path remain in the port. Never copy the Huntsman reset cookie or flash
 addresses to an unrelated bootloader.
+
+For the current GUI wire format, compile `MT_TELEMETRY_SOURCES` and call
+`keyboard_telemetry_encode` with a coherent application view, optional
+`device_store_t`, fault counters and command ACK/result. It encodes byte order,
+padding, bitmaps and checksum without changing state or sending anything.
+Call from the application's owner task, at `GUI_REPORT_PERIOD_MS` while GUI
+streaming is selected, then increment the sequence and pass the complete
+record to `scan_stream_gui_push`. The encoder supports up to 65 sensors and
+requires a 16-byte NKRO report; do not copy its offsets into a board serializer.
+The native telemetry fixture checks real C output against the Python decoder
+for every registered layout, including startup and calibration timer wrap.
 
 The MIDI callback receives CIN, status and two data bytes. USB-MIDI 1.0
 assembles cable 0/CIN plus those bytes; a UART MIDI adapter omits CIN and
@@ -424,18 +447,31 @@ its reset/image contract. The
 [Huntsman flasher](https://github.com/AL-255/Huntsman-V3-Pro-Mini-Flasher)
 is a separate board-specific tool, not a universal firmware installer.
 
-The configuration view understands Huntsman wire formats and physical
-geometry. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
+The configuration view selects a `keyboard_boards.py` contract from the READY
+build target. Register accepted layout/count pairs, nominal full-matrix rate,
+MIDI product string, storage description and a geometry provider. Prefer the
+firmware's authored key table as the geometry source; validate unique sensor
+indices and labels. Host profiles bind to both target and layout. Unknown
+targets and cross-board profiles must fail before edits; test the actual Tk
+view with a simulated peer, including a reconnect from another board and
+rate-correct captures. The current snapshot supports at most 65 sensors.
+The [flashing tab](DEVICE_FLASHING.md) has a separate model-independent view:
 implement and register a separate adapter for each product, with its discovery,
 image checks, supported transitions and protected write boundary. Do not reuse
 Huntsman addresses for another platform. Reusing the configuration wire
 formats requires matching their layout/size contracts; a different host
 presentation can call the same common configuration command engine.
+Adapters declare their build target and which device modes allow a privileged
+information query. Filter cached/direct build identities by that target, and
+keep cached image paths scoped to the model. An incomplete port can expose
+read-only inventory with no actions; its worker must also reject writes, not
+merely hide the GUI button. Do not identify a SKU from a shared bootloader PID.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,
 not necessarily accepted. Inspect the ACK ID/result and serialize requests.
 Unparseable IDs leave the previous ACK unchanged. The parser itself neither
-emits text replies nor serializes GUI telemetry; provide settings readback in the port.
+emits text replies nor serializes GUI telemetry; provide settings readback with
+the shared encoder or an explicitly different host protocol.
 
 ## 6. Prove the port
 

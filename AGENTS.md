@@ -55,7 +55,7 @@
   dumps, serial-number data or credentials.
 - Implement only the application. Preserve bootloader, primary settings and
   serial-number storage, factory/security data and secondary-ASIC firmware.
-  Calibration and profile RESET may modify only their two documented storage
+  Huntsman calibration and profile RESET may modify only their two documented storage
   pages, 0x78000/0x78200 (verified FF inside the original allocator's free block). Do not execute RESET on a user's saved calibration merely to test it.
 - Use the supplied updater, vendored as the `third_party/huntsman_updater`
   submodule, for application flashing; the GUI uses the private
@@ -65,7 +65,17 @@
   Manual forced bootloader recovery is not a routine test strategy.
 - The GUI is the only supported PC application. Use versioned MIDI SysEx on the
   dedicated control cable; do not add serial interfaces or standalone device CLIs.
-- Use the pinned official NXP SDK sources for USB and peripheral integration.
+- Use the pinned official SDK for each MCU: NXP for LPC55, Artery for AT32F405.
+- FUN60 reference material is read-only, like the Huntsman extraction. Do not
+  bundle its firmware, disassembly or recovered implementation. Its factory
+  bootloader entry erases the application before USB enumeration and factory
+  entry also erases settings. Never enter it as a read-only discovery step.
+  Gate GUI flashing until the complete port and erase boundaries are verified.
+  Do not apply Huntsman storage addresses or scan-rate assumptions to FUN60.
+  FUN60 custom storage is reserved only at 0x08027000/0x08027800 inside the
+  application region; never appropriate FF-filled factory pages. Its updater
+  erases these custom slots along with the application: do not promise profile
+  retention across reflashes. Link the Artery flash driver and writer into RAM.
 - Preserve build-time Git provenance: refresh it on incremental builds, mark
   dirty/unversioned sources honestly, and never substitute the host checkout's
   current commit for the connected firmware's identity.

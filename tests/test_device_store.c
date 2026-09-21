@@ -1,4 +1,5 @@
 #include "device_store.h"
+#include "keyboard_layout.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +22,7 @@ static keyboard_app_t app;
 static uint16_t lo[65],hi[65];
 static void boot(device_store_t *s,unsigned profile)
 {
-    unsigned count=profile==3?65:60+profile;
+    unsigned count=keyboard_layout_count(profile);
     keyboard_app_init(&app,&raw,&midi,&menu,&cal,NULL);
     uint16_t samples[65];
     for(unsigned i=0;i<count;++i){samples[i]=4000;lo[i]=2240;hi[i]=3360;}
@@ -31,7 +32,10 @@ static void boot(device_store_t *s,unsigned profile)
 }
 int main(void)
 {
-    for(unsigned profile=1;profile<=3;++profile) {
+    unsigned tested=0;
+    for(unsigned profile=1;profile<256;++profile) {
+        if(!keyboard_layout(profile))continue;
+        ++tested;
         device_store_t s;
         memset(pages,255,sizeof(pages));writes=0;boot(&s,profile);
         assert(s.cold && !s.saved && s.applied && !s.error);
@@ -90,7 +94,7 @@ int main(void)
         assert(device_record_valid(pages[0]));
         assert(device_store_clear(&s,read_page,erase_page));assert(!s.ready && !s.valid);
     }
-    assert(erases==6);
+    assert(tested && erases==2*tested);
     /* RESET retires the older journal slot first. */
     device_store_t saved={.saved=true,.slot=0};
     assert(device_store_clear(&saved,read_page,erase_page));

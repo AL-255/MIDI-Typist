@@ -2,6 +2,7 @@
 #define SCAN_STREAM_H
 #include <stdbool.h>
 #include <stdint.h>
+/* Shared stream framing; the board supplies complete sensor frames. */
 #define SCAN_STREAM_KEY_SIZE 20u
 #define SCAN_STREAM_GUI_SIZE 1152u
 void scan_stream_gui(void);

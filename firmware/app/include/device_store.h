@@ -1,12 +1,13 @@
 #ifndef DEVICE_STORE_H
 #define DEVICE_STORE_H
 #include "keyboard_calibration.h"
+/* Logical record size, NOT a platform's flash erase size. Each of two slots
+ * must have a separately erasable, board-owned allocation of at least this
+ * size. Callbacks translate a slot number; shared code never sees addresses. */
 #define CAL_PAGE_SIZE 512u
-/* The only two flash pages the application may erase or program. They sit in
- * the original allocator's verified-FF free payload, away from the primary
- * settings and serial number at 0x49000..0x49400. */
-#define CAL_SLOT_A 0x78000u
-#define CAL_SLOT_B 0x78200u
+/* A backend may report unreadable CONTENT (e.g. ECC), allowing bounded cold
+ * initialization. Controller failures must return a different nonzero code. */
+#define DEVICE_STORE_INVALID_CONTENT 116u
 typedef uint32_t (*cal_read_fn)(unsigned slot, uint8_t *page);
 typedef uint32_t (*cal_write_fn)(unsigned slot, const uint8_t *page);
 typedef uint32_t (*cal_erase_fn)(unsigned slot);

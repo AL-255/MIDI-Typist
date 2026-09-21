@@ -15,7 +15,6 @@ uint32_t calibration_crc32(const uint8_t *p, unsigned n)
 
 enum { SENSOR_OFFSET=33, SENSOR_BYTES=7, CRC_OFFSET=508 };
 _Static_assert(SENSOR_OFFSET+CAL_KEYS*SENSOR_BYTES<=CRC_OFFSET,"snapshot exceeds page");
-_Static_assert(CAL_SLOT_A==0x78000 && CAL_SLOT_B==0x78200,"review storage addresses before changing");
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static void put32(uint8_t *p,uint32_t v) { for(unsigned i=0;i<4;++i) p[i]=v>>(8*i); }
 /* Two canonical 1..4096 samples in three bytes; zero represents 1. */
@@ -83,7 +82,7 @@ void device_store_load(device_store_t *s,uint8_t profile,uint8_t count,uint16_t 
         const uint32_t error=read(slot,p);
         /* Only invalid content/ECC is recoverable by initializing our owned
          * slots. Timeouts, geometry and other controller faults never erase. */
-        if(error && error!=116u) { fault=error; continue; }
+        if(error && error!=DEVICE_STORE_INVALID_CONTENT) { fault=error; continue; }
         if(error || !device_record_valid(p) || p[5]!=profile || p[6]!=count) continue;
         if(!s->valid || (int32_t)(u32(p+8)-s->generation)>0) accept(s,p,slot);
     }
@@ -126,7 +125,7 @@ bool device_store_update(device_store_t *s,keyboard_app_t *app,const keyboard_ca
     if(!device_record_valid(p)) { s->error=0x20001; return false; }
     unsigned slot=s->slot<2 ? s->slot^1u : 0u;
     /* Never fall back to overwriting the sole good snapshot. The writer only
-     * accepts a slot, verifies erase with CMD5, and programs the whole page. */
+     * accepts a slot, verifies erase, and programs the whole logical record. */
     s->error=write(slot,p);
     if(!s->error) s->error=read(slot,verify);
     if(!s->error && (memcmp(p,verify,CAL_PAGE_SIZE) || !device_record_valid(verify))) s->error=0x20003;

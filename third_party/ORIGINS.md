@@ -1,4 +1,16 @@
-# MIDI-Typist: vendored NXP sources
+# MIDI-Typist: official SDK sources
+
+## Artery AT32F402/405
+
+`third_party/artery` is the unmodified official
+[AT32F402/405 Firmware Library](https://github.com/ArteryTek/AT32F402_405_Firmware_Library),
+pinned by submodule to `5dd9d55a2ce9ffa8fe0cb2652ac142920f2094a3`.
+Its upstream LICENSE and individual BSP/CMSIS file notices remain intact.
+The FUN60 board selects peripheral sources through `cmake/artery_sdk.cmake`;
+Huntsman and native tests do not require this SDK. No proprietary keyboard
+firmware is part of this dependency. See the [backend guide](../docs/MONSGEEK_FUN60_PRO.md).
+
+## NXP MCUXpresso
 
 The Huntsman board build is self-contained. Its board manifest selects the
 NXP components; shared application and synthetic-port sources do not depend

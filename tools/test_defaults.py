@@ -19,7 +19,9 @@ class DefaultsTests(unittest.TestCase):
         import keyboard_gui_model as model
         self.assertEqual(capture.BOTTOM_OUT, D['RAW_BOTTOM_OUT'])
         self.assertEqual(capture.VELOCITY_WINDOW, D['RAW_VELOCITY_WINDOW'])
-        self.assertEqual(capture.ASSUMED_SCAN_HZ, D['HUNTSMAN_ASSUMED_SCAN_HZ'])
+        from keyboard_boards import BOARDS
+        self.assertEqual(BOARDS['RZ03-0499'].scan_hz, D['HUNTSMAN_ASSUMED_SCAN_HZ'])
+        self.assertEqual(BOARDS['monsgeek_fun60_pro_wired'].scan_hz, D['FUN60_SCAN_HZ'])
         self.assertEqual(model.CAPTURE_POINTS, D['CAPTURE_DEFAULT_POINTS'])
 
 

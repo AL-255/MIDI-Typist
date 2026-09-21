@@ -8,6 +8,9 @@ updater entry must match the actual hardware.
 The supported physical port is the Razer Huntsman V3 Pro Mini/LPC5528.
 The desktop synthetic port exercises a different layout and acquisition model;
 it is not evidence that another commercial keyboard is ready to flash.
+The [FUN60 PRO backend](MONSGEEK_FUN60_PRO.md) supplies a separate AT32 SDK HAL
+and IAP protocol plus a simulated-peer-tested GUI contract; its complete
+physical application lifecycle is not yet enabled.
 Use the [porting guide](PORTING.md) for a build-manifest pattern, a lifecycle
 adapter example, callback contracts and the new-board acceptance checklist.
 
@@ -28,13 +31,14 @@ firmware/
       board.cmake                native build without NXP or extraction
       include/ + src/            104-key/7-key reference port and CLI simulator
   platform/
-    nxp_lpc55/                   NXP USB/MIDI SysEx integration and silicon workarounds
+    nxp_lpc55/                   NXP USB endpoints and silicon workarounds
+    artery_at32f405/             Artery USB endpoints and SDK configuration
 third_party/nxp/                 unmodified pinned official SDK components
 tools/                          host tools and offline hardware audits
 tests/                          native behavior and portability tests
 ```
 
-Both boards compile the same `MT_APP_SOURCES`. The `midi_typist_app`
+Board ports compile the same `MT_APP_SOURCES`. The `midi_typist_app`
 object target sees only `firmware/app/include`, standard C headers and its
 compile-time capacity definitions. A CTest architecture check rejects leaked
 board headers and hardware symbols. The SDK-free reference build independently
@@ -44,6 +48,17 @@ The NXP integration is selected by the Huntsman board, not by the application.
 Its existing USB descriptors, updater protocol, interrupt ownership and MCU
 initialization sequence remain hardware-specific. A different MCU uses its
 own vendor-supported stack; it need not implement an NXP compatibility shim.
+`MT_CONTROL_SOURCES` adds the shared MIDI control session and scan streams.
+Its `control_port.h` hooks supply time, IRQ exclusion, connection state and a
+copy-on-accept USB-MIDI write. These sources also build without either SDK in
+the native control-runtime test.
+`MT_STORE_SOURCES` provides the optional two-slot MTP1 snapshot engine. Flash
+addresses and erase/program operations stay in the board; native tests run
+the same snapshot logic against both Huntsman and FUN60 layouts.
+`MT_TELEMETRY_SOURCES` provides the pure HKG snapshot encoder. Boards supply
+fault counters, command acknowledgments and storage state; the encoder owns
+the wire layout and checksum. C-generated packets from both boards are decoded
+by the actual Python GUI model in native tests.
 
 ## Application ownership
 
@@ -58,6 +73,7 @@ own vendor-supported stack; it need not implement an NXP compatibility shim.
 | `keyboard_calibration` | Parallel calibration holds, endpoints, timeout and feedback |
 | `lighting_travel` | Travel/pressure normalization and inverse lighting |
 | `keyboard_sample` | Optional ascending/descending ADC conversion to canonical units |
+| `keyboard_telemetry` | Shared HKG encoding, independent of transport and acquisition |
 
 Application state is supplied by the board as separate allocations. This lets
 the Huntsman keep calibration registers in its application-image RAM while
@@ -131,10 +147,12 @@ See [scheduling and FreeRTOS](SCHEDULING.md).
 
 The Huntsman port retains the 16-byte NKRO report, MIDI channel/packet encoding,
 GUI telemetry, HKG/HKL1/HBD1 streams, MIDI SysEx commands, updater entry, calibration
-record format and flash limits. Its existing host tools remain board-specific:
-the GUI's physical drawing is ANSI Huntsman, not an inferred layout for an
-unknown keyboard. A port's diagnostic/telemetry framing is part of its host
-integration; shared `cfg` behavior is available regardless of transport.
+record format and flash limits. The GUI selects an explicit board contract
+from READY's build target, including geometry, capture rate and profile identity.
+Huntsman and FUN60 use the same HKG encoder and decoder; unknown targets are
+rejected, not assigned an inferred layout. Diagnostic commands and update
+protocols remain board-specific. Shared `cfg` behavior is available regardless
+of transport.
 
 Generic builds default to 128 sensor slots and a wider NKRO usage bitmap.
 The Huntsman selects 65 slots, its 204-byte LED frame and the existing HID

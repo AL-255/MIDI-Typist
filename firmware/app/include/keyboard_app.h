@@ -37,7 +37,8 @@ void keyboard_app_init(keyboard_app_t *app,keyboard_raw_t *raw,keyboard_midi_t *
 void keyboard_app_invalidate(keyboard_app_t *app,uint32_t now);
 bool keyboard_app_calibrate(keyboard_app_t *app,uint32_t now,bool healthy);
 /* Explicitly erase custom profile/settings (Fn+R or cfg clean), then apply
- * defaults once every key is released. Routine flashing retains settings. */
+ * defaults once every key is released. Retention across firmware reflashes is
+ * a board/updater contract, not a guarantee made by the shared application. */
 bool keyboard_app_reset_profile(keyboard_app_t *app);
 void keyboard_app_frame(keyboard_app_t *app,const uint16_t *samples,uint8_t count,
                         uint8_t profile,uint16_t *lo,uint16_t *hi,bool valid,uint32_t now);

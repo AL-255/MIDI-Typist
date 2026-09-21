@@ -7,13 +7,13 @@ Commands and dependencies are in [Building](BUILDING.md).
 
 | Layer | Coverage |
 | --- | --- |
-| Native C/Python (15 CTest suites) | Shared defaults/alternate-initializer builds, lifecycle and architecture, NKRO, Schmitt/velocity, menus, MIDI, parallel calibration, complete storage snapshots, GUI/SysEx transport, device-flashing adapters, current-only rules and capture framing |
+| Native C/Python | Shared defaults/alternate-initializer builds, lifecycle and architecture, NKRO, Schmitt/velocity, menus, MIDI, parallel calibration, complete storage snapshots, GUI/SysEx transport, device-flashing adapters, current-only rules, capture framing, shared control runtime and FUN60 scan/IAP/storage contracts |
 | Linked Cortex-M33 execution | SDK startup/USB/DMA/I2C paths, descriptor/control transfers, MIDI packets, LED writes, faults, MIDI SysEx, updater entry and storage integration |
 | Original-reference comparison | Selected scan/editor/lighting behavior and flash register transactions; the original fixture is separate and read-only |
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
-`python3 tools/run_tests.py` runs 19 audit groups, including the 15 native
+`python3 tools/run_tests.py` runs 19 audit groups, including the native
 suites, with a 300-second total deadline. It requires the optional original
 reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. Ordinary builds and native tests do not need that reference.
@@ -22,6 +22,13 @@ Storage tests cover all supported layouts, settings/calibration preservation,
 MIDI+Jankó boot restoration, missing/corrupt saves, fallback generations,
 unsupported-schema rejection, controller faults and all 512 byte-cut points
 of an inactive-page write. The model rejects writes outside the two tail slots.
+
+Native telemetry fixtures encode actual application objects for every Huntsman
+and FUN60 layout, then decode the bytes with the GUI model. Checks cover Fn
+identity, sensor padding, velocity, calibration timer wrap/saturation, storage
+flags and invalid-layout rejection. Tk tests reconnect the same configuration
+view between simulated boards and check geometry and rate-correct captures.
+These are host-contract checks, not FUN60 hardware validation.
 
 ## Physical checks
 

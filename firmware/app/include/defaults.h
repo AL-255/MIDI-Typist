@@ -33,6 +33,20 @@
 #define VELOCITY_MAX_COUNTS_PER_SECOND 4500000u
 #define HUNTSMAN_ASSUMED_SCAN_HZ 8000u /* normalization, not measured throughput */
 
+/* FUN60 Hall acquisition. A USB polling interval is NOT a full-matrix rate.
+ * Timing is deliberately explicit; verify scan budget on the physical board. */
+#define FUN60_SCAN_HZ 1000u
+#define FUN60_SHIFT_SETTLE_US 1u
+#define FUN60_ROW_SETTLE_US 5u
+#define FUN60_MUX_SETTLE_US 1u
+#define FUN60_ADC_TIMEOUT_US 100u
+#define FUN60_ADC_CAL_TIMEOUT_US 10000u
+#define FUN60_ADC_WARMUP_SAMPLES 1000u
+#define FUN60_CLOCK_TIMEOUT_US 100000u
+#define FUN60_HEXT_STARTUP_POLLS 12288u
+#define FUN60_LED_LATCH_US 100u
+#define FUN60_RELEASE_GAP_LEVEL 8u
+
 /* MIDI controllers: independent of per-key note trigger thresholds. */
 #define MIDI_WHEEL_RELEASE_RAW 3800u
 #define MIDI_WHEEL_PRESSED_RAW 1000u
@@ -198,6 +212,18 @@
 #endif
 #if OPTICAL_SETTLING_FRAMES < 1 || OPTICAL_SETTLING_FRAMES > 255 || LIGHTING_MAINTENANCE_FRAMES < 1 || LIGHTING_MAINTENANCE_FRAMES > 255
 #error "Optical settling and lighting cadence must fit their frame counters"
+#endif
+#if FUN60_SCAN_HZ < 1 || FUN60_SCAN_HZ > 1000000 || 1000000 % FUN60_SCAN_HZ != 0
+#error "FUN60 cadence must have a positive whole-microsecond period"
+#endif
+#if FUN60_SHIFT_SETTLE_US < 1 || FUN60_ROW_SETTLE_US < 1 || FUN60_MUX_SETTLE_US < 1 || FUN60_LED_LATCH_US < 1
+#error "FUN60 electrical settling intervals must be positive"
+#endif
+#if FUN60_ADC_TIMEOUT_US < 1 || FUN60_ADC_CAL_TIMEOUT_US < 1 || FUN60_CLOCK_TIMEOUT_US < 1 || FUN60_ADC_WARMUP_SAMPLES < 1 || FUN60_HEXT_STARTUP_POLLS < 1
+#error "FUN60 hardware waits must have a positive bound"
+#endif
+#if FUN60_ADC_TIMEOUT_US > 1000000 || FUN60_ADC_CAL_TIMEOUT_US > 1000000 || FUN60_CLOCK_TIMEOUT_US > 1000000 || FUN60_SHIFT_SETTLE_US > 1000000 || FUN60_ROW_SETTLE_US > 1000000 || FUN60_MUX_SETTLE_US > 1000000 || FUN60_LED_LATCH_US > 1000000
+#error "FUN60 delays must remain within the wrapping cycle-counter budget"
 #endif
 
 #endif

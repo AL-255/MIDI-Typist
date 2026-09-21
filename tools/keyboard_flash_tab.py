@@ -9,12 +9,13 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from flash_models import ConnectedDevice, adapters
+from flash_models import ConnectedDevice, adapters, matching_build
 
 
 class FlashTab(ttk.Frame):
     MODES = {'custom':'MIDI-TYPIST', 'razer':'RAZER FIRMWARE',
-             'bootloader':'BOOTLOADER · READY TO RECOVER', 'unknown':'UNRECOGNIZED APPLICATION'}
+             'bootloader':'BOOTLOADER', 'bootloader-unverified':'BOOTLOADER · SKU UNVERIFIED',
+             'unknown':'UNRECOGNIZED APPLICATION'}
 
     def _font(self, size=None, weight='normal', mono=False):
         """The App's resolved typography, or None for the ttk default."""
@@ -120,7 +121,7 @@ class FlashTab(ttk.Frame):
         for widget in (self.refresh_button,self.browse_button,self.entry,self.confirm_check,*self.action_widgets):
             widget.configure(state='disabled' if self.busy else 'normal')
         self.model_picker.configure(state='disabled' if self.busy else 'readonly')
-        self.inspect_button.configure(state='normal' if self.device and self.device.mode in ('custom','razer') and not self.busy and not self.app.demo else 'disabled')
+        self.inspect_button.configure(state='normal' if self.device and self.device.mode in self.adapter.inspection_modes and not self.busy and not self.app.demo else 'disabled')
         self.validate_button.configure(state='normal' if self.option and self.path.get().strip() and not self.busy else 'disabled')
         ready=bool(self.device and self.option and self.image and self.confirm_model.get() and not self.busy and not self.app.demo)
         self.flash_button.configure(state='normal' if ready else 'disabled')
@@ -137,7 +138,7 @@ class FlashTab(ttk.Frame):
         self.invalidate_image();self.device=None;self.badge.set('DETECTING…')
         self.busy=True;self.sync();adapter=self.adapter
         owner=self.app.connection
-        build_hint=getattr(owner,'build',None) if owner and owner.connected else None
+        build_hint=matching_build(getattr(owner,'build',None),adapter.build_target) if owner and owner.connected else None
         control_available=not (owner and owner.is_alive())
         def run():
             try:
@@ -150,11 +151,11 @@ class FlashTab(ttk.Frame):
     def show_device(self,device):
         self.device=device
         self.badge.set(self.MODES.get(device.mode,device.mode.upper()))
-        build=getattr(self.app.connection,'build',None) if self.app.connection and self.app.connection.connected else None
+        build=matching_build(getattr(self.app.connection,'build',None),self.adapter.build_target) if self.app.connection and self.app.connection.connected else None
         values=(device.product,device.serial,build if device.mode=='custom' and build else device.version,
                 device.usb_id,device.location,device.speed)
         for key,value in zip(self.identity,values):self.identity[key].set(value)
-        self.device_note.set(device.details.get('Serial note',device.details.get('Recovery','Read firmware details to query the reported version and serial.')))
+        self.device_note.set(device.details.get('Notice',device.details.get('Serial note',device.details.get('Recovery','Read firmware details to query the reported version and serial.'))))
         self.extra.set('\n'.join(f'{k}: {v}' for k,v in device.details.items() if k not in ('Serial note','Recovery')))
 
     def set_options(self):
@@ -169,8 +170,8 @@ class FlashTab(ttk.Frame):
 
     def choose_action(self):
         option=self.option
-        self.option_note.set(option.description if option else 'No safe flashing action is available.')
-        self.path.set(self.paths.get(option.destination,self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
+        self.option_note.set(option.description if option else (self.device.details.get('Flashing','No safe flashing action is available.') if self.device else 'No safe flashing action is available.'))
+        self.path.set(self.paths.get((self.adapter.id,option.destination),self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
         self.safety.set(self.adapter.safety)
         self.sync()
 
@@ -189,7 +190,7 @@ class FlashTab(ttk.Frame):
         threading.Thread(target=run,daemon=True).start()
 
     def inspect(self):
-        if self.busy or self.device is None or self.app.demo:return
+        if self.busy or self.device is None or self.device.mode not in self.adapter.inspection_modes or self.app.demo:return
         self.launch_worker('inspect')
 
     def flash(self):
@@ -240,7 +241,8 @@ class FlashTab(ttk.Frame):
             if kind=='discovery':
                 self.busy=False
                 if len(payload)==1:
-                    self.show_device(payload[0]);self.status.set('Device identified. Select a destination and validate an image.')
+                    self.show_device(payload[0])
+                    self.status.set('Device identified. Select a destination and validate an image.' if self.adapter.actions(payload[0]) else payload[0].details.get('Flashing','No safe flashing action is available.'))
                 else:
                     self.device=None;self.badge.set('NO DEVICE' if not payload else 'MULTIPLE DEVICES')
                     for value in self.identity.values():value.set('—')
@@ -250,14 +252,15 @@ class FlashTab(ttk.Frame):
             elif kind=='image':
                 self.busy=False;epoch,image=payload
                 if epoch==self.epoch:
-                    self.image=image;self.paths[image.destination]=image.path
+                    self.image=image;self.paths[(self.adapter.id,image.destination)]=image.path
                     self.image_info.set(f'{len(image.data):,} bytes · {image.destination.upper()}\nSHA-256\n{image.digest}\n\n{image.description}')
                     self.status.set('Image validated. Confirm the model, then review the flash plan.')
             elif kind=='device':
                 device=ConnectedDevice(**payload)
-                if device.mode=='custom' and self.identity['Firmware'].get().startswith('v'):
+                build=matching_build(self.identity['Firmware'].get(),self.adapter.build_target)
+                if device.mode=='custom' and build:
                     from dataclasses import replace
-                    device=replace(device,version=self.identity['Firmware'].get())
+                    device=replace(device,version=build)
                 self.show_device(device);self.status.set('Device information read. No firmware was written.')
             elif kind=='progress':
                 done,total=payload;self.progress.configure(maximum=total or 1,value=done)

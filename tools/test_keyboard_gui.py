@@ -13,14 +13,15 @@ import tempfile
 import threading
 import time
 import unittest
-from keyboard_gui_model import MAGIC, parse_build, SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_gui_model import MAGIC, parse_build, SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_boards import ansi_geometry, board_for_target
 from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
 
 
 def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
-           velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None):
+           velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None, profile=1):
     data = bytearray(SIZE)
-    struct.pack_into('<4sH6B5I',data,0,MAGIC,SIZE,velocity_start,1,61,flags,result,0,sequence,0,ack,0,0)
+    struct.pack_into('<4sH6B5I',data,0,MAGIC,SIZE,velocity_start,profile,61,flags,result,0,sequence,0,ack,0,0)
     raw_values = raw if raw is not None else [3900]*61
     press_values = press or [3500]*61
     for offset,values in ((32,raw_values),(162,press_values),(292,release or [3600]*61)):
@@ -41,7 +42,7 @@ def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, veloc
 
 
 class Device(threading.Thread):
-    def __init__(self,fd=None,reject=False,mismatch=False,silent=False,key_rate=.000125):
+    def __init__(self,fd=None,reject=False,mismatch=False,silent=False,key_rate=.000125,target='RZ03-0499',profile=1):
         super().__init__(daemon=True)
         self.fd,self.reject,self.mismatch,self.silent = fd,reject,mismatch,silent
         self.inbox = queue.Queue()
@@ -55,7 +56,8 @@ class Device(threading.Thread):
         self.flags,self.ack,self.result,self.sequence = 7,0,0,0
         self.error = None
         self.calibration_state = 0
-        self.build = 'v0.1.0-RZ03-0499 git='+'a'*40+' state=dirty'
+        self.build = f'v0.1.0-{target} git='+'a'*40+' state=dirty'
+        self.profile=profile
         self.raw = None  # optional 61-value override for the next snapshots
         self.velocity_start = 1
         self.performance_mode = 0
@@ -127,7 +129,7 @@ class Device(threading.Thread):
                         self.key_seq += 1; self.key_first = False; last = time.monotonic()
                     elif self.stream_mode == 'gui' and time.monotonic()-last > .03:
                         self.emit(sx.SNAPSHOT,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,
-                                               calibration_state=self.calibration_state,raw=self.raw,
+                                               calibration_state=self.calibration_state,raw=self.raw,profile=self.profile,
                                                velocity_start=self.velocity_start,performance_mode=self.performance_mode,
                                                states=[9,9]+[1]*59 if self.calibration_state==3 else None))
                         self.sequence += 1; last = time.monotonic()
@@ -204,17 +206,17 @@ class Tests(unittest.TestCase):
         mapping = [255]*61; mapping[32]=60
         s=decode(packet(mapping=mapping,performance_mode=1,octave=-2))
         self.assertEqual((s.performance_mode,s.octave,s.midi_mapping[32]),(1,-2,60))
-        p=profile_from_snapshot(s)
-        self.assertEqual(p['version'],2)
-        validate_profile(p)
-        with self.assertRaisesRegex(ValueError,'version 2'): validate_profile({**p,'version':1})
+        p=profile_from_snapshot(s,'RZ03-0499')
+        self.assertEqual(p['version'],3)
+        validate_profile(p,'RZ03-0499',1)
+        with self.assertRaisesRegex(ValueError,'version 3'): validate_profile({**p,'version':2},'RZ03-0499',1)
         for key in p['keys']:
             if key['label'] in ('Fn','LCt','LGu','LAl','RAl','RCt','Spc'):
                 key['midi']=60
-                with self.assertRaisesRegex(ValueError,'Reserved MIDI'): validate_profile(p)
+                with self.assertRaisesRegex(ValueError,'Reserved MIDI'): validate_profile(p,'RZ03-0499',1)
                 key['midi']=255
         p['keys'][32]['midi']=128
-        with self.assertRaises(ValueError): validate_profile(p)
+        with self.assertRaises(ValueError): validate_profile(p,'RZ03-0499',1)
         for offset,value in ((1032,2),(1033,11),(1034,2),(1035,2),(1036,128),(1101,1),(1112,1)):
             bad=bytearray(packet()); bad[offset]=value
             struct.pack_into('<I',bad,len(bad)-4,sum(struct.unpack_from(f'<{(len(bad)-4)//2}H',bad)))
@@ -348,13 +350,13 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError): decode(packet(velocity=[value]*61))
 
     def test_profiles(self):
-        profile = profile_from_snapshot(decode(packet()))
-        self.assertEqual(len(validate_profile(profile)),61)
+        profile = profile_from_snapshot(decode(packet()),'RZ03-0499')
+        self.assertEqual(len(validate_profile(profile,'RZ03-0499',1)),61)
         for field,value in (('sensor',61),('label','Wrong'),('press',3700),('press',True),('release',4097)):
             bad = copy.deepcopy(profile); bad['keys'][0][field] = value
-            with self.assertRaises(ValueError): validate_profile(bad)
+            with self.assertRaises(ValueError): validate_profile(bad,'RZ03-0499',1)
         bad = copy.deepcopy(profile); bad['keys'][0] = bad['keys'][1]
-        with self.assertRaises(ValueError): validate_profile(bad)
+        with self.assertRaises(ValueError): validate_profile(bad,'RZ03-0499',1)
 
     def test_transport_key_stream_switch(self):
         resources = self.transport(); _,_,device,connection = resources
@@ -415,6 +417,58 @@ class Tests(unittest.TestCase):
             until(lambda:connection.snapshot()[1].press == (3100,)*61)
             self.assertEqual(connection.snapshot()[1].release,(3400,)*61)
         finally: self.cleanup(*resources)
+
+    def test_board_contracts(self):
+        from keyboard_capture import press_velocity
+        huntsman=board_for_target('RZ03-0499')
+        fun60=board_for_target('monsgeek_fun60_pro_wired')
+        self.assertEqual(huntsman.labels()[32],'A')
+        self.assertEqual(fun60.labels()[29],'A')
+        for board,fn_left in ((huntsman,True),(fun60,False)):
+            keys={key.label:key for key in board.geometry()}
+            self.assertEqual(keys['Fn'].x<keys['RAl'].x,fn_left)
+            self.assertEqual(sorted(key.sensor for key in keys.values()),list(range(61)))
+            snapshot=decode(packet(profile=board.graphical_profile),board.target)
+            profile=profile_from_snapshot(snapshot,board.target)
+            self.assertEqual(len(validate_profile(profile,board.target,board.graphical_profile)),61)
+            other=fun60 if board==huntsman else huntsman
+            with self.assertRaises(ValueError):validate_profile(profile,other.target,other.graphical_profile)
+            with self.assertRaises(ValueError):decode(packet(profile=board.graphical_profile),other.target)
+        self.assertEqual(press_velocity([3500,3400,3300],huntsman.scan_hz),800000)
+        self.assertEqual(press_velocity([3500,3400,3300],fun60.scan_hz),100000)
+        for invalid in (0,-1,True,float('nan')):
+            with self.assertRaises(ValueError):press_velocity([3500,3400],invalid)
+
+    def test_fun60_transport(self):
+        resources=self.transport(target='monsgeek_fun60_pro_wired',profile=4,key_rate=.001)
+        _,_,device,connection=resources
+        try:
+            until(lambda:connection.connected)
+            self.assertEqual(connection.board.scan_hz,1000)
+            self.assertEqual(connection.snapshot()[1].profile,4)
+            connection.submit('set',29,3000,3250)
+            until(lambda:connection.snapshot()[1].press[29]==3000)
+            self.assertEqual(connection.snapshot()[1].release[29],3250)
+            connection.submit('midi',29,61)
+            until(lambda:connection.snapshot()[1].midi_mapping[29]==61)
+            connection.stream_key(3000,29)
+            until(lambda:connection.stream_mode=='key' and connection.samples)
+            self.assertEqual(connection.key_sensor,29)
+            self.assertTrue(connection.drain_samples(29))
+            connection.stream_gui();until(lambda:connection.stream_mode=='gui')
+        finally:self.cleanup(*resources)
+
+    def test_unknown_or_wrong_board_rejected(self):
+        for target,profile,commands in (('unknown-board',1,0),('RZ03-0499',4,1),('monsgeek_fun60_pro_wired',1,1)):
+            resources=self.transport(target=target,profile=profile)
+            _,_,device,connection=resources
+            try:
+                connection.submit('all',2000,2500)
+                until(lambda:not connection.is_alive())
+                self.assertFalse(connection.connected)
+                self.assertLessEqual(len(device.commands),commands)
+                self.assertTrue(all(c[1]=='get' for c in device.commands))
+            finally:self.cleanup(*resources)
 
     def test_transport_rejection_and_readback_mismatch_cancel(self):
         for option in ('reject','mismatch'):

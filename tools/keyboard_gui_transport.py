@@ -6,12 +6,11 @@ import threading
 import time
 from firmware_defaults import DEFAULTS as D
 from keyboard_gui_model import decode, parse_build
+from keyboard_boards import board_for_target
 from keyboard_capture import KeyDecoder
 from midi_backend import MidiBackend, find_midi_device
 import midi_sysex as sx
 
-USB_VENDOR_ID = 0x1532
-USB_PRODUCT_ID = 0x02b0
 SAMPLE_CAPACITY = D['MIDI_CONTROL_CAPTURE_SAMPLES']
 
 class Connection(threading.Thread):
@@ -28,10 +27,11 @@ class Connection(threading.Thread):
         self.latest = None
         self.build = None        # build identity from `version`, e.g. v0.1.0-RZ03-0499
         self.build_target = None # its board target, e.g. RZ03-0499
+        self.board = None
         self.connected = False
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = deque(maxlen=1)  # latest requested display mode wins
-        self.stream_mode = 'gui'  # 'gui' (HKG telemetry) or 'key' (HKL1 8 ksps)
+        self.stream_mode = 'gui'  # HKG telemetry or HKL1 at the board's scan rate
         self.key_threshold = self.key_sensor = self.key_session = None
         self.samples = deque(maxlen=SAMPLE_CAPACITY)
         self.samples_lock = threading.Lock()
@@ -44,7 +44,7 @@ class Connection(threading.Thread):
         self.requests.put_nowait((action,args))
 
     def stream_key(self,threshold,sensor):
-        """Switch the device to the 8 ksps per-key stream for one sensor."""
+        """Switch the device to its full-rate stream for one sensor."""
         self.stream_requests.append(('key',threshold,sensor,secrets.randbelow(0xfffffffe)+1))
 
     def stream_gui(self):
@@ -120,7 +120,7 @@ class Connection(threading.Thread):
                 if kind == sx.ACK and sequence == self.sequence:
                     acknowledged, ack_payload = True, payload
                 if kind == sx.SNAPSHOT and action:
-                    snapshot = decode(payload)
+                    snapshot = decode(payload,self.build_target)
                     if snapshot.ack == self.next_id:
                         if snapshot.result != 1: raise ValueError('Device rejected configuration; remaining changes cancelled')
                         confirmed = snapshot
@@ -138,7 +138,7 @@ class Connection(threading.Thread):
         if message:
             kind, _, _, payload = message
             if kind == sx.SNAPSHOT and self.stream_mode == 'gui':
-                snapshot = decode(payload)
+                snapshot = decode(payload,self.build_target)
                 self.last_rx = time.monotonic()
                 with self.lock: self.latest = self.last_rx, snapshot
             elif kind == sx.SAMPLES and self.stream_mode == 'key':
@@ -169,6 +169,7 @@ class Connection(threading.Thread):
                     found = parse_build(message[3]+b'\n')
                     if not found: raise ValueError('Invalid device build identity')
                     self.build, self.build_target = found[0], found[2]
+                    self.board = board_for_target(self.build_target)
                     self.notify(f'Device build {self.build}')
                     break
                 if time.monotonic() >= deadline: raise TimeoutError('MIDI SysEx handshake timed out')

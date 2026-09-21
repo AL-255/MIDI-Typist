@@ -69,21 +69,23 @@ but LOG messages have independent framing and can accompany either.
 Latest-only: a newer snapshot replaces an unsent one, so gaps are expected and
 only the newest state matters. 1152 bytes, little-endian, no faster than one per
 33 ms. This table is the authoritative layout.
+The shared `keyboard_telemetry_encode` routine serializes application state;
+the board supplies acquisition/LED health, ACKs and snapshot scheduling.
 
 | Offset | Encoding | Meaning |
 | --- | --- | --- |
 | 0 | 4 bytes | `HKG` and a NUL byte: constant frame magic |
 | 4 | u16 | 1152 |
 | 6 | u8 | Fn+V transmitted-velocity start, 1…10 (1 = 0%, 10 = 100%) |
-| 7, 8 | u8 each | profile 0…3, sensor count 0/61/62/65 |
+| 7, 8 | u8 each | layout ID and sensor count: 0/0 undiscovered; Huntsman 1/61, 2/62, 3/65; FUN60 4/61 |
 | 9 | u8 flags | enabled=1, armed=2, valid=4, scan fault=8, LED fault=16, Fn held=32, Jankó layout=64 |
 | 10 | u8 | last command result: initial=0, accepted=1, rejected=2 |
 | 11 | u8 | keyboard Fn trigger editor mode 0…2, **not** performance mode |
 | 12 | u32 | snapshot sequence |
 | 16 | u32 | RAM configuration revision |
 | 20 | u32 | ID of the last command this snapshot acknowledges |
-| 24, 28 | u32 each | optical and LED error counts |
-| 32 | 65 × u16 | raw samples, ~3900 released … ~1000 fully pressed |
+| 24, 28 | u32 each | acquisition and LED error counts |
+| 32 | 65 × u16 | canonical samples, 1…4096 decreasing with travel; Huntsman typically ~3900 released … ~1000 fully pressed |
 | 162 | 65 × u16 | press thresholds |
 | 292 | 65 × u16 | release thresholds |
 | 422 | 9 bytes | sensor-down bitmap |
@@ -109,6 +111,7 @@ Unused sensor slots are zero, including MIDI mapping padding; **active** unmappe
 slots are 255. Frames carry no version number: the constant magic and size
 identify the layout, and the build identity below records which application
 produced them. The decoder validates magic, size, checksum, reserved bytes,
+and the target/layout/count combination against the selected board contract,
 value ranges and padding. The enclosing SysEx message supplies framing and protocol version;
 CRC or payload validation errors fail the connection.
 

@@ -111,16 +111,19 @@ cancels unsent queued changes.
 
 ## Host JSON
 
-Version 1 remains threshold-only. Version 2 adds integer `midi` to every one of
-the 61 ANSI key objects:
+The current version-3 host profile contains an integer `midi` in every key object:
 
 ```json
 {"sensor": 32, "label": "A", "press": 3500, "release": 3600, "midi": 60}
 ```
 
-The surrounding object has `version: 2`, `layout: "ansi"`, and `keys` containing
-all 61 unique, correctly labelled sensors. Notes are 0…127 or 255; reserved
+The surrounding object has `version: 3`, `target` equal to the connected
+firmware build target, numeric `layout` equal to its profile ID, and `keys`
+containing every unique, correctly labelled sensor. For Huntsman ANSI these
+are `target: "RZ03-0499"`, `layout: 1`; FUN60 uses
+`target: "monsgeek_fun60_pro_wired"`, `layout: 4`. Notes are 0…127 or 255; reserved
 control keys must use 255. Invalid pairs, boolean numeric fields, duplicates,
 wrong labels, missing entries and invalid MIDI values are rejected before
-commands are queued. The GUI accepts only version-2 JSON. Mode, octave and calibration
+commands are queued. The GUI accepts only version-3 JSON for the connected
+board/layout; it never translates sensor indices between boards. Mode, octave and calibration
 persist in the complete device snapshot but are not included in host JSON.

@@ -4,7 +4,7 @@ from firmware_defaults import DEFAULTS as D, initializer
 import struct
 import math
 import re
-from keyboard_labels import sensor_labels
+from keyboard_boards import BOARDS, KNOWN_TARGETS, board_for_target
 
 SIZE = 1152
 MIDI_CONTROLS = {'Fn':'mode', 'RAl':'oct−', 'RCt':'oct+',
@@ -16,7 +16,6 @@ MAGIC = b'HKG\x00'
 # board model the firmware targets, e.g. v0.1.0-RZ03-0499.
 BUILD_RE = re.compile(r'build=(v(\d+\.\d+\.\d+)-([A-Za-z0-9_.-]+) '
                       r'git=([0-9a-f]{40}|[0-9a-f]{64}|unknown) state=(clean|dirty|unknown))\r?\n')
-KNOWN_TARGETS = {'RZ03-0499':'Huntsman V3 Pro Mini'}
 FLAG_JANKO = 64  # the built-in Jankó note layout is active
 def note_name(note):
     return 'Off' if note == 255 else f'{("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")[note%12]}{note//12-1}'
@@ -85,13 +84,14 @@ def parse_build(text):
     return match[1],match[2],match[3]
 
 
-def decode(data):
+def decode(data,target=None):
     if len(data) != SIZE or data[:4] != MAGIC:
         raise ValueError('bad GUI frame size/magic')
     size, velocity_start, profile, count, flags, result, mode = struct.unpack_from('<H6B',data,4)
     if size != SIZE or mode > 2 or flags & ~127 or result > 2 or not 1 <= velocity_start <= 10:
         raise ValueError('unsupported GUI header')
-    if (profile,count) not in ((0,0),(1,61),(2,62),(3,65)):
+    boards=(board_for_target(target),) if target is not None else BOARDS.values()
+    if not any(board.accepts(profile,count) for board in boards):
         raise ValueError('invalid GUI layout')
     if sum(struct.unpack_from(f'<{(size-4)//2}H',data)) & 0xffffffff != struct.unpack_from('<I',data,size-4)[0]:
         raise ValueError('GUI checksum mismatch')
@@ -162,64 +162,37 @@ class Decoder:
             yield result
 
 
-@dataclass(frozen=True)
-class Key:
-    sensor: int
-    label: str
-    x: float
-    y: float
-    width: float
-
-
-def ansi_geometry():
-    """Standard 15-unit ANSI 60% key sizes; sensor IDs come from recovered maps."""
-    rows = [
-        [('Esc',1)] + [(s,1) for s in '1234567890-='] + [('BkS',2)],
-        [('Tab',1.5)] + [(s,1) for s in 'QWERTYUIOP[]'] + [('\\',1.5)],
-        [('Cap',1.75)] + [(s,1) for s in "ASDFGHJKL;'"] + [('Ent',2.25)],
-        [('LSh',2.25)] + [(s,1) for s in 'ZXCVBNM,./'] + [('RSh',2.75)],
-        [('LCt',1.25),('LGu',1.25),('LAl',1.25),('Spc',6.25),
-         ('Fn',1.25),('RAl',1.25),('Mnu',1.25),('RCt',1.25)],
-    ]
-    labels = sensor_labels()[61]
-    keys = []
-    for y,row in enumerate(rows):
-        x = 0
-        for label,width in row:
-            keys.append(Key(labels.index(label),label,x,y,width))
-            x += width
-        assert x == 15
-    assert sorted(k.sensor for k in keys) == list(range(61))
-    return keys
-
-
 def validate_pair(press,release):
     if type(press) is not int or type(release) is not int or not 1 <= press < release < 4096:
         raise ValueError('Require 1 <= press < release <= 4095 (press below; release above).')
     return press,release
 
 
-def profile_from_snapshot(snapshot):
-    if snapshot.profile != 1 or snapshot.count != 61:
-        raise ValueError('This GUI supports the connected ANSI 61-key board only.')
-    labels = sensor_labels()[61]
-    return {'version':2,'layout':'ansi','keys':[
+def profile_from_snapshot(snapshot,target):
+    board=board_for_target(target)
+    if not board.graphical(snapshot.profile,snapshot.count):
+        raise ValueError('Unsupported graphical layout for this board.')
+    labels = board.labels()
+    return {'version':3,'target':target,'layout':snapshot.profile,'keys':[
         {'sensor':i,'label':labels[i],'press':snapshot.press[i],'release':snapshot.release[i],
          'midi':snapshot.midi_mapping[i]}
-        for i in range(61)]}
+        for i in range(snapshot.count)]}
 
 
-def validate_profile(data):
-    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') != 2 or data.get('layout') != 'ansi':
-        raise ValueError('Expected an ANSI profile, version 2.')
+def validate_profile(data,target,profile):
+    board=board_for_target(target)
+    if not isinstance(data,dict) or type(data.get('version')) is not int or data.get('version') != 3:
+        raise ValueError('Expected a board-specific profile, version 3.')
+    if data.get('target')!=target or type(data.get('layout')) is not int or data['layout']!=profile or profile!=board.graphical_profile:
+        raise ValueError('Profile belongs to a different board or layout.')
     keys = data.get('keys')
-    if not isinstance(keys,list) or len(keys) != 61: raise ValueError('Profile must contain all 61 keys.')
-    labels = sensor_labels()[61]
+    labels = board.labels()
+    if not isinstance(keys,list) or len(keys) != len(labels): raise ValueError('Profile must contain every key.')
     result = {}
     for key in keys:
         if not isinstance(key,dict): raise ValueError('Invalid profile key.')
         index = key.get('sensor')
-        if type(index) is not int or not 0 <= index < 61 or index in result or key.get('label') != labels[index]:
+        if type(index) is not int or not 0 <= index < len(labels) or index in result or key.get('label') != labels[index]:
             raise ValueError('Profile sensor/label mismatch or duplicate.')
         result[index] = validate_pair(key.get('press'),key.get('release'))
         note = key.get('midi')
@@ -257,7 +230,7 @@ class KeystrokeCapture:
         self.points = []
         self.prev_down = None  # None: adopt the next frame as baseline, never trigger
         self.fit = None      # (captures, velocity) of the keystroke's fit, if any
-        self.velocity = None # host-computed raw counts/s (8 ksps captures)
+        self.velocity = None # host-computed raw counts/s at the board's scan rate
         self.captures0 = None
         self.done = False
         self.armed = True
@@ -287,11 +260,12 @@ class KeystrokeCapture:
         return True
 
     def feed_sample(self, raw, press, release):
-        """Consume one full-rate (8 ksps) key-stream sample.
+        """Consume one full-rate key-stream sample.
 
         The down state uses the selected key's Schmitt pair; every sample is
         appended to an active capture for the bottom-out/ten-point device
-        velocity window. Its timebase assumes 8 kHz, not a measured cadence.
+        velocity window. The caller supplies the board's nominal rate when
+        computing velocity; measured delivery rate is a separate diagnostic.
         """
         down = (raw < press) if not self.prev_down else (raw <= release)
         return self.feed(raw, down)

@@ -46,6 +46,9 @@ Shared application contracts are documented separately from those wire formats.
 
 ## Application and board ports
 
+- [MonsGeek FUN60 PRO Wired](MONSGEEK_FUN60_PRO.md): HAL, update protocol,
+  erase boundaries and verification limits; not a flashable port yet.
+
 - [Architecture](ARCHITECTURE.md): shared application, board contracts and compatibility.
 - [Porting guide](PORTING.md): build-manifest and lifecycle examples, sample/key
   contracts, LED/USB/storage ownership, RTOS integration and acceptance checks.

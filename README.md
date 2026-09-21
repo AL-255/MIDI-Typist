@@ -13,6 +13,11 @@ bootloader and computer-initiated updater. A synthetic 104-key desktop port
 demonstrates the shared application without NXP dependencies. Other hardware
 requires a board port, not this binary.
 
+The [MonsGeek FUN60 PRO Wired backend](docs/MONSGEEK_FUN60_PRO.md) has an
+official-Artery-SDK HAL and an offline-audited IAP protocol implementation.
+Its complete USB/application/GUI integration is not yet flashable; do not upload
+the HAL library or a Huntsman image to it.
+
 ## Use the keyboard
 
 - NKRO typing, right-side arrows and a green-hinted Fn shortcut layer.

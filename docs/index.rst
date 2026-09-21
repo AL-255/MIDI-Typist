@@ -50,5 +50,6 @@ the shared application to another board. These pages describe the latest build.
    :caption: Development
 
    Porting guide <docs/PORTING>
+   MonsGeek FUN60 PRO Wired backend <docs/MONSGEEK_FUN60_PRO>
    Documentation and Pages CI <docs/DOCUMENTATION>
    Contributor rules <AGENTS>

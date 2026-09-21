@@ -1,9 +1,14 @@
 # Keyboard configuration GUI
 
-The Linux/POSIX Tk GUI targets the Huntsman ANSI layout and the complete
-`huntsman` firmware. It edits thresholds/mappings, displays per-key velocity,
+The Linux/POSIX Tk GUI selects its hardware contract from the connected
+firmware's build target, not the number of keys. It edits thresholds/mappings, displays per-key velocity,
 starts parallel calibration, exports JSON profiles and can explicitly flash
 an application. ISO/JIS editing is rejected rather than mislabelling keys.
+Huntsman ANSI is supported by the complete `huntsman` firmware. The
+[FUN60 configuration backend](MONSGEEK_FUN60_PRO.md) is exercised with a
+simulated MIDI peer; its complete physical firmware and flashing integration
+are not yet ready. Unknown targets and mismatched target/layout pairs are
+rejected before configuration edits.
 
 ## Build and run
 
@@ -19,7 +24,7 @@ build-gui-venv/bin/python tools/keyboard_gui.py --demo
 The GUI is the only supported PC application. Select the paired MIDI control
 port; auto-detection works when exactly one board matches. The dropdown lists
 multiple boards. `--device "PORT NAME"` also selects one explicitly. Linux
-ALSA truncates long port names; the GUI recognizes the Huntsman's second
+ALSA truncates long port names; the GUI recognizes each registered board's second
 cable. Use the first, performance cable in the DAW. No serial node is exposed.
 
 Only one GUI owner is supported; a fresh handshake replaces the previous
@@ -28,7 +33,9 @@ Confirmed flashing uses raw USB and may request PolicyKit authorization.
 Linux is hardware-tested; other RtMidi backends are not validated.
 
 Connect and select a key. The drawing uses recovered sensor identities and
-60% key geometry, with Fn immediately right of Space and Right Alt next.
+60% key geometry. Huntsman places Fn immediately right of Space, then Right
+Alt; FUN60 places Right Alt before Fn. Reconnecting to another board replaces
+geometry and clears capture state; sensor numbers are never interchangeable.
 Tiles show raw values, down state and latest velocity. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
@@ -137,7 +144,7 @@ truncate the capture. The plot shows raw ticks, threshold lines, trigger and
 the velocity fit.
 
 The host reproduces the same up-to-ten-sample bottom-out window and filter,
-using the fixed 8000 Hz assumption, to draw its fitted line and attributed
+using the board's nominal full-matrix rate (8000 Hz Huntsman, 1000 Hz FUN60), to draw its fitted line and attributed
 velocity. The measured arrival rate is shown separately. Ordinary GUI velocity
 still comes directly from firmware; `--demo` uses simulated snapshots and
 does not establish real capture timing.
@@ -153,14 +160,18 @@ with calibration in the two custom tail pages. Release all keys, leave no menu
 open, and allow 250 ms without changes. Status shows **pending**, **saved** or
 **failure**. A configuration ACK proves RAM application, not durability.
 
-Fn+R/explicit `cfg clean` deletes custom settings/calibration. Compatible updates
-keep them; missing/corrupt saves initialize defaults. See [storage](DEVICE_CONFIG_STORAGE.md).
+Fn+R/explicit `cfg clean` deletes custom settings/calibration. Huntsman updates
+retain its custom tail records; FUN60's IAP erases its entire application,
+including custom storage. Missing/corrupt saves initialize defaults. See
+[Huntsman storage](DEVICE_CONFIG_STORAGE.md) and [FUN60 boundaries](MONSGEEK_FUN60_PRO.md#application-storage-boundary).
 
 Host JSON exports thresholds and mappings, not calibration or all menu settings.
 Import validates the entire file before sending commands, temporarily disables
 output and checks each edit. The batch is not atomic: a failure can leave
 already-confirmed changes and disabled output. Inspect and retry deliberately.
-Only version-2 profiles containing thresholds and MIDI mappings are accepted.
+Only version-3 profiles containing the exact build target, numeric layout ID,
+thresholds and MIDI mappings are accepted. A file for another board/layout is
+rejected even when both have 61 keys; there is no format migration or fallback.
 
 ## MIDI SysEx protocol
 

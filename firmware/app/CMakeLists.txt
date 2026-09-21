@@ -1,4 +1,10 @@
 # Shared, SDK-free application sources. Included by board and test targets.
+set(MT_STORE_SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/device_store.c)
+set(MT_TELEMETRY_SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/keyboard_telemetry.c)
+set(MT_CONTROL_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/src/midi_control.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/scan_stream.c
+)
 set(MT_APP_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/midi_sysex.c
     ${CMAKE_CURRENT_LIST_DIR}/src/keyboard_app.c

@@ -1,8 +1,10 @@
 # Building and testing MIDI-Typist from a fresh checkout
 
 Use `huntsman` for the complete physical keyboard or `simulator` for the
-SDK-free desktop reference. Only the Huntsman cross build needs Arm GNU and
-the pinned NXP components. For another keyboard/MCU, follow the
+SDK-free desktop reference. Huntsman uses Arm GNU and the pinned NXP components.
+The [FUN60 PRO HAL build](MONSGEEK_FUN60_PRO.md#source-and-build-boundaries)
+also uses Arm GNU, with the official Artery submodule; it produces no flashable image.
+For another keyboard/MCU, follow the
 [porting guide](PORTING.md), including its board-manifest and lifecycle examples.
 
 ## Prerequisites
@@ -82,7 +84,7 @@ endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.
 
 The complete application builds without the updater, extraction or private
-device data. The 15 native suites pass. See [validation status](VALIDATION.md)
+device data. See [validation status](VALIDATION.md)
 for the hardware boundary. Newlib may emit linker warnings about unimplemented
 `_close`, `_lseek`, `_read` and `_write`; those functions are absent from the
 final linked image after garbage collection. MIDI SysEx debug output uses the
@@ -126,7 +128,7 @@ alternate defaults, rejects invalid combinations and checks host consistency.
 
 ## Tests that need no original firmware or device
 
-The 15 CTest suites run in parallel and cover application portability and architecture boundaries,
+The native CTest suites run in parallel and cover application portability and architecture boundaries,
 core logic, raw keyboard/velocity, MIDI state and
 interruptible text lighting,
 Fn menu/threshold conversion, parallel calibration/storage, GUI model/MIDI mock transport, image reservation,
@@ -169,7 +171,7 @@ python3 tools/run_tests.py
 ```
 
 This configures/builds the native and complete `huntsman` targets, then runs
-19 independent audit jobs (including all 15 native CTest suites) with up to
+19 independent audit jobs (including the native CTest suites) with up to
 eight workers. It includes original-reference comparisons, linked ARM USB,
 optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated MIDI peers.
 The total deadline, including builds, is **300 seconds**; failures, missing

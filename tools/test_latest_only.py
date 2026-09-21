@@ -45,9 +45,9 @@ class LatestOnlyTests(unittest.TestCase):
 
     def test_only_current_host_profile(self):
         from keyboard_gui_model import validate_profile
-        for version in (0, 1, 3):
-            with self.assertRaisesRegex(ValueError, 'version 2'):
-                validate_profile({'version':version, 'layout':'ansi', 'keys':[]})
+        for version in (0, 1, 2, 4):
+            with self.assertRaisesRegex(ValueError, 'version 3'):
+                validate_profile({'version':version, 'layout':'ansi', 'keys':[]},'RZ03-0499',1)
 
 
 if __name__ == '__main__':

@@ -345,7 +345,8 @@ def velocity_tests(args):
     s = snapshot(dev)
     final_window = [3480,3400,3390,3380,3370,3360,3360,3360,3360,3360]
     assert s.captures[0] == baseline+2 and s.captures[1:] == (1,)*64, s.captures
-    assert abs(s.velocity[0] - max(0,min(1,press_velocity(final_window)/4500000))) < 1e-7
+    from firmware_defaults import DEFAULTS
+    assert abs(s.velocity[0] - max(0,min(1,press_velocity(final_window,DEFAULTS['HUNTSMAN_ASSUMED_SCAN_HZ'])/4500000))) < 1e-7
 
     fixtures = [
         ([3510,3520,3530,3540,3550,3560,3570,3580,3590], False, -80000),   # rising -> 0

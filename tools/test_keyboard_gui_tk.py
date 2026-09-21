@@ -35,7 +35,7 @@ def main():
         from flash_models import ConnectedDevice, FirmwareImage
         tab=app.flash_tab
         assert len(app.notebook.tabs())==2
-        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3']
+        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3','MonsGeek FUN60 PRO Wired']
         with patch.object(tab.adapter,'discover',side_effect=AssertionError('demo accessed USB')):
             app.notebook.select(tab);root.update()
         assert str(tab.flash_button['state'])=='disabled'
@@ -58,6 +58,27 @@ def main():
             from dataclasses import replace
             tab.show_device(replace(device,mode=mode));tab.set_options()
             assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
+        # Inventory-only FUN60 entry remains disabled even with a forged image
+        # selection; a live connection to another board cannot label its build.
+        huntsman_name=tab.model.get()
+        tab.model.set('MonsGeek FUN60 PRO Wired')
+        app.connection=SimpleNamespace(connected=True,build='v0.1.0-RZ03-0499 git='+'a'*40+' state=clean')
+        fun60=ConnectedDevice(tab.adapter.id,'1-3','fun60-token','custom','FUN60 PRO MIDI-Typist',
+            'TEST-MCU-ID','Not queried','3151:502d','480 Mb/s',{'Flashing':tab.adapter.unavailable})
+        tab.show_device(fun60);tab.set_options()
+        assert tab.identity['Firmware'].get()=='Not queried'
+        assert not tab.action_widgets and 'Flashing disabled' in tab.option_note.get()
+        tab.image=FirmwareImage('unused.bin',b'unused','a'*64,'custom','Test image')
+        tab.confirm_model.set(True);tab.sync()
+        assert str(tab.flash_button['state'])=='disabled' and str(tab.inspect_button['state'])=='disabled'
+        with patch.object(tab,'launch_worker') as launch:
+            tab.flash();tab.inspect();launch.assert_not_called()
+        app.connection.build='v0.1.0-monsgeek_fun60_pro_wired git='+'b'*40+' state=dirty'
+        tab.show_device(fun60)
+        assert tab.identity['Firmware'].get()==app.connection.build
+        tab.model.set(huntsman_name);tab.show_device(device);tab.set_options()
+        assert tab.identity['Firmware'].get()==device.version
+        app.connection=None
         app.demo=True;app.notebook.select(0);root.update()
         assert len(app.items) == 61 and len(app.canvas.find_all()) == 244
         assert app.usable() is False
@@ -94,7 +115,7 @@ def main():
         assert app.device.get() == '/dev/fake' and 'Detected' in app.message.get()
         with patch('keyboard_gui.find_midi_device',return_value=None):
             app.detect()
-        assert app.device.get() == '' and 'No USB 1532:02b0' in app.message.get()
+        assert app.device.get() == '' and 'No unique MIDI-Typist' in app.message.get()
         app.hold_button.invoke()
         assert app.hold_mode.get() and app.capture.armed
         root.update()
@@ -271,8 +292,34 @@ def main():
             assert app.device.get() == 'Fake Control'
             app.toggle_connection()
             pump_until(lambda:not app.connection.is_alive())
+            device.stop_event.set();device.join(1)
+            device=Device(target='monsgeek_fun60_pro_wired',profile=4,key_rate=.001)
+            device.start();app.device.set('FUN60 Control');app.toggle_connection()
+            pump_until(app.usable)
+            assert app.board.target=='monsgeek_fun60_pro_wired' and app.snapshot.profile==4
+            assert 'MonsGeek FUN60 PRO Wired' in root.title()
+            keys={key.label:key for key in app.keys}
+            assert keys['A'].sensor==29 and keys['RAl'].x<keys['Fn'].x
+            app.select(keys['A'].sensor);root.update()
+            assert 'nominal 1,000 Hz' in app.details.get()
+            assert app.canvas.itemcget(app.titles[29],'text').startswith('A/')
+            app.press.set('3000');app.release.set('3300');app.apply_button.invoke()
+            pump_until(lambda:app.snapshot.press[29]==3000 and app.snapshot.release[29]==3300)
+            app.midi_note.set('C#4');app.midi_button.invoke()
+            pump_until(lambda:app.snapshot.midi_mapping[29]==61)
+            assert device.press[32]==3500  # same-size board, different sensor order
+            app.hold_button.invoke();pump_until(lambda:app.key_capture and app.connection.key_sensor==29)
+            pump_until(lambda:app.capture.prev_down is False)
+            ramp={'n':0}
+            def fun60_ramp(seq):
+                ramp['n']+=1
+                return max(100,3900-(ramp['n']%100)*50)
+            device.key_cb=fun60_ramp
+            pump_until(lambda:app.capture.velocity==50000,4)
+            assert '50,000 counts/s' in app.hold_status.get()
+            app.toggle_connection();pump_until(lambda:not app.connection.is_alive())
             app.close(); root = None
-            print('PASS Tk+SysEx: calibration arm/status/disabled edits/cancel, select A, apply pair/all/MIDI, MIDI trigger point, velocity start, 8 ksps keystroke hold mode, device auto-detect, disable, disconnect')
+            print('PASS Tk+SysEx: Huntsman/FUN60 identity, layout switching, thresholds/MIDI, board-rate captures, calibration, auto-detect, disconnect')
         finally:
             device.stop_event.set(); device.join(1)
             transport_patch.stop()

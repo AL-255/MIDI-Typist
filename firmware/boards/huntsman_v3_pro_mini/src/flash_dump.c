@@ -3,6 +3,9 @@
 #include "board_config.h"
 #include "fsl_iap.h"
 #include "device_store.h"
+#include "storage_geometry.h"
+_Static_assert(CAL_SLOT_A==0x78000 && CAL_SLOT_B==0x78200 && CAL_PAGE_SIZE==512,
+               "review physical storage geometry before changing");
 #include <string.h>
 
 /* No ROM calls: the original application uses the controller command path,
