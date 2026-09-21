@@ -54,6 +54,7 @@ void m1_test_live_battery(uint8_t percent,bool valid)
 __attribute__((used,section(".test_exports")))
 const void *const m1_live_test_exports[]={
     m1_live_init,m1_live_service,m1_live_stop,m1_live_scan_losses,m1_live_transport,m1_live_transport_fault,
+    m1_live_factory_result,
     m1_test_live_frame,m1_test_live_periodic,m1_test_live_led,m1_test_live_get,
     scan_stream_lost,scan_stream_dropped,
     m1_radio_init,m1_radio_service,m1_radio_healthy,m1_radio_ready,

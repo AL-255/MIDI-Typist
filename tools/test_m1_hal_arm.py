@@ -7,7 +7,7 @@ The ELF uses a synthetic code address and has no boot header/vector table.
 import argparse
 import struct
 from elftools.elf.elffile import ELFFile
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ, UC_HOOK_CODE
+from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ, UC_HOOK_CODE, UC_PROT_READ
 from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M4, UC_ARM_REG_R0,
     UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP,
     UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
@@ -1345,6 +1345,63 @@ def power_gpio(elf):
     print('PASS M1 sleep GPIO: exact owned pin roles/order, retained PA11 latch, sequential switch reads, idle/USB/context guards, battery/USB exclusion and cable-arrival restoration')
 
 
+FACTORY_UPPER,FACTORY_LOWER,FACTORY_PAGE = 0x08032000,0x08032800,2048
+
+
+def factory_memory(dev,distinct=False):
+    """Synthetic private-page fixtures; no original device data or image."""
+    dev.cpu.mem_map(FACTORY_UPPER,2*FACTORY_PAGE)
+    pages=bytearray(b'\xff'*(2*FACTORY_PAGE))
+    for record in m1_records():
+        cell=record[2]*6+record[1]
+        struct.pack_into('<H',pages,cell*2,3900-cell if distinct else 3999)
+        struct.pack_into('<H',pages,FACTORY_PAGE+cell*2,1000+cell if distinct else 999)
+    for offset in (0,FACTORY_PAGE):pages[offset+2045:offset+2048]=bytes((1,0x55,0xaa))
+    dev.cpu.mem_write(FACTORY_UPPER,bytes(pages))
+    dev.cpu.mem_protect(FACTORY_UPPER,2*FACTORY_PAGE,UC_PROT_READ)
+    dev.factory_reads=[]
+    def read(cpu,access,address,size,value,user):
+        offset=(address-FACTORY_UPPER)%FACTORY_PAGE
+        assert size==1 and (offset<252 or 2045<=offset<2048),hex(address)
+        assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
+        dev.factory_reads.append(address)
+    dev.cpu.hook_add(UC_HOOK_MEM_READ,read,begin=FACTORY_UPPER,end=FACTORY_LOWER+FACTORY_PAGE-1)
+    return bytes(pages)
+
+
+def factory(elf):
+    for mask in (0,1):
+        d=M1Arm(elf);pages=factory_memory(d,distinct=True)
+        d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        d.cpu.mem_write(RGB,b'\xa5'*332)
+        assert d.call('m1_factory_load',RGB)==0
+        values=struct.unpack('<164H',d.cpu.mem_read(RGB,328))
+        cells=[r[2]*6+r[1] for r in m1_records()]
+        assert values==tuple([1001+c for c in cells]+[3901-c for c in cells])
+        assert d.cpu.mem_read(RGB+328,4)==b'\xa5'*4 and not d.writes
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+        assert len(d.factory_reads)==510 and len(set(d.factory_reads))==510
+        assert bytes(d.cpu.mem_read(FACTORY_UPPER,len(pages)))==pages
+        before=bytes(d.cpu.mem_read(RGB,332));d.factory_reads.clear()
+        assert d.call('m1_factory_load',0)==1 and not d.factory_reads
+        d.put(0x40023c0c,1)
+        assert d.call('m1_factory_load',RGB)==3 and not d.factory_reads
+        d.put(0x40023c0c,0)
+        for address,value,expected in ((FACTORY_UPPER+2047,0,4),
+                (FACTORY_LOWER+2045,0,5),(FACTORY_LOWER,0xffff,6)):
+            d.cpu.mem_write(address,struct.pack('<H',value) if value>255 else bytes((value,)))
+            result=d.call('m1_factory_load',RGB)
+            assert result==expected,(hex(address),value,result,expected)
+            assert bytes(d.cpu.mem_read(RGB,332))==before and not d.writes
+            d.cpu.mem_write(FACTORY_UPPER,pages)
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+    for reg,value in ((UC_ARM_REG_BASEPRI,1),(UC_ARM_REG_FAULTMASK,1),
+                      (UC_ARM_REG_CONTROL,1),(UC_ARM_REG_IPSR,3)):
+        d=M1Arm(elf);factory_memory(d);d.cpu.reg_write(reg,value)
+        assert d.call('m1_factory_load',RGB)==2 and not d.factory_reads and not d.writes
+    print('PASS M1 factory calibration: read-only exact fields, physical remap/normalization, all-or-nothing import, busy/context rejection and IRQ preservation')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf')
@@ -1361,6 +1418,7 @@ def main():
     usb_power(args.elf)
     power_gpio(args.elf)
     sleep_hal(args.elf)
+    factory(args.elf)
 
 
 if __name__=='__main__':main()

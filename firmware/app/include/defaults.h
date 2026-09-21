@@ -160,6 +160,9 @@
 /* M1 acquisition cadence is a requested custom rate, not a stock measurement. */
 #define M1_SCAN_HZ 8000u
 #define M1_ADC_CALIBRATION_WAIT_LOOPS 1000000u
+/* Native ADC baseline range admitted by the factory sample-startup path. */
+#define M1_FACTORY_RELEASE_MIN_RAW 1000u
+#define M1_FACTORY_RELEASE_MAX_RAW 4000u
 /* Custom LED scheduling bounds, not measured electrical timing. */
 #define M1_LED_LATCH_US 1000u
 #define M1_LED_TRANSFER_TIMEOUT_US 10000u
@@ -239,6 +242,9 @@
 #endif
 #if M1_RADIO_SLEEP_TIMEOUT_US <= M1_RADIO_TRANSFER_TIMEOUT_US || M1_RADIO_SLEEP_TIMEOUT_US >= 0x80000000u
 #error "invalid M1 radio sleep handoff timeout"
+#endif
+#if M1_FACTORY_RELEASE_MIN_RAW < 1 || M1_FACTORY_RELEASE_MAX_RAW > 4095u || M1_FACTORY_RELEASE_MIN_RAW > M1_FACTORY_RELEASE_MAX_RAW
+#error "invalid M1 factory baseline range"
 #endif
 #if M1_COLD_SLEEP_TICKS < 1 || M1_COLD_SLEEP_TICKS > 65536u || M1_COLD_SCAN_SETTLE_US < 1 || M1_COLD_SCAN_SETTLE_US >= 0x80000000u
 #error "invalid M1 battery cold-start timing"

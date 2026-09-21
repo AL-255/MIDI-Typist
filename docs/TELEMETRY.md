@@ -107,6 +107,11 @@ than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
 | 76 | u16 | header size, 80 |
 | 78 | 2 bytes | zero reserved |
 
+Saved calibration does not imply a writable backend: a set saved bit and clear
+supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses this combination for validated
+factory records, with calibration generation 0, storage flags 0 and slot 255.
+The GUI must not treat it as a saved custom profile or enable calibration writes.
+
 Each sensor record begins at `80 + 17 * sensor`:
 
 | Record offset | Encoding | Meaning |

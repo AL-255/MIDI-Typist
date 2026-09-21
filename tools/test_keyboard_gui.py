@@ -20,12 +20,12 @@ from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
 
 def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
            velocity=None, captures=None, states=None, mapping=None, performance_mode=0, octave=0, calibration_state=0, raw=None,
-           count=61, profile=1, hid_bytes=30, sample_hz=8000, keycodes=None):
+           count=61, profile=1, hid_bytes=30, sample_hz=8000, keycodes=None, calibration_flags=4):
     size = frame_size(count,hid_bytes)
     data = bytearray(size)
     struct.pack_into('<4sH6B5I',data,0,MAGIC,size,profile,count,flags,result,0,velocity_start,sequence,0,ack,0,0)
     struct.pack_into('<IBBbBB',data,32,sample_hz,hid_bytes,performance_mode,octave,1,0)
-    struct.pack_into('<7B',data,41,calibration_state,0,255,4 | int(1 <= calibration_state <= 5),0,0,255)
+    struct.pack_into('<7B',data,41,calibration_state,0,255,calibration_flags | int(1 <= calibration_state <= 5),0,0,255)
     struct.pack_into('<H',data,76,HEADER_SIZE)
     raw_values = raw if raw is not None else [3900]*count
     press_values = press or [3500]*count
@@ -59,6 +59,7 @@ class Device(threading.Thread):
         self.flags,self.ack,self.result,self.sequence = 7,0,0,0
         self.error = None
         self.calibration_state = 0
+        self.calibration_flags = 4
         self.build = 'v0.1.0-'+board_target+' git='+'a'*40+' state=dirty'
         self.raw = None  # optional board-sized override for the next snapshots
         self.velocity_start = 1
@@ -134,7 +135,7 @@ class Device(threading.Thread):
                         self.key_seq += 1; self.key_first = False; last = time.monotonic()
                     elif self.stream_mode == 'gui' and time.monotonic()-last > .03:
                         self.emit(sx.SNAPSHOT,packet(self.ack,self.result,self.press,self.release,self.flags,self.sequence,mapping=self.mapping,keycodes=self.keycodes,
-                                               calibration_state=self.calibration_state,raw=self.raw,
+                                               calibration_state=self.calibration_state,raw=self.raw,calibration_flags=self.calibration_flags,
                                                velocity_start=self.velocity_start,performance_mode=self.performance_mode,
                                                states=[9,9]+[1]*(self.board.count-2) if self.calibration_state==3 else None,
                                                count=self.board.count,profile=self.board.profile,

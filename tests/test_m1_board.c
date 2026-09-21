@@ -6,6 +6,7 @@
 #include "m1_radio.h"
 #include "m1_radio_keyboard.h"
 #include "m1_wake.h"
+#include "m1_factory.h"
 #include "keyboard_app.h"
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
@@ -49,6 +50,65 @@ static void mapping(void)
         assert(r==i && g==i+1 && b==i+2);
     }
     assert(frame[0]==0 && frame[81*3]==72 && frame[72*3]==81);
+}
+static void factory_word(m1_factory_record_t *r,unsigned cell,unsigned value)
+{ r->values[cell*2u]=value;r->values[cell*2u+1u]=value>>8; }
+static void factory_calibration(void)
+{
+    m1_factory_record_t hi,lo;
+    memset(&hi,0xff,sizeof(hi));memset(&lo,0xff,sizeof(lo));
+    const uint8_t trailer[]={1,0x55,0xaa};
+    memcpy(hi.trailer,trailer,3);memcpy(lo.trailer,trailer,3);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        unsigned cell=m1_factory_cell(i);
+        factory_word(&hi,cell,3900-cell);factory_word(&lo,cell,1000+cell);
+    }
+    struct { uint32_t before;m1_factory_bounds_t bounds;uint32_t after; } out={.before=0x12345678,.after=0x87654321};
+    assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        unsigned cell=m1_factory_cell(i);
+        assert(out.bounds.upper[i]==3901-cell && out.bounds.lower[i]==1001+cell);
+    }
+    const m1_factory_bounds_t previous=out.bounds;
+    assert(m1_factory_decode(NULL,&lo,&out.bounds)==M1_FACTORY_ARGUMENT);
+    assert(m1_factory_decode(&hi,NULL,&out.bounds)==M1_FACTORY_ARGUMENT);
+    assert(m1_factory_decode(&hi,&lo,NULL)==M1_FACTORY_ARGUMENT);
+    for(unsigned side=0;side<2;++side) {
+        m1_factory_record_t *r=side?&lo:&hi;
+        for(unsigned at=0;at<3;++at)for(unsigned value=0;value<256;++value) {
+            if(value==trailer[at])continue;
+            r->trailer[at]=value;
+            assert(m1_factory_decode(&hi,&lo,&out.bounds)==
+                (at?M1_FACTORY_MARKER:M1_FACTORY_UNCALIBRATED));
+            assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
+            r->trailer[at]=trailer[at];
+        }
+    }
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        unsigned cell=m1_factory_cell(i);
+        const unsigned invalid_hi[]={0,M1_FACTORY_RELEASE_MIN_RAW-1u,M1_FACTORY_RELEASE_MAX_RAW+1u,65535};
+        for(unsigned n=0;n<sizeof(invalid_hi)/sizeof(*invalid_hi);++n) {
+            factory_word(&hi,cell,invalid_hi[n]);
+            assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
+            assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
+        }
+        factory_word(&hi,cell,3900-cell);
+        const unsigned invalid_lo[]={3900-cell,3901-cell,3900-cell-CALIBRATION_MIN_SPAN_RAW+1u,4096,65535};
+        for(unsigned n=0;n<sizeof(invalid_lo)/sizeof(*invalid_lo);++n) {
+            factory_word(&lo,cell,invalid_lo[n]);
+            assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
+            assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
+        }
+        factory_word(&lo,cell,1000+cell);
+    }
+    factory_word(&hi,0,M1_FACTORY_RELEASE_MIN_RAW);
+    factory_word(&lo,0,M1_FACTORY_RELEASE_MIN_RAW-CALIBRATION_MIN_SPAN_RAW);
+    assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
+    assert(out.bounds.upper[0]-out.bounds.lower[0]==CALIBRATION_MIN_SPAN_RAW);
+    factory_word(&hi,0,M1_FACTORY_RELEASE_MAX_RAW);factory_word(&lo,0,0);
+    assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
+    assert(out.bounds.lower[0]==1 && out.bounds.upper[0]==M1_FACTORY_RELEASE_MAX_RAW+1u);
+    assert(out.before==0x12345678 && out.after==0x87654321);
 }
 static void lighting_encoding(void)
 {
@@ -547,7 +607,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); acquisition(); application(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); factory_calibration(); acquisition(); application(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

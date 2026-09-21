@@ -5,6 +5,9 @@ The complete application persists settings and calibration in two reserved
 serial-number region at **0x49000..0x49400** is never a write target.
 Bootloader, application image, factory/security/PFR and secondary ASIC storage
 are also outside this writer.
+M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration),
+not a custom profile writer. Importing stored bounds does not save keyboard
+mappings or other edits; no M1 profile pages are allocated.
 
 ## What is saved
 

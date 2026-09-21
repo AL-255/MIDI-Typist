@@ -125,6 +125,10 @@ retained; firmware initializes missing/corrupt saves. The tab refreshes device i
 Razer primary settings/serial, bootloader, factory/security and ASIC firmware
 are outside the application write path.
 
+Backends may report **stored bounds (read-only)** without writable calibration
+support. Calibration buttons stay disabled; this does not mean other edits were
+saved. **Settings not confirmed saved** must not be treated as persistence.
+
 ## Fn+Tab and Fn+V settings
 
 **Trigger point** mirrors MIDI Fn+Tab: ten raw levels from 1500 to 3599.

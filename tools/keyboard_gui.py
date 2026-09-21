@@ -656,10 +656,13 @@ class App:
             reasons = ('','inactivity timeout','invalid/stale scan or USB reset','cancelled','storage failure')
             label = next((k.label for k in self.keys if k.sensor == s.calibration_selected),'—')
             holding = sum(bool(v & 8) for v in s.velocity_state)
-            self.calibration_status.set(f'{"STALE • " if stale else ""}Calibration: {names[s.calibration_state]} | '
+            calibration_text = (f'Calibration: {names[s.calibration_state]} | '
                 f'{s.calibration_completed}/{s.count} | holding {holding} | key {label}, hold {s.calibration_hold}/{D["CALIBRATION_HOLD_MS"]} ms | idle limit {s.calibration_idle/1000:.1f} s | '
-                f'flash generation {s.calibration_generation} ({"saved" if s.calibration_flags & 2 else "factory bounds"})'
-                + (' | settings SAVE FAILED' if s.storage_flags & 4 else ' | settings pending: release all keys' if s.storage_flags & 2 else ' | settings saved' if s.storage_flags & 1 else ' | settings initializing')
+                f'flash generation {s.calibration_generation} ({"saved" if s.calibration_flags & 2 else "factory bounds"})')
+            if not s.calibration_flags & 4:
+                calibration_text = 'Calibration: ' + ('stored bounds (read-only)' if s.calibration_flags & 2 else 'unavailable')
+            self.calibration_status.set(f'{"STALE • " if stale else ""}{calibration_text}'
+                + (' | settings SAVE FAILED' if s.storage_flags & 4 else ' | settings pending: release all keys' if s.storage_flags & 2 else ' | settings saved' if s.storage_flags & 1 else ' | settings not confirmed saved')
                 + (f' | {reasons[s.calibration_reason]}' if s.calibration_reason else '')
                 + (f' | storage error 0x{s.calibration_error:x}' if s.calibration_error else ''))
         self.paint(stale)

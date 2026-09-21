@@ -187,10 +187,44 @@ Huntsman storage addresses are not portable to it.
 
 An M1 firmware port still requires verified startup/power behavior, physical
 confirmation of the inferred key/sensor/LED mapping, USB clock/PHY and runtime binding,
-factory calibration integration, safe storage ownership and an independently checked
+physical verification of factory calibration, safe storage ownership and an independently checked
 application update path. In particular, the six-bank acquisition is not the
 Huntsman optical-ASIC path. Shared telemetry is count-aware; each board retains
 its own buffer budget. See the [porting contract](PORTING.md).
+
+### Read-only factory calibration
+
+`m1_factory_load` imports the two calibration records without unlocking or
+writing flash. The schema comes from the loader at `0x0800F814` and the save
+paths at `0x0800D3A8`/`0x0800D4FC`: each page begins with 126 little-endian
+halfwords indexed by `rank * 6 + bank`, followed by a saved flag at byte 2045
+and marker bytes `55 aa` at 2046–2047. The upper page contains startup resting
+baselines; the lower page contains floors. Only the 82 mapped key cells become
+application bounds; unused, battery and extra logical cells are not keys.
+
+Both records must have valid markers and saved flag 1. Every mapped resting
+baseline must be within the reference's native 1000–4000 range; both endpoints
+must be ADC-representable and span at least the shared calibration minimum.
+Bounds receive the same native-to-canonical conversion as scans (`ADC + 1`).
+The decoder stages the entire result before publishing it. Bad markers, absent
+calibration, wrapped/reversed/narrow pairs, busy flash or invalid execution
+context leave the previous output unchanged. The reader preserves the interrupt
+mask and touches only 252 data bytes plus three trailer bytes per page.
+
+This is a conservative import, not the stock calibration algorithm: it does not
+repair records, use sample-minus-700 fallback floors, rebase resting samples,
+import nonlinear vendor curves, initialize the key-type page or erase anything.
+The factory schema has no verified checksum; plausible in-range corruption
+cannot be detected by marker/range checks alone. These bounds drive custom
+linear lighting/aftertouch, not a claim of physical millimetres.
+
+Foreground initialization rejects invalid/missing factory calibration and
+exposes the loader result to its outer owner. It does not proceed with invented
+travel bounds. A calibration-recovery path and custom profile persistence are
+still required before an installable firmware can handle every device state.
+The GUI reports successfully imported calibration as stored/read-only, with
+no custom generation or writable-profile claim. Tests use synthetic records,
+read-only emulated flash and no connected-device calibration reads.
 
 ## Power and transport components
 
@@ -445,7 +479,7 @@ physical enumeration, acquisition cadence or a running M1 application.
 `m1_live` connects periodic scan frames to the shared keyboard/MIDI application,
 LED renderer, USB/radio output and GUI SysEx services. One foreground owner
 calls it with independently maintained wrapping millisecond/microsecond clocks.
-Initialization requires verified canonical per-key travel bounds; unknown
+Initialization imports the validated factory bounds described above; unknown
 calibration is not replaced with ADC rails. Settings are volatile: no profile
 storage is advertised, and calibration/RESET commands and Fn hints are disabled.
 The caller selects USB, BT1/2/3 or 2.4 GHz at initialization. A wireless choice
@@ -484,7 +518,8 @@ already established old-host release proof.
 shared services at both packet sizes, decoding snapshots with the GUI codec;
 it also runs all four wireless modes through the real scheduler/SPI/DMA code.
 Acquisition, battery and LED boundaries are scripted, including discontinuities
-and backpressure. Radio status, DMA completion and external transport callbacks
+and backpressure. Factory loading executes against synthetic read-only flash.
+Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
 The outer startup/power/transport coordinator, verified radio delivery, durable
 storage and an installable application remain unfinished. Link faults are not

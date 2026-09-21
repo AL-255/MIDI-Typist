@@ -239,6 +239,14 @@ def main():
                 assert '0/82' in app.calibration_status.get()
                 app.cancel_calibration_button.invoke()
                 m1_until(lambda:app.snapshot.calibration_state==7)
+                device.calibration_state=0;device.calibration_flags=2
+                m1_until(lambda:app.snapshot.calibration_flags==2 and 'read-only' in app.calibration_status.get())
+                assert str(app.calibrate_button['state'])=='disabled'
+                assert str(app.cancel_calibration_button['state'])=='disabled'
+                assert 'settings not confirmed saved' in app.calibration_status.get()
+                assert 'flash generation' not in app.calibration_status.get()
+                device.calibration_flags=0
+                m1_until(lambda:'Calibration: unavailable' in app.calibration_status.get())
                 app.close();root=None
                 assert device.error is None
         finally:

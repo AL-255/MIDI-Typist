@@ -11,6 +11,7 @@
 #include "m1_power_gpio.h"
 #include "m1_usb_hal.h"
 #include "m1_usb_power.h"
+#include "m1_factory.h"
 uint32_t m1_test_battery_status(void)
 {
     const m1_battery_t *s=m1_battery_hal_status();
@@ -76,6 +77,6 @@ const void *const m1_test_exports[]={
     m1_test_wireless_battery_raw,m1_test_wireless_power_request,m1_test_wireless_power_status,
     m1_test_wireless_power_critical,
     m1_power_gpio_prepare,m1_power_gpio_restore,m1_power_gpio_prepared,m1_power_gpio_switches,
-    m1_usb_hw_start,
+    m1_usb_hw_start,m1_factory_load,m1_factory_decode,
     m1_usb_power_down,m1_usb_power_ready,m1_usb_power_invalidate
 };

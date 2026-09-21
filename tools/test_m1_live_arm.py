@@ -5,7 +5,7 @@ Does not open hardware or model physical cadence, DMA movement or LED timing.
 import argparse
 import struct
 from test_m1_usb_arm import Device, INPUT, OUTPUT, USB
-from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI
+from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI, factory_memory, FACTORY_UPPER
 import midi_sysex as sx
 from keyboard_gui_model import decode
 from keyboard_capture import KeyDecoder, StreamError
@@ -21,11 +21,15 @@ class Live(Device,RadioArm):
         self.radio_slots=bytes(6);self.radio_bitmap=bytes(15);self.radio_modifiers=0
         self.ops=self.call('m1_test_live_transports') if transports else 0
         if mode!=6:self.start_radio(mode)
-        self.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
-        self.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-        assert not self.call('m1_live_init',0,OUTPUT,mode,self.ops)
-        assert self.call('m1_live_init',INPUT,OUTPUT,mode,self.ops)
-        assert not self.call('m1_live_init',INPUT,OUTPUT,mode,self.ops) # no live reinitialization
+        pages=factory_memory(self)
+        assert self.call('m1_live_factory_result')==7
+        self.cpu.mem_write(FACTORY_UPPER+2047,b'\0')
+        assert not self.call('m1_live_init',mode,self.ops)
+        assert self.call('m1_live_factory_result')==4
+        self.cpu.mem_write(FACTORY_UPPER,pages)
+        assert self.call('m1_live_init',mode,self.ops)
+        assert self.call('m1_live_factory_result')==0
+        assert not self.call('m1_live_init',mode,self.ops) # no live reinitialization
         self.tick()
     def start_radio(self,mode):
         self.peer_mode=mode
@@ -112,7 +116,7 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3900,)*82
-        assert not s.calibration_flags&4 and not s.storage_flags and s.storage_slot==255
+        assert s.calibration_flags==2 and not s.storage_flags and s.storage_slot==255
         d.command('cfg calibrate 1');assert d.snapshot(1).result==2
         d.command('cfg clean 2');assert d.snapshot(2).result==2
         for sensor in (61,33): # physical C/R: unsupported Fn actions stay inactive
@@ -178,11 +182,9 @@ def integration(path):
         rgb=bytes(d.cpu.mem_read(d.call('m1_test_live_get',0),246));assert not any(rgb)
         d.call('m1_live_stop',d.time//1000);d.tick(frame=False)
         assert d.hid==bytes(30)
-        d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
-        d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-        assert not d.call('m1_live_init',INPUT,OUTPUT,6,0) # must drain MIDI releases first
+        assert not d.call('m1_live_init',6,0) # must drain MIDI releases first
         for _ in range(160):d.tick(frame=False)
-        assert d.call('m1_live_init',INPUT,OUTPUT,6,0)
+        assert d.call('m1_live_init',6,0)
         d.tick();assert not d.call('midi_control_ready')
         print(f'PASS M1 {"HS" if high else "FS"} foreground: scan/keymap/HID/MIDI/GUI, capture loss, rearm, USB epoch, wake exclusion and lighting safety')
     d=Live(path,True,sequence=0xfffffffd,time=0xffffffff*1000-1000)
@@ -278,11 +280,9 @@ def wireless_integration(path):
     assert d.call('m1_live_transport')==1 and not d.call('m1_live_transport_fault')
     d.samples[45]=3000;d.run();assert d.radio_held(4)
     d.samples[45]=3900;d.run();d.call('m1_live_stop',d.time//1000);d.run()
-    d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
-    d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-    assert not d.call('m1_live_init',INPUT,OUTPUT,1,d.ops) # local neutral is not host proof
+    assert not d.call('m1_live_init',1,d.ops) # local neutral is not host proof
     d.call('m1_test_live_transport_gate',1,1)
-    assert d.call('m1_live_init',INPUT,OUTPUT,1,d.ops)
+    assert d.call('m1_live_init',1,d.ops)
     # An adapter claiming success for the wrong/not-ready radio cannot switch.
     d=Live(path,True,transports=True);d.start_radio(0);d.run()
     d.call('m1_test_live_transport_gate',1,1);d.chord(2)
@@ -291,9 +291,7 @@ def wireless_integration(path):
     for _ in range(D['M1_TRANSPORT_SWITCH_TIMEOUT_MS']//10+1):d.tick(step=10000)
     assert d.call('m1_live_transport_fault') and d.call('m1_live_transport')==6
     d.samples[45]=3000;d.run();assert not d.held(4)
-    d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
-    d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-    assert not d.call('m1_live_init',INPUT,OUTPUT,6,d.ops) # no silent fault clear
+    assert not d.call('m1_live_init',6,d.ops) # no silent fault clear
     d=Live(path,True,transports=True);d.call('m1_test_live_transport_gate',1,0);d.chord(1)
     assert d.call('m1_test_live_selection',1)>0
     d.sequence+=1;d.tick();assert d.call('m1_live_transport_fault')

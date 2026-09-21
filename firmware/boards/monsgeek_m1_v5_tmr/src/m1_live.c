@@ -21,6 +21,7 @@ static uint32_t now,epoch,scan_sequence,losses,last_gui,last_light;
 static keyboard_telemetry_status_t status;
 static bool initialized,enabled,seen,source_healthy,light_sent,selection_attempted,transport_fault;
 static const m1_transport_ops_t *transport_ops;
+static m1_factory_result_t factory_result=M1_FACTORY_NOT_LOADED;
 
 static uint32_t lock(void) { uint32_t mask=__get_PRIMASK();__disable_irq();return mask; }
 static void unlock(uint32_t mask) { __set_PRIMASK(mask); }
@@ -108,8 +109,7 @@ static bool command(const char *line)
     }
     return keyboard_app_command(&app,line,now,source_healthy && usb_ready(),&status.ack,&status.result);
 }
-bool m1_live_init(const uint16_t lo[M1_KEY_COUNT],const uint16_t hi[M1_KEY_COUNT],
-                  m1_transport_t current,const m1_transport_ops_t *transports)
+bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports)
 {
     const keyboard_report_t neutral={0};
     bool old_drained=!initialized || (controls.current==M1_TRANSPORT_USB?
@@ -118,17 +118,19 @@ bool m1_live_init(const uint16_t lo[M1_KEY_COUNT],const uint16_t hi[M1_KEY_COUNT
     if((initialized && (enabled || transport_fault || !old_drained || !app.sent_valid ||
         memcmp(&app.sent,&neutral,sizeof(neutral)))) || !m1_transport_valid(current) ||
        (current!=M1_TRANSPORT_USB && !radio_mode(current)) ||
-       (transports && (!transports->drained || !transports->select)) ||
-       !lo || !hi || !calibration_bounds_valid(M1_PROFILE,M1_KEY_COUNT,lo,hi))return false;
+       (transports && (!transports->drained || !transports->select)))return false;
+    m1_factory_bounds_t bounds;
+    factory_result=m1_factory_load(&bounds);
+    if(factory_result!=M1_FACTORY_OK)return false;
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
     static const m1_transport_ops_t transport_port={drained,select_transport,NULL};
     keyboard_app_init(&app,&raw,&midi,&menu,&calibration,NULL);
     transport_ops=transports;
     (void)m1_controls_bind(&controls,&app,current,transports?&transport_port:NULL,m1_battery_hal_status());
-    memcpy(lower,lo,sizeof(lower));memcpy(upper,hi,sizeof(upper));
+    memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
     now=scan_sequence=losses=last_gui=last_light=0;
     seen=source_healthy=light_sent=selection_attempted=transport_fault=false;
-    status=(keyboard_telemetry_status_t){.storage_slot=255};
+    status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true};
     epoch=m1_usb_generation();scan_stream_init();
     if(!midi_control_init(&port))return false;
     midi_control_command_handler(command);initialized=enabled=true;return true;
@@ -139,6 +141,7 @@ void m1_live_stop(uint32_t now_ms)
     now=now_ms;enabled=false;cancel_input();scan_stream_stop();midi_control_usb_reset();
 }
 uint32_t m1_live_scan_losses(void) { return losses; }
+m1_factory_result_t m1_live_factory_result(void) { return factory_result; }
 m1_transport_t m1_live_transport(void) { return controls.current; }
 bool m1_live_transport_fault(void) { return transport_fault; }
 static void snapshot(void)

@@ -256,6 +256,12 @@ saturates at 4,500,000 canonical counts/s. Calibration requires rest at least
 spanning at least 512. These are shared behavior, not inferred properties of
 your sensor. Validate that the board's normalization and fallback bounds make
 real travel usable under these rules. Calibration does not retune thresholds.
+If importing factory calibration, resolve its native cell index separately
+from physical key IDs and convert endpoints using the same ADC full-scale
+normalization as scans. Stage and validate every mapped key before publishing
+any bounds. Never infer physical travel from ADC rails or repair unknown stock
+pages during a read. M1's read-only loader preserves the original pages and
+rejects absent/invalid records; it does not replace a calibration-recovery path.
 
 Set `sample_hz` to the actual intended frame rate. Post-trigger samples span
 their window's intervals, so a different frame rate changes the velocity
@@ -443,6 +449,9 @@ capability exclusions use `keyboard_menu_t.disabled_options`, with bit
 Never claim a persistent save without verified storage. The simulator saves only in
 its process RAM. Huntsman's writer and MTP2 whole-profile journal are examples for that board,
 not a universal flash layout.
+Read-only stored calibration may set telemetry's saved flag while leaving the
+calibration-supported flag clear. It must not advertise a writable profile or
+invent a journal generation; the GUI renders this combination as read-only.
 
 | `keyboard_app_ops_t` callback | Board responsibility |
 | --- | --- |

@@ -121,6 +121,8 @@ The foreground audit connects scripted scan/battery/LED boundaries to the real
 application, USB class, radio scheduler/SPI/DMA drivers and GUI codec, including
 discontinuity, release handling and gated Fn transport selection. External
 host-release/selection callbacks and radio replies are scripted.
+The factory-calibration reader runs on synthetic read-only flash pages; the
+foreground audit imports those records rather than accepting supplied bounds.
 The HAL audit also executes the wireless report scheduler through actual
 SPI/DMA drivers with scripted status replies; no radio host is simulated.
 The SDK package selector

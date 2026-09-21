@@ -42,6 +42,13 @@ Sleep-GPIO tests execute ordered SDK pin changes and switch reads, preserving
 unrelated pins and the reference's untouched latch. They check quiescence,
 battery/USB ownership exclusion and restoration after cable arrival. This is
 register-level evidence, not electrical charging or wake validation.
+Factory-calibration tests decode synthetic rank-major pages for all 82 keys,
+checking trailer flags, range/span boundaries, unused-cell exclusion and
+all-or-nothing publication. The ARM reader accesses only the two records'
+data/trailers in read-only mapped flash, rejects busy/invalid context and preserves
+IRQ masking. Foreground tests load those fixtures before exercising USB/radio
+and GUI telemetry. No physical factory data, checksum or travel accuracy has
+been verified; invalid records are not repaired or erased.
 Cold-start tests compose the actual RTC/PHY/GPIO/scanner code, checking rail
 order, fresh settling timestamps, complete warmup-frame discard, timer wrap,
 scan/PHY/clock failures, cancellation and cable changes. No startup helper is
