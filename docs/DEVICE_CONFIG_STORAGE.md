@@ -55,7 +55,7 @@ board callbacks alone own physical addresses and controller operations.
 | Board | Identity | Record size | CRC offset | Integration |
 | --- | --- | --- | --- | --- |
 | Huntsman | MTP2 | 512 | 508 | Application and bounded NXP writer |
-| M1 | M1P1 | 2048 | 2044 | SDK writer and foreground restore/autosave; outer safety gate required |
+| M1 | M1P2 | 2048 | 2044 | Electrical calibration plus travel-domain thresholds; SDK writer and gated foreground autosave |
 
 The distinct identities bind board-local layout numbers to their physical
 namespace. Neither format accepts the other or migrates older records.
@@ -158,7 +158,13 @@ IRQs masked, disable SysTick and do not retry. There is no option-byte operation
 mass erase, protection change or automatic reset.
 
 `m1_live_init` loads the journal before accepting a real frame. Valid custom
-calibration takes precedence; otherwise validated factory bounds are required.
+calibration takes precedence; otherwise validated factory bounds are used. If
+neither is usable, a real released startup frame permits provisional RAM bounds
+as described in [M1 calibration](MONSGEEK_M1.md#read-only-factory-calibration).
+They are not marked saved or included as calibration in settings-only snapshots.
+M1 thresholds are in normalized travel units; stored endpoints remain electrical
+ADC+1 values and accept the board's 128-count minimum span. Unknown schemas are
+rejected, never migrated or reinterpreted.
 Saved MIDI mode is suppressed for wireless operation. GUI fields report the
 actual journal slot, generation, pending state and latched error independently
 of the imported-calibration flag.

@@ -157,7 +157,7 @@ class Connection(threading.Thread):
                         self.push_sample(raw)
             elif kind == sx.LOG:
                 message_text=payload.decode('ascii', 'replace').strip()
-                if message_text.startswith('Boot failed: '):
+                if message_text.startswith(('Boot failed: ', 'Runtime failed: ')):
                     raise RuntimeError(message_text+'; configuration is unavailable. The control USB link remains available for recovery.')
                 self.notify(message_text)
             elif kind == sx.ERROR:

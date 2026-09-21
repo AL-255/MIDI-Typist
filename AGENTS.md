@@ -136,6 +136,11 @@
   dedicated control cable; do not add serial interfaces or standalone device CLIs.
 - Use pinned official vendor SDKs for USB and peripheral integration: NXP for
   LPC55, Artery for AT32F405. Keep SDK selection out of shared application code.
+- Keep electrical calibration separate from control coordinates. A board may
+  opt into per-key travel normalization through its layout input policy; save
+  electrical endpoints, publish/capture control-domain samples, and validate
+  thresholds, wheels and calibration against real readings. Provisional startup
+  bounds must remain explicitly unsaved and must never repair factory pages.
 - Preserve build-time Git provenance: refresh it on incremental builds, mark
   dirty/unversioned sources honestly, and never substitute the host checkout's
   current commit for the connected firmware's identity.

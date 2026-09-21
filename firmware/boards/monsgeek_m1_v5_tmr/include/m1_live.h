@@ -8,9 +8,10 @@ bool m1_live_update_requested(void);
 /* Serialized foreground application owner. HAL clock/rails, periodic
  * scanner, lighting, battery inputs and USB lifecycle are initialized by the
  * outer startup/power coordinator, not implicitly retried here.
- * Init imports validated factory travel bounds read-only. Missing/invalid
- * calibration is rejected unless a valid custom snapshot supplies bounds;
- * it is never replaced with ADC rails. Calibration requires storage ops;
+ * Init imports validated custom/factory electrical bounds read-only. An
+ * explicit real released frame permits provisional startup bounds if factory
+ * records are absent/out-of-domain. These are RAM-only and reported unsaved;
+ * no scale is guessed for a stock record. Calibration requires storage ops;
  * RESET entry remains disabled.
  * The outer owner initializes the chosen USB/radio transport. Wireless init
  * requires a healthy scheduler configured for that exact mode; link readiness
@@ -39,7 +40,7 @@ typedef struct {
 /* Restore is unconditional; NULL storage ops disable writes, not reads. Pending
  * edits remain explicitly unsaved. No physical power/drain proof is fabricated. */
 bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
-                  const m1_live_storage_ops_t *storage);
+                  const m1_live_storage_ops_t *storage,const uint16_t *released);
 m1_factory_result_t m1_live_factory_result(void);
 /* Both clocks wrap independently. Do not derive now_ms from wrapping now_us. */
 void m1_live_service(uint32_t now_ms,uint32_t now_us);

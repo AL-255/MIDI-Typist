@@ -14,6 +14,7 @@ typedef struct {
     uint8_t values[M1_FACTORY_VALUES_BYTES];
     uint8_t trailer[3]; /* persisted flag, 0x55, 0xaa; padding is not imported */
 } m1_factory_record_t;
+#define M1_FACTORY_DUMP_BYTES (8u+2u*sizeof(m1_factory_record_t))
 typedef struct {
     uint16_t lower[M1_KEY_COUNT],upper[M1_KEY_COUNT];
 } m1_factory_bounds_t;
@@ -27,6 +28,10 @@ typedef enum {
  * Valid native bounds are converted exactly like ADC samples (+1). */
 m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
     const m1_factory_record_t *lower,m1_factory_bounds_t *out);
+/* Explicit provisional RAM bounds from a real released ADC+1 frame. Not a
+ * measured full-travel calibration and never a reason to set the saved flag.
+ * Matches the reference's bounded baseline-minus-700 startup policy. */
+bool m1_factory_bootstrap(const uint16_t released[M1_KEY_COUNT],m1_factory_bounds_t *out);
 /* Native memory-mapped read only, serialized privileged foreground owner.
  * Rejects busy flash and preserves IRQ mask. No unlock/erase/program, no
  * key-type initialization, no arbitrary-address reader. Caller must prevent
@@ -35,4 +40,6 @@ m1_factory_result_t m1_factory_load(m1_factory_bounds_t *out);
 /* Read only the two fixed calibration payloads/trailers, including invalid
  * records for diagnosis. Same context/busy guards as load; no flash mutation. */
 m1_factory_result_t m1_factory_read(m1_factory_record_t *upper,m1_factory_record_t *lower);
+/* Fixed M1FC-v1 calibration-only diagnostic payload, no arbitrary memory. */
+m1_factory_result_t m1_factory_read_dump(uint8_t out[M1_FACTORY_DUMP_BYTES]);
 #endif

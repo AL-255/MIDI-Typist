@@ -25,13 +25,21 @@ static __attribute__((noreturn)) void halted(m1_main_state_t why,uint32_t detail
 }
 static __attribute__((noreturn)) void stop_live(m1_main_state_t why,uint32_t detail,uint32_t now)
 {
-    /* Valid-clock failures only. Disconnect USB so its host drops held keys.
-     * No claimed radio-host release or peer sleep: retain all power rails.
-     * Full wireless release/recovery remains a runtime integration task. */
+    /* Valid-clock failures only. Retain USB diagnostics/software recovery;
+     * stop acquisition/output producers without restarting them. No claimed
+     * radio-host release or peer sleep: retain all power rails. */
     m1_live_stop(now);
-    (void)m1_usb_hw_stop();
     m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
-    halted(why,detail);
+    m1_main_state=why;m1_main_detail=detail;
+    if(!m1_usb_hw_running())halted(why,detail);
+    m1_diagnostics_runtime_fault(detail);
+    for(;;) {
+        m1_time_point_t time;
+        if(!m1_time_now(&time))halted(M1_MAIN_TIME_FAULT,0);
+        if(m1_diagnostics_service(time.ms)) {
+            __disable_irq();(void)m1_usb_hw_stop();NVIC_SystemReset();
+        }
+    }
 }
 void m1_main(void)
 {

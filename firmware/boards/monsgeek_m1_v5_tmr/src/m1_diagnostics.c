@@ -10,6 +10,9 @@
 #include <string.h>
 
 static bool initialized,reported,update_requested;
+static bool runtime_fault,neutral_sent;
+static uint32_t runtime_detail;
+static unsigned cleanup_event;
 static uint32_t now,epoch;
 static uint32_t lock(void) { uint32_t mask=__get_PRIMASK();__disable_irq();return mask; }
 static void unlock(uint32_t mask) { __set_PRIMASK(mask); }
@@ -35,14 +38,9 @@ static bool command(const char *line)
     if(!strcmp(line,"factory read")) {
         /* Fixed calibration fields only: no arbitrary address, serial data,
          * bootloader code, unlock or erase operation is exposed. */
-        if(m1_boot_state()!=M1_BOOT_FAILED)return false;
-        m1_factory_record_t upper,lower;
-        if(m1_factory_read(&upper,&lower)!=M1_FACTORY_OK)return false;
-        uint8_t payload[8u+2u*sizeof(m1_factory_record_t)]={'M','1','F','C',1,0,
-            M1_FACTORY_CELL_COUNT&255u,M1_FACTORY_CELL_COUNT>>8};
-        _Static_assert(sizeof(m1_factory_record_t)==M1_FACTORY_VALUES_BYTES+3u,"packed calibration fields");
-        memcpy(payload+8,&upper,sizeof(upper));
-        memcpy(payload+8+sizeof(upper),&lower,sizeof(lower));
+        if(m1_boot_state()!=M1_BOOT_FAILED && !runtime_fault)return false;
+        uint8_t payload[M1_FACTORY_DUMP_BYTES];
+        if(m1_factory_read_dump(payload)!=M1_FACTORY_OK)return false;
         return midi_control_publish(MT_DUMP,payload,sizeof(payload));
     }
     if(!strcmp(line,"bootloader")) {
@@ -55,6 +53,11 @@ static bool command(const char *line)
 }
 static size_t failure_text(char *text)
 {
+    if(runtime_fault) {
+        strcpy(text,"Runtime failed: detail=0x");size_t length=strlen(text);
+        for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(runtime_detail>>(28u-4u*i))&15u];
+        text[length]=0;return length;
+    }
     static const char *const errors[]={"none","timebase","startup","power-source",
         "scan-pause","USB","radio-init","radio-link","scan-resume","application"};
     unsigned error=m1_boot_error();
@@ -67,9 +70,14 @@ static size_t failure_text(char *text)
     for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(counts>>(28u-4u*i))&15u];
     text[length]=0;return length;
 }
+void m1_diagnostics_runtime_fault(uint32_t detail)
+{
+    runtime_fault=true;runtime_detail=detail;
+    initialized=reported=update_requested=neutral_sent=false;cleanup_event=0;
+}
 bool m1_diagnostics_service(uint32_t now_ms)
 {
-    if(m1_boot_state()==M1_BOOT_READY || !m1_usb_hw_running())return false;
+    if((m1_boot_state()==M1_BOOT_READY && !runtime_fault) || !m1_usb_hw_running())return false;
     now=now_ms;
     if(!initialized) {
         static const midi_control_port_t port={millis,ready,send,lock,unlock};
@@ -81,13 +89,26 @@ bool m1_diagnostics_service(uint32_t now_ms)
     uint8_t events[M1_USB_HS_PACKET];uint32_t mask=lock();
     if(epoch!=m1_usb_generation()) {
         epoch=m1_usb_generation();midi_control_usb_reset();reported=false;update_requested=false;
+        neutral_sent=false;cleanup_event=0;
     }
     unsigned size=m1_usb_midi_take(events,sizeof(events));
     if(size && ready())midi_control_receive_usb(events,size);
     unlock(mask);
+    if(runtime_fault) {
+        const keyboard_report_t neutral={0};
+        if(!neutral_sent)neutral_sent=m1_usb_hid_send(&neutral);
+        /* USB-MIDI performance cable: sustain off, all sound off, all notes
+         * off on each of the 16 channels. Retry only busy endpoint offers. */
+        static const uint8_t controllers[]={64,120,123};
+        if(cleanup_event<16u*sizeof(controllers)) {
+            uint8_t event[]={0x0b,0xb0u+cleanup_event/sizeof(controllers),
+                controllers[cleanup_event%sizeof(controllers)],0};
+            if(send(event,sizeof(event)))++cleanup_event;
+        }
+    }
     midi_control_service();
     if(!midi_control_ready())reported=false;
-    if(m1_boot_state()==M1_BOOT_FAILED && !reported) {
+    if((m1_boot_state()==M1_BOOT_FAILED || runtime_fault) && !reported) {
         char text[80];size_t length=failure_text(text);
         reported=midi_control_publish(MT_LOG,(const uint8_t *)text,length);
     }

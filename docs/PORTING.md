@@ -249,21 +249,32 @@ Wider-than-16-bit readings need safe reduction in the board, not truncation.
 | Coordinate system | Meaning |
 | --- | --- |
 | Native ADC and full-scale endpoints | Board-owned electrical units and polarity |
-| Canonical samples and Schmitt thresholds | Shared 1…4096 decreasing application units |
-| Per-key lower/upper calibration | Fully pressed/resting canonical bounds for lighting and aftertouch |
+| Electrical canonical samples | ADC full scale normalized to 1…4096, used for calibration |
+| Per-key lower/upper calibration | Pressed/resting electrical canonical bounds, stored without travel normalization |
+| Control samples and Schmitt thresholds | 1…4096; electrical units by default, per-key normalized travel when opted in |
 
 Startup Schmitt defaults are 3500/3600; wheels use 3800…1000 and velocity
-saturates at 4,500,000 canonical counts/s. Calibration requires rest at least
-2048, a held candidate no higher than half its rest value and valid bounds
-spanning at least 512. These are shared behavior, not inferred properties of
-your sensor. Validate that the board's normalization and fallback bounds make
-real travel usable under these rules. Calibration does not retune thresholds.
+saturates at 4,500,000 control counts/s. A layout's optional `input` policy
+selects per-key travel normalization before detection, velocity, menus, wheels,
+lighting and aftertouch. `NULL` retains electrical-domain controls, as on Huntsman.
+The application always passes unmodified electrical samples to calibration and
+stores its electrical endpoints. Send `app.raw->raw`, not board ADC frames, to
+capture when these domains differ; GUI telemetry already uses control samples.
+
+Default calibration requires rest at least 2048, a candidate no higher than half
+rest and a span of at least 512. A non-NULL policy supplies `minimum_release`,
+`minimum_span` and `press_drop`; zero drop retains the fractional criterion.
+M1 uses travel normalization with electrical minimum release 1001 and span/drop
+128. These custom choices live in `defaults.h`, not guessed physical millimetres.
+Calibration changes the travel transform, not the user's threshold numbers;
+release outputs and require neutral before using the newly saved transform.
 If importing factory calibration, resolve its native cell index separately
 from physical key IDs and convert endpoints using the same ADC full-scale
 normalization as scans. Stage and validate every mapped key before publishing
 any bounds. Never infer physical travel from ADC rails or repair unknown stock
-pages during a read. M1's read-only loader preserves the original pages and
-rejects absent/invalid records; it does not replace a calibration-recovery path.
+pages during a read. M1's read-only loader rejects absent/invalid records. Its
+separate, explicit startup fallback uses a real released frame and provisional
+RAM floors; it never claims measured/saved calibration or overwrites stock pages.
 
 Set `sample_hz` to the actual intended frame rate. Post-trigger samples span
 their window's intervals, so a different frame rate changes the velocity
@@ -603,7 +614,7 @@ model identity or persistent recovery state. A transfer verdict must not be
 reported as proof that the new application enumerated or functions correctly.
 Where clocks and power allow, keep the control channel available after a
 startup failure instead of making USB depend on valid calibration or scanning.
-The reserved `Boot failed: ` SysEx log prefix makes the GUI reject configuration
+The reserved `Boot failed: ` and `Runtime failed: ` SysEx log prefixes make the GUI reject configuration
 with an actionable error; never substitute fabricated sensor data for diagnostics.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,

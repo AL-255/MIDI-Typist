@@ -5,6 +5,11 @@
 #include <string.h>
 
 static bool layout_ok(uint8_t p, uint8_t n) { return keyboard_layout_valid(p,n); }
+unsigned calibration_min_span(uint8_t profile)
+{
+    const keyboard_layout_t *layout=keyboard_layout(profile);
+    return layout && layout->input?layout->input->minimum_span:CALIBRATION_MIN_SPAN_RAW;
+}
 static bool done(const keyboard_calibration_t *s, unsigned i) { return (s->done[i/8u] >> (i%8u)) & 1u; }
 bool calibration_active(const keyboard_calibration_t *s) { return s->state >= CAL_RELEASE && s->state <= CAL_SAVE; }
 void calibration_init(keyboard_calibration_t *s) { memset(s, 0, sizeof(*s)); s->selected = 255u; }
@@ -35,7 +40,7 @@ bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo
 {
     if (!layout_ok(profile,count)) return false;
     for (unsigned i=0; i<count; ++i)
-        if (!lo[i] || hi[i] > 4096u || hi[i] < lo[i]+CALIBRATION_MIN_SPAN_RAW) return false;
+        if (!lo[i] || hi[i] > 4096u || hi[i] < lo[i]+calibration_min_span(profile)) return false;
     return true;
 }
 void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool valid, bool neutral, uint32_t now)
@@ -44,13 +49,15 @@ void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool vali
     for (unsigned i=0; i<s->count; ++i) if (!raw[i] || raw[i]>4096u) valid=false;
     calibration_tick(s,valid,now);
     if (!calibration_active(s) || s->state == CAL_SAVE) return;
+    const keyboard_input_policy_t *policy=keyboard_layout(s->profile)->input;
+    unsigned minimum_release=policy?policy->minimum_release:CALIBRATION_MIN_RELEASE_RAW;
     if (s->state == CAL_RELEASE || s->state == CAL_SETTLE) {
         if (!neutral) { s->state=CAL_RELEASE; return; }
         if (s->state == CAL_RELEASE) { s->state=CAL_SETTLE; s->since=now; s->activity=now; }
         if ((uint32_t)(now-s->since)<CALIBRATION_SETTLE_MS) return;
         /* First whole valid frame after 500ms of all keys released. */
         for (unsigned i=0; i<s->count; ++i) {
-            if (raw[i]<CALIBRATION_MIN_RELEASE_RAW) { calibration_abort(s,CAL_INVALID,now); return; }
+            if (raw[i]<minimum_release) { calibration_abort(s,CAL_INVALID,now); return; }
             s->upper[i]=raw[i];
         }
         s->state=CAL_COLLECT; s->activity=now; return;
@@ -61,7 +68,10 @@ void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool vali
         if (done(s,key)) continue;
         /* Each sensor has its own timer/anchor/mean. Releasing or moving one
          * key cannot reset another key's hold. Completed keys may stay held. */
-        if (raw[key]>s->upper[key]/CALIBRATION_PRESS_DIVISOR) { h->active=false; h->samples=0; continue; }
+        unsigned ceiling=policy && policy->press_drop?
+            (s->upper[key]>policy->press_drop?(unsigned)s->upper[key]-policy->press_drop:0u):
+            s->upper[key]/CALIBRATION_PRESS_DIVISOR;
+        if (raw[key]>ceiling) { h->active=false; h->samples=0; continue; }
         if (!h->active) {
             h->active=true; s->activity=now;
             h->since=now; h->anchor=raw[key]; h->sum=raw[key]; h->samples=1;

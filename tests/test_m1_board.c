@@ -93,7 +93,7 @@ static void factory_calibration(void)
             assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
         }
         factory_word(&hi,cell,3900-cell);
-        const unsigned invalid_lo[]={3900-cell,3901-cell,3900-cell-CALIBRATION_MIN_SPAN_RAW+1u,4096,65535};
+        const unsigned invalid_lo[]={3900-cell,3901-cell,3900-cell-M1_CALIBRATION_MIN_SPAN_RAW+1u,4096,65535};
         for(unsigned n=0;n<sizeof(invalid_lo)/sizeof(*invalid_lo);++n) {
             factory_word(&lo,cell,invalid_lo[n]);
             assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
@@ -102,13 +102,24 @@ static void factory_calibration(void)
         factory_word(&lo,cell,1000+cell);
     }
     factory_word(&hi,0,M1_FACTORY_RELEASE_MIN_RAW);
-    factory_word(&lo,0,M1_FACTORY_RELEASE_MIN_RAW-CALIBRATION_MIN_SPAN_RAW);
+    factory_word(&lo,0,M1_FACTORY_RELEASE_MIN_RAW-M1_CALIBRATION_MIN_SPAN_RAW);
     assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
-    assert(out.bounds.upper[0]-out.bounds.lower[0]==CALIBRATION_MIN_SPAN_RAW);
+    assert(out.bounds.upper[0]-out.bounds.lower[0]==M1_CALIBRATION_MIN_SPAN_RAW);
     factory_word(&hi,0,M1_FACTORY_RELEASE_MAX_RAW);factory_word(&lo,0,0);
     assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
     assert(out.bounds.lower[0]==1 && out.bounds.upper[0]==M1_FACTORY_RELEASE_MAX_RAW+1u);
     assert(out.before==0x12345678 && out.after==0x87654321);
+    uint16_t released[M1_KEY_COUNT];
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)released[i]=2500+i;
+    assert(m1_factory_bootstrap(released,&out.bounds));
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)
+        assert(out.bounds.upper[i]==released[i] && out.bounds.lower[i]==released[i]-M1_STARTUP_TRAVEL_RAW);
+    m1_factory_bounds_t bootstrap=out.bounds;
+    released[81]=M1_FACTORY_RELEASE_MIN_RAW;
+    assert(!m1_factory_bootstrap(released,&out.bounds) && !memcmp(&bootstrap,&out.bounds,sizeof(bootstrap)));
+    released[81]=M1_FACTORY_RELEASE_MAX_RAW+2u;
+    assert(!m1_factory_bootstrap(released,&out.bounds));
+    assert(!m1_factory_bootstrap(NULL,&out.bounds) && !m1_factory_bootstrap(released,NULL));
 }
 static void lighting_encoding(void)
 {
@@ -230,7 +241,7 @@ static void application(void)
 {
     static const keyboard_app_ops_t ops={0};
     keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
-    for(unsigned i=0;i<82;++i) { samples[i]=3900; lo[i]=1000; hi[i]=4000; }
+    for(unsigned i=0;i<82;++i) { samples[i]=3900; lo[i]=1; hi[i]=4096; }
     frame(); assert(raw.armed);
     /* Exercise every real key, including all >65 IDs, through the shared engine. */
     for(unsigned i=0;i<82;++i) {
@@ -258,6 +269,40 @@ static void application(void)
     assert(midi.mapping[81]==255); /* Dedicated Right arrow isn't silently a note. */
     uint8_t rgb[M1_LED_BYTES]; keyboard_app_lights(&app,lo,hi,rgb,now);
 }
+static keyboard_save_result_t calibrated(const keyboard_calibration_t *candidate)
+{
+    assert(calibration_bounds_valid(M1_PROFILE,M1_KEY_COUNT,candidate->lower,candidate->upper));
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        assert(candidate->upper[i]==2600+i && candidate->lower[i]==2300+i);
+    }
+    return KEYBOARD_SAVE_COMPLETE;
+}
+static void travel_domain(void)
+{
+    static const keyboard_app_ops_t ops={.save_calibration=calibrated};
+    keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        samples[i]=hi[i]=2600+i;lo[i]=hi[i]-M1_STARTUP_TRAVEL_RAW;
+    }
+    frame();assert(raw.armed);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)assert(raw.raw[i]==4096);
+    samples[45]=hi[45]-200;frame();
+    assert(raw.raw[45]==2926 && keyboard_report_get_usage(&raw.engine.report,4));
+    assert(lo[45]==1945 && hi[45]==2645); /* never persist control-domain bounds */
+    samples[45]=hi[45];frame();assert(!keyboard_report_get_usage(&raw.engine.report,4));
+    assert(keyboard_app_calibrate(&app,now,true));
+    frame();now+=CALIBRATION_SETTLE_MS;frame();assert(cal.state==CAL_COLLECT);
+    /* TMR electrical travel need not reach half of its released ADC reading.
+     * Every key can be held/calibrated independently and in parallel. */
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)samples[i]=2300+i;
+    frame();now+=CALIBRATION_HOLD_MS;frame();assert(cal.state==CAL_DONE);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        assert(lo[i]==2300+i && hi[i]==2600+i);samples[i]=hi[i];
+    }
+    frame();assert(raw.armed && raw.raw[45]==4096);
+    samples[45]=lo[45];frame();assert(raw.raw[45]==1);
+    hi[45]=lo[45];frame();assert(!raw.valid && !raw.armed);
+}
 static unsigned selected_count;
 static m1_transport_t selected;
 static bool drained,accept_switch;
@@ -277,7 +322,7 @@ static void controls(void)
     keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
     assert(!m1_controls_bind(&s,&app,3,&transport,&battery));
     assert(m1_controls_bind(&s,&app,M1_TRANSPORT_USB,&transport,&battery));
-    for(unsigned i=0;i<82;++i) { samples[i]=3900; lo[i]=1000; hi[i]=4000; }
+    for(unsigned i=0;i<82;++i) { samples[i]=3900; lo[i]=1; hi[i]=4096; }
     frame();
     for(unsigned f=1;f<=5;++f) {
         samples[f]=3000; frame();
@@ -607,7 +652,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); factory_calibration(); acquisition(); application(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

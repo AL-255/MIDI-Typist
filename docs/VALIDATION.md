@@ -56,8 +56,9 @@ checking trailer flags, range/span boundaries, unused-cell exclusion and
 all-or-nothing publication. The ARM reader accesses only the two records'
 data/trailers in read-only mapped flash, rejects busy/invalid context and preserves
 IRQ masking. Foreground tests load those fixtures before exercising USB/radio
-and GUI telemetry. No physical factory data, checksum or travel accuracy has
-been verified; invalid records are not repaired or erased.
+and GUI telemetry. Physical records have been read and preservation checked;
+their out-of-domain representation, checksum and travel accuracy are not
+established. Invalid records are not repaired or erased.
 Cold-start tests compose the actual RTC/PHY/GPIO/scanner code, checking rail
 order, measured RTC/TMR2 handoff, fresh settling timestamps, complete warmup-frame discard, timer wrap,
 scan/PHY/clock failures, cancellation and cable changes. No startup helper is
@@ -65,13 +66,15 @@ stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
 The cold application-handoff audit composes these HALs with actual USB startup,
 radio initialization and shared application binding for both power sources and
 all five transports. It checks wired USB attachment before scanner initialization, fresh radio pulse
-timestamps, counter wrap, IRQ-mask preservation, factory-bounds rejection,
+timestamps, counter wrap, IRQ-mask preservation, factory-bounds rejection and
+explicit real-frame provisional bootstrap,
 source/USB/time/scan faults and terminal cleanup. Profile reads are modeled as
 erased and writes rejected; it does not execute a reset vector, real enumeration,
 peer delivery, post-handoff runtime power management or physical persistence.
 The cold-start diagnostic test executes the compiled SysEx service with abstract
 USB callbacks: build handshake, failure text, rejected mutations, boot-flag-gated
-reset requests, USB-generation invalidation and handoff to the live owner. A GUI
+reset requests, USB-generation invalidation and handoff to the live owner. Runtime
+fault tests check neutral HID, MIDI cleanup and retained software-IAP access. A GUI
 test confirms that a failure log cannot be mistaken for valid scan telemetry.
 Sleep-time tests script rates across the supported LICK range and verify
 coherent SDK reads, protected shadow synchronization, independent wraps,
@@ -144,17 +147,23 @@ ARM save/reboot. These are offline tests, not a physical unplug/replug check.
 M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
 per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;
-the control port returns the embedded Git identity and startup failure detail.
+the control port returns the embedded Git identity and live 82-key GUI snapshots.
 Power-cycle and software-requested recovery return to the factory bootloader.
-Factory calibration range validation currently prevents keyboard startup.
 Read-only factory diagnostics return valid markers but resting values outside
-the assumed 12-bit domain. All 82 released-key readings in the first complete
+the 12-bit import domain. The complete 518-byte calibration-field readback remains
+unchanged after flashing and automatic settings-only initialization. The live
+journal reports slot 0/generation 1 with no storage error, while calibration
+remains correctly marked unsaved. This is not a physical power-loss durability test.
+All 82 released-key readings in the first complete
 scan are midrange, without near-zero positions, and all six DMA banks retain
 15 slots before triggering. The selector is independently checked against
-executed private reference instructions. Neither calibration conversion nor
-individual physical press-to-key mapping is established by released readings.
-No custom keyboard, MIDI, lighting, calibration or wireless behavior is claimed
-physically working. See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+executed private reference instructions. The original startup RAM fallback is
+also instruction-checked. Provisional travel normalization permits neutral
+arming; no stock calibration scale conversion is inferred. Live telemetry shows
+frequent foreground acquisition losses and repeated MIDI cleanup, so stable
+typing/performance is not established. Individual press-to-key mapping, full
+calibration, LED appearance and wireless behavior still require hardware checks.
+See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 Velocity uses each board's declared scan rate, not USB delivery timestamps.
 The GUI's measured capture throughput does not establish the acquisition rate.

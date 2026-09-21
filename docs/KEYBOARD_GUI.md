@@ -115,11 +115,15 @@ reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
 The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
 before offering a trial conversion, or checks USB-bound SysEx identity for custom
-reflashing. USB diagnostics work; factory calibration validation blocks keyboard startup;
+reflashing. Live 82-key telemetry works, but frequent foreground scan losses prevent stable operation;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
-If an experimental backend reports `Boot failed: …` over SysEx, the GUI shows
+If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard
 snapshot; recovery must use the flashing workflow supported by that backend.
+
+M1 key readouts, thresholds and captures use normalized travel: 4096 released,
+1 pressed. Calibration candidates retain electrical ADC+1 units. An unsaved
+calibration flag can mean provisional startup bounds, not a failed settings save.
 
 Initialize the updater submodule first:
 

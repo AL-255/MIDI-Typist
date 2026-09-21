@@ -1,6 +1,7 @@
 #include "defaults.h"
 #include "keyboard_app.h"
 #include "keyboard_layout.h"
+#include "keyboard_sample.h"
 #include <string.h>
 
 static void defaults(keyboard_app_t *s)
@@ -70,11 +71,27 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     }
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
     const keyboard_config_t before=raw->engine.config;
-    keyboard_raw_frame(raw,samples,count,profile,valid);
+    const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
+    uint16_t normalized[MT_KEY_CAPACITY];
+    const uint16_t *input=samples;
+    if(policy && policy->normalize_travel) {
+        valid=valid && calibration_bounds_valid(profile,count,lo,hi);
+        for(unsigned i=0;i<count;++i) {
+            normalized[i]=0;
+            if(!samples[i] || samples[i]>4096u)valid=false;
+            if(valid)(void)keyboard_sample_normalize(samples[i],hi[i],lo[i],&normalized[i]);
+            s->input_lower[i]=1; s->input_upper[i]=4096;
+        }
+        input=normalized;
+    } else {
+        memcpy(s->input_lower,lo,count*sizeof(*lo));
+        memcpy(s->input_upper,hi,count*sizeof(*hi));
+    }
+    keyboard_raw_frame(raw,input,count,profile,valid);
     s->frame_valid=valid && raw->valid;
     if(s->reset_pending && s->frame_valid) {
         bool neutral=true;
-        for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
+        for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
         /* Output may have been disabled through SysEx. Neutrality, not output
          * arming, controls RESET so disabled keyboards can reset too. */
         if(neutral) {
@@ -84,7 +101,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         }
     }
     bool consumed=s->system_input && s->system_input(s,s->system_context,now);
-    uint8_t action=consumed?MENU_NONE:keyboard_menu_frame(s->menu,raw,lo,hi,&before,now,
+    uint8_t action=consumed?MENU_NONE:keyboard_menu_frame(s->menu,raw,s->input_lower,s->input_upper,&before,now,
         calibration_active(s->cal),s->midi->lower_muted,&s->midi->music,s->midi->velocity_start);
     if(action==MENU_MODE) keyboard_midi_toggle(s->midi,raw,now);
     if(action==MENU_LOWER) keyboard_midi_toggle_lower(s->midi,raw);
@@ -99,7 +116,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         s->loaded=true;
     }
     bool active=calibration_active(s->cal),neutral=true;
-    if(active) for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
+    if(active) for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
     calibration_frame(s->cal,samples,s->frame_valid,neutral,now);
     if(s->cal->state==CAL_SAVE) {
         keyboard_save_result_t result=s->ops && s->ops->save_calibration?
@@ -112,7 +129,12 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     }
     if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(raw);
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
-    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,lo,hi,now);
+    if(!policy || !policy->normalize_travel) {
+        /* A load/save callback can have changed electrical bounds this frame. */
+        memcpy(s->input_lower,lo,count*sizeof(*lo));
+        memcpy(s->input_upper,hi,count*sizeof(*hi));
+    }
+    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,s->input_lower,s->input_upper,now);
 }
 void keyboard_app_service(keyboard_app_t *s,uint32_t now,bool healthy,
                           keyboard_send_fn keyboard_send,midi_send_fn midi_send)
@@ -138,6 +160,8 @@ void keyboard_app_lights(keyboard_app_t *s,const uint16_t *lo,const uint16_t *hi
                          uint8_t *frame,uint32_t now)
 {
     if(!s->frame_valid) { memset(frame,0,LIGHTING_FRAME_SIZE); return; }
+    const keyboard_input_policy_t *policy=keyboard_layout(s->raw->profile)->input;
+    if(policy && policy->normalize_travel) { lo=s->input_lower;hi=s->input_upper; }
     lighting_travel_frame(s->raw->profile,s->raw->raw,lo,hi,s->frame_valid,frame);
     keyboard_midi_lights(s->midi,frame,now);
     calibration_lights(s->cal,frame,now);

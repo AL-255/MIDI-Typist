@@ -6,8 +6,8 @@ components, an 82-key application library, a wireless report scheduler,
 transport-menu and power-policy components, an experimental application image,
 and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
-Flashing, recovery and high-speed USB diagnostics are hardware-checked; factory
-calibration validation blocks keyboard startup. This is not a daily-use build.
+Flashing, recovery and live 82-key high-speed USB telemetry are hardware-checked.
+Frequent foreground scan losses prevent stable operation. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.
@@ -212,7 +212,7 @@ Entering the factory bootloader is **destructive before an image is sent**:
 the application entry command erases settings, and the bootloader erases its
 application range before USB enumeration. Do not use bootloader entry as an
 identity or connectivity test. Huntsman storage addresses are not portable to
-it. M1's distinct `M1P1` journal uses its two reserved application-tail pages,
+it. M1's distinct `M1P2` journal uses its two reserved application-tail pages,
 not the stock settings/calibration area. Native tests cover all 82 keys and
 every byte-cut point; an ARM audit executes the official SDK and SRAM writer
 against a controller model. Foreground restore/autosave uses the journal, with
@@ -238,32 +238,44 @@ application bounds; unused, battery and extra logical cells are not keys.
 
 Both records must have valid markers and saved flag 1. Every mapped resting
 baseline must be within the reference's native 1000–4000 range; both endpoints
-must be ADC-representable and span at least the shared calibration minimum.
+must be ADC-representable and span at least the M1 calibration minimum (128).
 Bounds receive the same native-to-canonical conversion as scans (`ADC + 1`).
 The decoder stages the entire result before publishing it. Bad markers, absent
 calibration, wrapped/reversed/narrow pairs, busy flash or invalid execution
 context leave the previous output unchanged. The reader preserves the interrupt
 mask and touches only 252 data bytes plus three trailer bytes per page.
 The tested keyboard has valid record markers but values outside this importer's
-assumed ADC domain. They are rejected, not rescaled or overwritten. The
+ADC domain. They are rejected, not rescaled or overwritten. The
 [cold-start diagnostics](TELEMETRY.md#cold-start-failure-reporting) expose those
 fixed fields and the first actual scan for investigating the representation.
 
 This is a conservative import, not the stock calibration algorithm: it does not
-repair records, use sample-minus-700 fallback floors, rebase resting samples,
-import nonlinear vendor curves, initialize the key-type page or erase anything.
+repair records, import nonlinear vendor curves, initialize the key-type page or erase anything.
 The factory schema has no verified checksum; plausible in-range corruption
 cannot be detected by marker/range checks alone. These bounds drive custom
 linear lighting/aftertouch, not a claim of physical millimetres.
 
-Foreground initialization exposes the factory loader result and rejects
-invalid/missing bounds unless a valid custom profile supplies calibration.
-It does not proceed with invented travel bounds. A calibration-recovery path
-is still required for devices with neither source. The GUI reports imported
-bounds as stored; this flag is separate from custom profile durability.
-Calibration entry requires the storage owner callbacks described below;
-without them, the bounds are read-only. Tests use synthetic records,
-read-only emulated flash and no connected-device calibration reads.
+Foreground initialization gives validated custom calibration precedence. If
+neither saved source is usable, an explicit real released startup frame permits
+**provisional RAM bounds**: current electrical ADC+1 as upper, upper minus 700
+as lower. Keep every key released at startup. Raw readings outside native
+1000–4000 reject the fallback. The private-reference audit executes the original
+validity/fallback instructions at `0x08005D68..0x08005E86`; this supports the RAM
+policy, not a claim of measured travel or compatibility of out-of-range records.
+Context/busy read failures still reject startup.
+
+The GUI's saved-calibration flag stays clear for provisional bounds. Settings
+autosave does not promote them to calibration. A full Fn+C/GUI calibration is
+needed for measured endpoints; it accepts a stable electrical drop of at least
+128 counts for one second, independently for each key. User-held partial travel
+can still yield partial bounds: fully depress each key. Storage callbacks are
+required for calibration entry, and only verified saves replace active bounds.
+
+The shared application's layout policy maps each key's electrical bounds to
+control values **4096 released / 1 pressed**, clipping at the endpoints. Thresholds,
+velocity, wheels, menus, lighting, aftertouch, GUI readouts and captures use this
+control domain; calibration and saved endpoints retain electrical ADC+1 values.
+Huntsman's input policy is unchanged. These linear coordinates are not millimetres.
 
 ## Power and transport components
 
@@ -765,8 +777,11 @@ disabled.
 
 The development loop does **not** implement battery idle/critical shutdown,
 pairing, encoder reports, cable recovery or wake restoration. A cable change
-or device fault stops acquisition/local links and detaches USB, retains rails,
-and latches a terminal diagnostic. It cannot prove release at a wireless host.
+or device fault stops acquisition/radio/lighting, retains rails, and latches a
+terminal diagnostic. If USB and the timebase remain usable, it sends neutral
+HID and MIDI sustain-off/all-sound-off/all-notes-off, retains the SysEx recovery
+service and reports `Runtime failed: detail=0x…`. It does not restart the failed
+peripherals or prove release at a wireless host.
 Clock/time faults trap without guessing a safe peripheral recovery sequence.
 `m1_main_state` and `m1_main_detail` expose the failure class and its clock/boot
 code, density, source or device-fault bits to a debugger; there is no automatic reset.

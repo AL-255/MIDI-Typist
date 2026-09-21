@@ -17,9 +17,8 @@ m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
         unsigned cell=m1_factory_cell(i);
         if(cell>=M1_FACTORY_CELL_COUNT)return M1_FACTORY_RANGE;
         uint16_t hi=halfword(upper->values+2u*cell),lo=halfword(lower->values+2u*cell);
-        /* Reference baseline validity is 1000..4000. The custom application
-         * additionally rejects reversed/narrow/wrapped pairs, never applying
-         * the reference's sample-minus-700 fallback to unknown travel. */
+        /* Saved bounds must be in the electrical ADC domain. Never infer a
+         * scale from an out-of-range record or rewrite its factory page. */
         if(hi<M1_FACTORY_RELEASE_MIN_RAW || hi>M1_FACTORY_RELEASE_MAX_RAW ||
            lo>M1_ADC_MAX || !keyboard_sample_normalize(hi,M1_ADC_MAX,0,&staged.upper[i]) ||
            !keyboard_sample_normalize(lo,M1_ADC_MAX,0,&staged.lower[i]))return M1_FACTORY_RANGE;
@@ -27,4 +26,18 @@ m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
     if(!calibration_bounds_valid(M1_PROFILE,M1_KEY_COUNT,staged.lower,staged.upper))
         return M1_FACTORY_RANGE;
     *out=staged;return M1_FACTORY_OK;
+}
+bool m1_factory_bootstrap(const uint16_t released[M1_KEY_COUNT],m1_factory_bounds_t *out)
+{
+    if(!released || !out)return false;
+    m1_factory_bounds_t staged;
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) {
+        /* Acquisition is already ADC+1. Reject rails/invalid input rather
+         * than allowing the reference's unsigned floor subtraction to wrap. */
+        if(released[i]<M1_FACTORY_RELEASE_MIN_RAW+1u ||
+           released[i]>M1_FACTORY_RELEASE_MAX_RAW+1u)return false;
+        staged.upper[i]=released[i];
+        staged.lower[i]=released[i]-M1_STARTUP_TRAVEL_RAW;
+    }
+    *out=staged;return true;
 }

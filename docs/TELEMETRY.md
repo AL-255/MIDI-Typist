@@ -11,12 +11,12 @@ The experimental M1 application accepts the ASCII command `bootloader` on its
 active SysEx control session only if the factory IAP flag is armed. It requests
 a reset after stopping local peripherals; disconnect, not an ACK alone, is the
 transition. The factory updater then erases the application and custom saves.
-The M1 diagnostic control port enumerates at USB high speed; application
-startup currently stops at factory calibration validation.
+The M1 control port enumerates at USB high speed and provides live 82-key
+snapshots. Frequent foreground acquisition losses still prevent stable operation.
 
 ## Cold-start failure reporting
 
-`LOG` payloads beginning with the reserved ASCII prefix `Boot failed: ` indicate
+`LOG` payloads beginning with `Boot failed: ` or `Runtime failed: ` indicate
 that normal application configuration is unavailable. The GUI surfaces the text,
 ends its configuration session and does not accept it as a scan snapshot. This
 contract is board-independent; the text after the prefix is board-specific.
@@ -35,7 +35,14 @@ configuration readback is fabricated. This service hands ownership to the normal
 application on successful startup. It cannot report failures before USB or after
 loss of the clock/timebase; those still require external recovery/debugging.
 
-During an M1 cold-start failure, `factory read` returns one read-only `DUMP`
+M1 `Runtime failed: detail=0x…` reports a terminal runtime failure: the main
+loop retains its debugger-visible failure class, with device-fault bits scan=1,
+lighting=2, transport=4, storage=8 and radio=16. For a cable-source change the
+detail is the previous external-power state. A working USB/timebase remains
+available for diagnostics and guarded IAP; no failed peripheral is restarted.
+Wired cleanup submits neutral HID and MIDI CC64/120/123=0 on all 16 channels.
+
+During normal M1 operation or a diagnostic failure, `factory read` returns one read-only `DUMP`
 payload with magic `M1FC`, version byte 1, reserved byte 0 and a little-endian
 u16 cell count (126). Two records follow, upper then lower: 126 raw little-endian
 u16 values followed by their three stored trailer bytes (flag, `55`, `AA`).
@@ -122,7 +129,8 @@ Total bytes = `align4(80 + 17 * count + hid_bytes) + 4`: Huntsman ANSI uses
 1152 bytes (61 sensors, 30-byte HID), M1 uses 1508 (82 sensors, 30-byte HID).
 The protocol permits up to 128 sensors and 32 HID bytes (2292 bytes total);
 each board allocates buffers for its own capacity. Huntsman publishes no faster
-than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
+than once per 33 ms. M1 also uses this interval; its 82-key snapshots have been
+received and decoded on the connected high-speed USB device.
 
 | Header offset | Encoding | Meaning |
 | --- | --- | --- |
@@ -145,7 +153,7 @@ than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
 | 46, 47 | u8 each | storage flags (valid=1, pending=2, fault=4), slot (0/1/255 none) |
 | 48, 52 | u32 each | MIDI overflow/error count, performance-mode change count |
 | 56, 58 | u16 each | selected calibration hold elapsed ms, inactivity remaining ms |
-| 60, 62 | u16 each | selected calibration candidate upper/lower endpoints, zero if absent |
+| 60, 62 | u16 each | selected electrical calibration candidate upper/lower endpoints, zero if absent |
 | 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
 | 76 | u16 | header size, 80 |
 | 78 | 2 bytes | zero reserved |
@@ -159,18 +167,25 @@ an error. These codes do not change the frame layout.
 
 Saved calibration does not imply a writable backend: a set saved bit and clear
 supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses
-this combination without storage callbacks. With callbacks, idle flags are 6
-and active flags are 7; the GUI and Fn+C can initiate parallel calibration.
+this combination without storage callbacks. With callbacks, saved bounds give
+idle flags 6 and active flags 7. M1 provisional startup bounds give idle flags 4
+and active flags 5: supported, but explicitly unsaved. The GUI and Fn+C can
+initiate parallel calibration.
 Factory bounds have calibration generation 0; a verified custom calibration
 increments it. The saved bit alone must not imply a durable whole profile.
 The supported bit describes the backend capability, not current permission to
 write: a storage fault disables new calibration entry even with that bit set.
-M1's `M1P1` journal independently supplies storage flags, slot,
+M1's `M1P2` journal independently supplies storage flags, slot,
 generation and errors; absent/invalid records start at slot 255, generation 0.
 Changes remain pending until the outer safety gate permits a verified save.
 See [device storage](DEVICE_CONFIG_STORAGE.md) for ownership and failure rules.
 
 Each sensor record begins at `80 + 17 * sensor`:
+
+Readout and threshold fields use the same control domain. On M1 this is linear
+per-key travel, 4096 released to 1 pressed; electrical ADC+1 readings and stored
+calibration endpoints are separate. Huntsman retains its electrical-domain
+readouts. M1 single-key captures use the same travel values as these GUI records.
 
 | Record offset | Encoding | Meaning |
 | --- | --- | --- |

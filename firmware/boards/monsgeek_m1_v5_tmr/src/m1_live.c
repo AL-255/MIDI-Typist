@@ -109,6 +109,11 @@ static bool decimal(const char **text,uint32_t *value)
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
+    if(!strcmp(line,"factory read")) {
+        uint8_t payload[M1_FACTORY_DUMP_BYTES];
+        return m1_factory_read_dump(payload)==M1_FACTORY_OK &&
+            midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"bootloader")) {
         if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)return false;
         update_requested=true;return true;
@@ -127,7 +132,7 @@ static bool command(const char *line)
                                 &status.ack,&status.result);
 }
 bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
-                  const m1_live_storage_ops_t *storage)
+                  const m1_live_storage_ops_t *storage,const uint16_t *released)
 {
     const keyboard_report_t neutral={0};
     bool old_drained=!initialized || (controls.current==M1_TRANSPORT_USB?
@@ -141,7 +146,10 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     device_store_load(&store,M1_PROFILE,M1_KEY_COUNT,lower,upper,m1_storage_read);
     m1_factory_bounds_t bounds;
     factory_result=m1_factory_load(&bounds);
-    if(!store.saved && factory_result!=M1_FACTORY_OK)return false;
+    if(!store.saved && factory_result!=M1_FACTORY_OK) {
+        if((factory_result!=M1_FACTORY_MARKER && factory_result!=M1_FACTORY_UNCALIBRATED &&
+            factory_result!=M1_FACTORY_RANGE) || !m1_factory_bootstrap(released,&bounds))return false;
+    }
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
     static const m1_transport_ops_t transport_port={drained,select_transport,NULL};
     keyboard_app_init(&app,&raw,&midi,&menu,&calibration,storage?&app_ops:NULL);
@@ -160,7 +168,8 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
     update_requested=false;
     power_state=POWER_AWAKE;
-    status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true,
+    status=(keyboard_telemetry_status_t){.storage_slot=255,
+                                      .calibration_saved=store.saved || factory_result==M1_FACTORY_OK,
                                       .calibration_supported=storage!=NULL};
     epoch=m1_usb_generation();scan_stream_init();
     if(!midi_control_init(&port))return false;
@@ -289,6 +298,7 @@ static void snapshot(void)
 {
     if(!scan_stream_gui_enabled() || (uint32_t)(now-last_gui)<GUI_REPORT_PERIOD_MS)return;
     last_gui=now;status.now=now;++status.sequence;
+    status.calibration_saved=store.saved || factory_result==M1_FACTORY_OK;
     status.scan_errors=m1_hal_errors()+losses;
     status.scan_fault=!source_healthy || !seen || (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS;
     status.light_errors=m1_lighting_errors();status.light_fault=!m1_lighting_healthy();
@@ -330,7 +340,9 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
         /* The save callback has now finished publishing/discarding bounds.
          * Invalidation inside it would destroy the candidate prematurely. */
         if(publish_storage_gap()) { snapshot();return; }
-        scan_stream_push(samples,M1_KEY_COUNT,M1_PROFILE,now_us);
+        /* Capture and GUI values share the control domain used for velocity,
+         * not the electrical samples retained for calibration. */
+        scan_stream_push(raw.raw,M1_KEY_COUNT,M1_PROFILE,now_us);
     }
     bool fresh=source_healthy && seen && (uint32_t)(now-app.last_frame)<SCAN_STALE_MS;
     if(!fresh)scan_stream_lost();

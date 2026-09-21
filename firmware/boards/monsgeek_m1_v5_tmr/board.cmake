@@ -23,7 +23,7 @@ add_library(midi_typist_services STATIC
     firmware/services/src/midi_control.c firmware/services/src/scan_stream.c
     firmware/services/src/device_store.c)
 target_compile_definitions(midi_typist_services PUBLIC
-    MT_STORE_PAGE_SIZE=2048 MT_STORE_MAGIC="M1P1" MT_STORE_INVALID_READ=0)
+    MT_STORE_PAGE_SIZE=2048 MT_STORE_MAGIC="M1P2" MT_STORE_INVALID_READ=0)
 target_include_directories(midi_typist_services PUBLIC firmware/services/include)
 target_link_libraries(midi_typist_services PUBLIC midi_typist_app)
 target_compile_options(midi_typist_services PRIVATE -Wall -Wextra -Werror)

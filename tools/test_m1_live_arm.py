@@ -15,6 +15,7 @@ from firmware_defaults import DEFAULTS as D
 
 class Live(Device,RadioArm):
     def call(self,name,*args,instructions=3000000):
+        if name=='m1_live_init' and len(args)==3:args=(*args,0) # no provisional released frame
         return super().call(name,*args,instructions=instructions)
 
     def __init__(self,path,high,sequence=0,time=0,mode=6,transports=False,storage=False):
@@ -120,7 +121,7 @@ def integration(path):
         d=Live(path,high)
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
-        assert s.count==82 and s.sample_hz==8000 and s.raw==(3900,)*82
+        assert s.count==82 and s.sample_hz==8000 and s.raw==(3959,)*82
         assert s.calibration_flags==2 and s.storage_flags in (0,2) and s.storage_slot==255
         d.command('cfg calibrate 1');assert d.snapshot(1).result==2
         d.command('cfg clean 2');assert d.snapshot(2).result==2
@@ -157,7 +158,11 @@ def integration(path):
         for i in range(D['RAW_VELOCITY_WINDOW']):
             d.samples[81]=3499-100*i;d.tick()
         s=d.snapshot();assert s.captures[81]==captures+1 and s.velocity_state[81]&2
-        assert abs(s.velocity[81]-800000/4500000)<0.000001
+        points=[4096-((4000-(3499-100*i))*4095+1500)//3000 for i in range(D['RAW_VELOCITY_WINDOW'])]
+        intervals=[a-b for a,b in zip(points,points[1:])]
+        ordered=sorted(intervals);median=ordered[len(ordered)//2]
+        intervals.pop(max(range(len(intervals)),key=lambda i:abs(intervals[i]-median)))
+        assert abs(s.velocity[81]-(sum(intervals)/len(intervals))*8000/4500000)<0.000001
         d.samples[81]=3900;d.tick()
         # MIDI mode and note generation use the same production coordinator.
         d.chord(56);assert d.snapshot().performance_mode==1

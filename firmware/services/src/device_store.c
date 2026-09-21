@@ -86,7 +86,7 @@ static bool sensor_get(const uint8_t *p,unsigned *pos,unsigned r,
     unsigned mapping=getbits(p,pos,map_bits(r));
     if(!pair_decode(thresholds,press,release) || *release>=4096)return false;
     if(p[5]) {
-        if(!pair_decode(calibration,lower,upper) || *upper<*lower+CALIBRATION_MIN_SPAN_RAW)return false;
+        if(!pair_decode(calibration,lower,upper) || *upper<*lower+calibration_min_span(p[4]))return false;
     } else {
         if(calibration)return false;
         *lower=*upper=0;

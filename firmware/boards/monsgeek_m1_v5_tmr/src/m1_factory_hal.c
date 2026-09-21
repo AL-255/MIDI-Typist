@@ -1,6 +1,7 @@
 #include "m1_factory.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
+#include <string.h>
 
 static void read_record(uintptr_t address,m1_factory_record_t *out)
 {
@@ -28,4 +29,16 @@ m1_factory_result_t m1_factory_load(m1_factory_bounds_t *out)
     m1_factory_result_t result=m1_factory_read(&upper,&lower);
     if(result!=M1_FACTORY_OK)return result;
     return m1_factory_decode(&upper,&lower,out);
+}
+m1_factory_result_t m1_factory_read_dump(uint8_t out[M1_FACTORY_DUMP_BYTES])
+{
+    if(!out)return M1_FACTORY_ARGUMENT;
+    m1_factory_record_t upper,lower;
+    m1_factory_result_t result=m1_factory_read(&upper,&lower);
+    if(result!=M1_FACTORY_OK)return result;
+    const uint8_t header[]={'M','1','F','C',1,0,M1_FACTORY_CELL_COUNT&255u,M1_FACTORY_CELL_COUNT>>8};
+    _Static_assert(sizeof(m1_factory_record_t)==M1_FACTORY_VALUES_BYTES+3u,"packed calibration fields");
+    memcpy(out,header,sizeof(header));
+    memcpy(out+8,&upper,sizeof(upper));memcpy(out+8+sizeof(upper),&lower,sizeof(lower));
+    return M1_FACTORY_OK;
 }

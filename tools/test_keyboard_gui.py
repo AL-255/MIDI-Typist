@@ -436,10 +436,11 @@ class Tests(unittest.TestCase):
         connection=Connection('unused')
         connection.build_target='MG-M1V5TMR'
         connection.heartbeat=connection.last_rx=time.monotonic()
-        message=(sx.LOG,connection.session,0,b'Boot failed: application factory=0x00000003')
-        with patch.object(connection,'receive',return_value=message):
-            with self.assertRaisesRegex(RuntimeError,'application factory=0x00000003'):
-                connection.poll()
+        for text in (b'Boot failed: application factory=0x00000003',b'Runtime failed: detail=0x00000001'):
+            message=(sx.LOG,connection.session,0,text)
+            with patch.object(connection,'receive',return_value=message):
+                with self.assertRaisesRegex(RuntimeError,'configuration is unavailable'):
+                    connection.poll()
         self.assertFalse(connection.connected)
         self.assertIsNone(connection.snapshot())
 

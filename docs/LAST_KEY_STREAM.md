@@ -3,6 +3,8 @@
 In the GUI, select a key and enable **Hold first 20 pts of keystroke**.
 The device pins that sensor and sends every acquired readback as HKL1 records
 inside MIDI SysEx SAMPLES messages. Other keys do not change the selected sensor.
+M1 sends normalized travel values, matching its GUI readouts and thresholds;
+its calibration endpoint measurements remain in electrical ADC+1 units.
 
 The GUI arms after observing release, captures 20 points including the
 below-press-threshold trigger, then waits for release to rearm. Device status

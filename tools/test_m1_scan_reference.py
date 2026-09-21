@@ -10,6 +10,8 @@ import struct
 from elftools.elf.elffile import ELFFile
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC
+from unicorn.arm_const import UC_ARM_REG_R4, UC_ARM_REG_R6, UC_ARM_REG_R7
+from firmware_defaults import DEFAULTS as D
 
 
 def check(elf_path, reference):
@@ -48,6 +50,23 @@ def check(elf_path, reference):
         else:
             assert not writes and after == before
     print('PASS compiled M1 bank wiring matches executed private reference GPIO writes for all banks')
+    # Execute the original startup validity/fallback block, not a reconstructed
+    # C implementation. Registers provide one rank/bank and scratch RAM only;
+    # stop before later filtering. This is neither a whole-boot nor flash test.
+    base=0x20000000;offset=3*12+2*2
+    cpu.reg_write(UC_ARM_REG_R4,base);cpu.reg_write(UC_ARM_REG_R6,base+0x1000)
+    cpu.reg_write(UC_ARM_REG_R7,2);cpu.mem_write(base+0x1980,bytes((3,)))
+    upper=base+0x845c+offset;lower=base+0x8558+offset;sample=base+0x7afe+offset
+    for hi in (0,999,1000,4000,4001,21000):
+        for lo in (0,1000):
+            cpu.mem_write(upper,struct.pack('<H',hi));cpu.mem_write(lower,struct.pack('<H',lo))
+            cpu.mem_write(sample,struct.pack('<H',2600))
+            cpu.emu_start(0x08005d69,0x08005e86,count=200)
+            assert cpu.reg_read(UC_ARM_REG_PC)==0x08005e86
+            observed=(struct.unpack('<H',cpu.mem_read(upper,2))[0],struct.unpack('<H',cpu.mem_read(lower,2))[0])
+            fallback=hi<D['M1_FACTORY_RELEASE_MIN_RAW'] or hi>D['M1_FACTORY_RELEASE_MAX_RAW'] or lo==0
+            assert observed==((2600,2600-D['M1_STARTUP_TRAVEL_RAW']) if fallback else (hi,lo))
+    print('PASS private reference replaces out-of-range startup calibration in RAM with sample and sample-minus-700')
 
 
 if __name__ == '__main__':

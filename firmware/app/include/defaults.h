@@ -166,6 +166,12 @@
 /* Native ADC baseline range admitted by the factory sample-startup path. */
 #define M1_FACTORY_RELEASE_MIN_RAW 1000u
 #define M1_FACTORY_RELEASE_MAX_RAW 4000u
+/* Provisional cold-start travel when stock records cannot be interpreted.
+ * The reference startup uses current ADC - 700 in RAM, never in flash. */
+#define M1_STARTUP_TRAVEL_RAW 700u
+#define M1_CALIBRATION_MIN_SPAN_RAW 128u
+#define M1_CALIBRATION_MIN_RELEASE_RAW 1001u
+#define M1_CALIBRATION_PRESS_DROP_RAW 128u
 /* Custom LED scheduling bounds, not measured electrical timing. */
 #define M1_LED_LATCH_US 1000u
 #define M1_LED_TRANSFER_TIMEOUT_US 10000u
@@ -278,6 +284,9 @@
 #endif
 #if M1_FACTORY_RELEASE_MIN_RAW < 1 || M1_FACTORY_RELEASE_MAX_RAW > 4095u || M1_FACTORY_RELEASE_MIN_RAW > M1_FACTORY_RELEASE_MAX_RAW
 #error "invalid M1 factory baseline range"
+#endif
+#if M1_STARTUP_TRAVEL_RAW >= M1_FACTORY_RELEASE_MIN_RAW || M1_STARTUP_TRAVEL_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_MIN_SPAN_RAW < 1 || M1_CALIBRATION_PRESS_DROP_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_PRESS_DROP_RAW >= M1_CALIBRATION_MIN_RELEASE_RAW || M1_CALIBRATION_MIN_RELEASE_RAW > 4096u
+#error "invalid M1 electrical calibration policy"
 #endif
 #if M1_COLD_SLEEP_TICKS < 1 || M1_COLD_SLEEP_TICKS > 65536u || M1_COLD_SCAN_SETTLE_US < 1 || M1_COLD_SCAN_SETTLE_US >= 0x80000000u
 #error "invalid M1 battery cold-start timing"

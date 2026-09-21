@@ -26,8 +26,10 @@ static const uint8_t keymap[256]={
 #include "../config/keymap.def"
 #undef KEYMAP
 };
+static const keyboard_input_policy_t input_policy={true,M1_CALIBRATION_MIN_SPAN_RAW,
+    M1_CALIBRATION_MIN_RELEASE_RAW,M1_CALIBRATION_PRESS_DROP_RAW};
 static const keyboard_layout_t layout={M1_KEY_COUNT,M1_FN_SENSOR+1u,
-    M1_TAB_SENSOR+1u,M1_CAPS_SENSOR+1u,M1_ESC_SENSOR+1u,M1_SCAN_HZ,levels,levels,keymap};
+    M1_TAB_SENSOR+1u,M1_CAPS_SENSOR+1u,M1_ESC_SENSOR+1u,M1_SCAN_HZ,levels,levels,keymap,&input_policy};
 
 const keyboard_layout_t *keyboard_layout(uint8_t profile)
 { return profile==M1_PROFILE?&layout:NULL; }

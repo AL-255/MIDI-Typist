@@ -193,7 +193,7 @@ def main_loop(image):
         d.put(GPIOC,0) # input source pin, real SDK GPIO setup is allowed
         results={'m1_storage_arm_recovery':0x3100c if failure=='recovery' else 0,
             'm1_live_update_requested':0,
-            'm1_usb_hw_running':failure=='boot_diagnostics','m1_diagnostics_service':0,
+            'm1_usb_hw_running':external and failure!='boot_service','m1_diagnostics_service':0,
             'm1_clock_init':6 if failure=='clock' else 0,
             'm1_time_start':failure!='time_start','m1_boot_begin':failure!='boot_begin',
             'm1_boot_state':6 if failure in ('boot_service','boot_diagnostics') else 5,'m1_boot_error':5,
@@ -202,7 +202,7 @@ def main_loop(image):
             'm1_live_transport':6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'],
             'm1_wireless_healthy':failure!='radio'}
         voids=('m1_boot_service','m1_live_stop','m1_usb_hw_stop','m1_hal_stop',
-               'm1_lighting_stop','m1_wireless_stop','m1_radio_stop')
+               'm1_lighting_stop','m1_wireless_stop','m1_radio_stop','m1_diagnostics_runtime_fault')
         names=set(results)|set(voids)|{'m1_time_now','m1_live_service'}
         by_address={s[name]&~1:name for name in names}
         def intercept(cpu,address,size,user):
@@ -244,11 +244,16 @@ def main_loop(image):
             assert begin[2]==1
             assert next(x for x in trace if x[0]=='m1_boot_service')[2]==0
         else:
-            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==int(failure!='boot_diagnostics')
+            diagnostic=failure=='boot_diagnostics' or (external and expected in (8,9))
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==int(not diagnostic),(failure,trace)
             if failure=='boot_diagnostics':assert diagnostic_calls==2 and not live
             if expected in (8,9):
-                assert labels[-6:]==['m1_live_stop','m1_usb_hw_stop','m1_hal_stop',
+                at=labels.index('m1_live_stop')
+                assert labels[at:at+5]==['m1_live_stop','m1_hal_stop',
                                       'm1_lighting_stop','m1_wireless_stop','m1_radio_stop']
+                assert 'm1_usb_hw_stop' not in labels
+                assert ('m1_diagnostics_runtime_fault' in labels)==external
+                if external:assert diagnostic_calls==2
             else:assert 'm1_live_stop' not in labels
     print('PASS M1 development main: ordered startup, source-selected transport, independent timestamps and terminal failures (component calls stubbed)')
 

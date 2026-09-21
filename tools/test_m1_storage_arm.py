@@ -194,7 +194,7 @@ def run(elf):
     assert d.call('m1_test_store_save',7)==1
     assert d.commands[0]==('erase',A) and len(d.commands)==513
     assert [address for kind,address in d.commands[1:]]==list(range(A,A+PAGE,4))
-    record=bytes(d.cpu.mem_read(A,PAGE));assert record[:4]==b'M1P1'
+    record=bytes(d.cpu.mem_read(A,PAGE));assert record[:4]==b'M1P2'
     d.call('m1_test_store_boot');assert d.call('m1_test_store_status')==1|(7<<16)
     assert d.call('m1_test_store_save',12)==1
     d.call('m1_test_store_boot');assert d.call('m1_test_store_status')==2|(12<<16)

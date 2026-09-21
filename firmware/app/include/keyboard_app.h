@@ -28,6 +28,8 @@ typedef struct keyboard_app {
     keyboard_menu_t *menu;
     keyboard_calibration_t *cal;
     const keyboard_app_ops_t *ops;
+    /* Control-domain bounds; separate from board-owned electrical calibration. */
+    uint16_t input_lower[MT_KEY_CAPACITY],input_upper[MT_KEY_CAPACITY];
     keyboard_report_t sent;
     uint32_t last_frame,last_report;
     bool sent_valid,loaded,reset_pending,frame_valid;

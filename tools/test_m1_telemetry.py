@@ -18,7 +18,7 @@ def main():
     assert snapshot.keyboard_mapping[81] == 135
     assert snapshot.press[81] == 2500 and snapshot.release[81] == 2700
     assert snapshot.midi_mapping[81] == 60
-    assert snapshot.raw == tuple(3900+i for i in range(82))
+    assert snapshot.raw == tuple(4096-((4096-(3900+i))*4095+1548)//3096 for i in range(82))
     assert snapshot.storage_generation == 0x12345678
     assert get_board(M1_TARGET).validates_wire(snapshot)
     assert not get_board(DEFAULT_TARGET).validates_wire(snapshot)
