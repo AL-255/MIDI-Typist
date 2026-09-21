@@ -1,7 +1,7 @@
 # M1 board/application libraries. No flashable image until startup, USB and
 # protected storage are integrated and verified. Native build runs this board
 # against the real shared application; ARM build uses the pinned official SDK.
-add_library(midi_typist_app OBJECT ${MT_APP_SOURCES})
+add_library(midi_typist_app STATIC ${MT_APP_SOURCES})
 target_include_directories(midi_typist_app PUBLIC firmware/app/include)
 target_compile_definitions(midi_typist_app PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
 target_compile_options(midi_typist_app PRIVATE -Wall -Wextra -Werror)
@@ -13,6 +13,12 @@ add_library(m1_board STATIC ${MT_BOARD_DIR}/src/m1_board.c ${MT_BOARD_DIR}/src/m
 target_include_directories(m1_board PUBLIC ${MT_BOARD_DIR}/include firmware/app/include)
 target_compile_definitions(m1_board PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
 target_compile_options(m1_board PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(m1_board PUBLIC midi_typist_app)
+# Archive-level cycle: board calibration uses shared normalization; application
+# uses board layout callbacks. CMake rescans both archives without duplicating
+# application objects inside each consumer. INTERFACE keeps board includes out
+# of the application's own compilation.
+target_link_libraries(midi_typist_app INTERFACE m1_board)
 add_library(midi_typist_services STATIC
     firmware/services/src/midi_control.c firmware/services/src/scan_stream.c
     firmware/services/src/device_store.c)
@@ -72,7 +78,7 @@ if(CMAKE_CROSSCOMPILING)
     target_link_options(m1_hal INTERFACE -Wl,--wrap=usbd_endpoint_request -Wl,--wrap=usbd_device_request
         -Wl,--wrap=usb_global_init -Wl,--wrap=usb_connect)
     add_library(m1_live STATIC ${MT_BOARD_DIR}/src/m1_live.c)
-    target_link_libraries(m1_live PUBLIC m1_hal midi_typist_services)
+    target_link_libraries(m1_live PUBLIC m1_hal m1_storage midi_typist_services)
     target_compile_options(m1_live PRIVATE -Wall -Wextra -Werror)
     add_executable(m1_hal_audit tests/m1_hal_audit.c)
     set_target_properties(m1_hal_audit PROPERTIES SUFFIX ".elf")
@@ -97,7 +103,7 @@ if(CMAKE_CROSSCOMPILING)
     set_property(TARGET m1_live_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     foreach(symbol m1_hal_periodic_active m1_hal_frame m1_hal_service m1_hal_errors
         m1_battery_hal_service m1_battery_hal_status m1_lighting_service m1_lighting_ready
-        m1_lighting_healthy m1_lighting_errors m1_lighting_offer)
+        m1_lighting_healthy m1_lighting_errors m1_lighting_offer m1_storage_read m1_storage_write)
         target_link_options(m1_live_audit PRIVATE -Wl,--wrap=${symbol})
     endforeach()
     foreach(target midi_typist_app midi_typist_services m1_board at32_sdk m1_hal m1_live m1_hal_audit m1_usb_audit m1_live_audit m1_storage m1_storage_audit)

@@ -109,12 +109,12 @@ than once per 33 ms. The M1 format is tested offline, not on M1 USB hardware.
 
 Saved calibration does not imply a writable backend: a set saved bit and clear
 supported bit (`flags=2` when idle) indicate imported read-only bounds. M1 uses this combination for validated
-factory records, with calibration generation 0, storage flags 0 and slot 255.
-The GUI must not treat it as a saved custom profile or enable calibration writes.
-The separate M1 `M1P1` storage backend is not bound to this foreground status;
-its record format and reserved pages are documented in
-[device storage](DEVICE_CONFIG_STORAGE.md). Adding a writer library does not
-change the wire fields or make volatile settings durable.
+factory records (calibration generation 0) or bounds from a valid custom record.
+This calibration flag must not enable calibration writes or imply a durable
+whole profile. M1's `M1P1` journal independently supplies storage flags, slot,
+generation and errors; absent/invalid records start at slot 255, generation 0.
+Changes remain pending until the outer safety gate permits a verified save.
+See [device storage](DEVICE_CONFIG_STORAGE.md) for ownership and failure rules.
 
 Each sensor record begins at `80 + 17 * sensor`:
 

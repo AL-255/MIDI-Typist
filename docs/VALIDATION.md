@@ -82,8 +82,11 @@ error-code isolation. Its separate linked ARM journal/SDK writer audit models
 controller effects and rejects out-of-slot writes, invalid geometry/context,
 unsafe activity and failed blank/program verification. It checks RAM-only
 transactions, temporary exception vectors, reboot fallback, fault latching and
-stuck-busy fail-stop. Live owner-loop autosave, physical flash timing, power
-qualification and hardware persistence remain unverified.
+stuck-busy fail-stop. Foreground tests separately script profile I/O and the
+owner gate, checking pending status, stable neutral autosave, no-change wear,
+restart restoration, failure latching and terminal resume failure at both USB
+packet sizes. Physical pause/drain scheduling, flash timing, power qualification
+and hardware persistence remain unverified.
 
 ## Physical checks
 

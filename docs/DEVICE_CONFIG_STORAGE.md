@@ -6,9 +6,9 @@ serial-number region at **0x49000..0x49400** is never a write target.
 Bootloader, application image, factory/security/PFR and secondary ASIC storage
 are also outside this writer.
 M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration)
-and a separate audited application-tail writer library. The latter is not yet
-connected to the foreground application: keyboard mappings and other edits are
-still volatile. The operational instructions below apply to the complete
+and an audited application-tail writer connected to foreground restore/autosave.
+Writing requires explicit outer-owner power/quiescence/resume callbacks; without
+them, edits remain pending in RAM. The operational instructions below apply to the complete
 Huntsman application; [M1's reservation and writer](#m1-application-tail-backend)
 have a different update-retention contract.
 
@@ -55,7 +55,7 @@ board callbacks alone own physical addresses and controller operations.
 | Board | Identity | Record size | CRC offset | Integration |
 | --- | --- | --- | --- | --- |
 | Huntsman | MTP2 | 512 | 508 | Application and bounded NXP writer |
-| M1 | M1P1 | 2048 | 2044 | SDK writer library; native and ARM audits, no live autosave |
+| M1 | M1P1 | 2048 | 2044 | SDK writer and foreground restore/autosave; outer safety gate required |
 
 The distinct identities bind board-local layout numbers to their physical
 namespace. Neither format accepts the other or migrates older records.
@@ -157,10 +157,28 @@ after timeout, returning to flash-resident code is unsafe: stop in SRAM, leave
 IRQs masked, disable SysTick and do not retry. There is no option-byte operation,
 mass erase, protection change or automatic reset.
 
-The owner-loop pause/drain/power gate, live calibration save/reset/autosave,
-startup RAM copy and complete application image remain to be integrated. The
-audit supplies synthetic ownership and power conditions; it cannot prove them
-on a keyboard.
+`m1_live_init` loads the journal before accepting a real frame. Valid custom
+calibration takes precedence; otherwise validated factory bounds are required.
+Saved MIDI mode is suppressed for wireless operation. GUI fields report the
+actual journal slot, generation, pending state and latched error independently
+of the imported-calibration flag.
+
+`device_store_poll` marks pending changes without writing. When a stable neutral
+snapshot is due, the foreground additionally checks completed neutral output,
+MIDI cleanup, local transport drain, idle lighting and no transport selection.
+The supplied `m1_live_storage_ops_t.begin` must prove power/host safety and pause
+hardware; false means unchanged/deferred, not a flash fault. After the bounded
+write/readback, `end` must discard pre-pause acquisitions, resume hardware and
+preserve accurate outer clocks across masked-IRQ time. The deliberate scan gap
+invalidates capture/velocity and requires neutral before rearming. A failed
+resume is terminal; reinitialization cannot silently clear it. No unchanged
+settings are rewritten, and a write failure is not retried in that session.
+
+The physical pause/drain/power coordinator, live calibration save/reset,
+startup RAM copy and complete application image remain unfinished. Foreground
+audits script the owner gate and profile I/O; the separate backend audit runs
+the actual SDK against modeled controller effects. Neither proves hardware
+power qualification or physical persistence.
 
 ## Reset, flashing and telemetry
 

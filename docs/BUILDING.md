@@ -110,7 +110,7 @@ python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
 ```
 
 The ARM artifacts are `libm1_live.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
-application objects, plus `libmidi_typist_services.a`. Native CTest passes an
+application archive `libmidi_typist_app.a`, plus `libmidi_typist_services.a`. Native CTest passes an
 actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
 no M1 `.bin` to install. `m1_hal_audit.elf`, `m1_usb_audit.elf`,
 `m1_live_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
@@ -121,7 +121,9 @@ reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled
 The foreground audit connects scripted scan/battery/LED boundaries to the real
 application, USB class, radio scheduler/SPI/DMA drivers and GUI codec, including
 discontinuity, release handling and gated Fn transport selection. External
-host-release/selection callbacks and radio replies are scripted.
+host-release/selection callbacks and radio replies are scripted. Profile I/O
+and storage pause/resume gates are scripted in this foreground audit, including
+pending status, neutral autosave, restart restoration and failure handling.
 The factory-calibration reader runs on synthetic read-only flash pages; the
 foreground audit imports those records rather than accepting supplied bounds.
 The storage audit runs the shared journal and official SDK flash driver in RAM

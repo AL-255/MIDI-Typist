@@ -6,6 +6,7 @@
 #include "m1_battery_hal.h"
 #include "m1_wireless.h"
 #include "scan_stream.h"
+#include "m1_storage.h"
 #include <string.h>
 static uint16_t frame[M1_KEY_COUNT];
 static uint32_t sequence;
@@ -51,10 +52,38 @@ void m1_test_live_transport_gate(unsigned drained,unsigned ready)
 unsigned m1_test_live_selection(unsigned field) { return field?select_calls:requested; }
 void m1_test_live_battery(uint8_t percent,bool valid)
 { battery=(m1_battery_t){.percent=percent,.valid=valid,.source_known=valid}; }
+/* Owner safety and flash effects are scripted here; the separate storage
+ * audit executes the actual SDK transaction and validates its guards. */
+static uint8_t pages[2][M1_STORAGE_PAGE_BYTES];
+static bool storage_allowed,storage_resumes,storage_owned;
+static unsigned storage_begins,storage_ends,storage_writes;
+static uint32_t storage_error;
+uint32_t __wrap_m1_storage_read(unsigned slot,uint8_t *page)
+{ if(slot>1)return M1_STORAGE_ARGUMENT;memcpy(page,pages[slot],sizeof(pages[0]));return 0; }
+uint32_t __wrap_m1_storage_write(unsigned slot,const uint8_t *page,bool safe)
+{
+    if(slot>1 || !safe || !storage_owned)return M1_STORAGE_UNSAFE;
+    ++storage_writes;if(storage_error)return storage_error;
+    memcpy(pages[slot],page,sizeof(pages[0]));return 0;
+}
+static bool storage_begin(void *context)
+{ (void)context;++storage_begins;if(!storage_allowed)return false;storage_owned=true;return true; }
+static bool storage_end(void *context)
+{ (void)context;++storage_ends;storage_owned=false;return storage_resumes; }
+uintptr_t m1_test_live_storage(void)
+{ static const m1_live_storage_ops_t ops={storage_begin,storage_end,NULL};return (uintptr_t)&ops; }
+void m1_test_live_storage_gate(unsigned allowed,unsigned resumes,uint32_t error)
+{ storage_allowed=allowed!=0;storage_resumes=resumes!=0;storage_error=error; }
+unsigned m1_test_live_storage_count(unsigned field)
+{ return field==0?storage_begins:field==1?storage_ends:storage_writes; }
+uintptr_t m1_test_live_storage_page(unsigned slot)
+{ return slot<2?(uintptr_t)pages[slot]:0; }
 __attribute__((used,section(".test_exports")))
 const void *const m1_live_test_exports[]={
     m1_live_init,m1_live_service,m1_live_stop,m1_live_scan_losses,m1_live_transport,m1_live_transport_fault,
     m1_live_factory_result,
+    m1_live_storage_fault,m1_test_live_storage,m1_test_live_storage_gate,
+    m1_test_live_storage_count,m1_test_live_storage_page,
     m1_test_live_frame,m1_test_live_periodic,m1_test_live_led,m1_test_live_get,
     scan_stream_lost,scan_stream_dropped,
     m1_radio_init,m1_radio_service,m1_radio_healthy,m1_radio_ready,

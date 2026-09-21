@@ -95,7 +95,8 @@
   command. Do not enable M1 flashing or allocate profile pages without proving
   its application/update and factory-calibration boundaries. M1's custom profile
   reservation is now 0x08027000/0x08027800, the last two application pages; its
-  writer is an audited library, not yet a live autosave backend. Keep the entire
+  writer and foreground autosave flow are audited, but require the outer owner's
+  verified power/quiescence/resume callbacks before device use. Keep the entire
   load image below 0x08027000 and execute its flash transaction/SDK code from
   SRAM. Stock settings at/above 0x08028000 and calibration at 0x08032000/0x08032800
   remain protected. Factory-bootloader reflashing erases both custom slots.

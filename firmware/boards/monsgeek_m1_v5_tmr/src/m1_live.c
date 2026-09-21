@@ -7,6 +7,8 @@
 #include "m1_usb.h"
 #include "midi_control.h"
 #include "scan_stream.h"
+#include "device_store.h"
+#include "m1_storage.h"
 #include <string.h>
 
 static keyboard_app_t app;
@@ -22,6 +24,10 @@ static keyboard_telemetry_status_t status;
 static bool initialized,enabled,seen,source_healthy,light_sent,selection_attempted,transport_fault;
 static const m1_transport_ops_t *transport_ops;
 static m1_factory_result_t factory_result=M1_FACTORY_NOT_LOADED;
+static device_store_t store;
+static const m1_live_storage_ops_t *storage_ops;
+static bool storage_fault;
+static uint32_t last_save_attempt;
 
 static uint32_t lock(void) { uint32_t mask=__get_PRIMASK();__disable_irq();return mask; }
 static void unlock(uint32_t mask) { __set_PRIMASK(mask); }
@@ -109,26 +115,37 @@ static bool command(const char *line)
     }
     return keyboard_app_command(&app,line,now,source_healthy && usb_ready(),&status.ack,&status.result);
 }
-bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports)
+bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
+                  const m1_live_storage_ops_t *storage)
 {
     const keyboard_report_t neutral={0};
     bool old_drained=!initialized || (controls.current==M1_TRANSPORT_USB?
         usb_ready() && m1_usb_drained() && !midi.panic && !midi.count:
         transport_ops && drained(NULL));
-    if((initialized && (enabled || transport_fault || !old_drained || !app.sent_valid ||
+    if((initialized && (enabled || transport_fault || storage_fault || !old_drained || !app.sent_valid ||
         memcmp(&app.sent,&neutral,sizeof(neutral)))) || !m1_transport_valid(current) ||
        (current!=M1_TRANSPORT_USB && !radio_mode(current)) ||
-       (transports && (!transports->drained || !transports->select)))return false;
+       (transports && (!transports->drained || !transports->select)) ||
+       (storage && (!storage->begin || !storage->end)))return false;
+    device_store_load(&store,M1_PROFILE,M1_KEY_COUNT,lower,upper,m1_storage_read);
     m1_factory_bounds_t bounds;
     factory_result=m1_factory_load(&bounds);
-    if(factory_result!=M1_FACTORY_OK)return false;
+    if(!store.saved && factory_result!=M1_FACTORY_OK)return false;
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
     static const m1_transport_ops_t transport_port={drained,select_transport,NULL};
     keyboard_app_init(&app,&raw,&midi,&menu,&calibration,NULL);
-    transport_ops=transports;
+    /* Bind layout/roles without treating a fabricated sample as acquisition.
+     * Restore every setting before any real frame or output can be processed. */
+    memset(samples,0,sizeof(samples));
+    keyboard_raw_frame(&raw,samples,M1_KEY_COUNT,M1_PROFILE,false);
+    keyboard_midi_frame(&midi,&raw,lower,upper,0);
+    (void)device_store_apply(&store,&app);
+    transport_ops=transports;storage_ops=storage;
     (void)m1_controls_bind(&controls,&app,current,transports?&transport_port:NULL,m1_battery_hal_status());
-    memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
-    now=scan_sequence=losses=last_gui=last_light=0;
+    if(!store.saved) {
+        memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
+    }
+    now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
     seen=source_healthy=light_sent=selection_attempted=transport_fault=false;
     status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true};
     epoch=m1_usb_generation();scan_stream_init();
@@ -144,6 +161,39 @@ uint32_t m1_live_scan_losses(void) { return losses; }
 m1_factory_result_t m1_live_factory_result(void) { return factory_result; }
 m1_transport_t m1_live_transport(void) { return controls.current; }
 bool m1_live_transport_fault(void) { return transport_fault; }
+bool m1_live_storage_fault(void) { return storage_fault; }
+static uint32_t write_profile(unsigned slot,const uint8_t *page)
+{ return m1_storage_write(slot,page,true); }
+static bool persist(bool fresh)
+{
+    if(!enabled || !fresh)return false;
+    (void)device_store_poll(&store,&app,now,false);
+    if(!store.pending || store.fault || !storage_ops ||
+       (uint32_t)(now-store.changed_at)<SETTINGS_SAVE_QUIET_MS ||
+       (uint32_t)(now-last_save_attempt)<SETTINGS_CHECK_PERIOD_MS ||
+       controls.switching || controls.pending || selection_attempted || !app.sent_valid ||
+       !m1_lighting_ready())return false;
+    const keyboard_report_t neutral={0};
+    if(memcmp(&app.sent,&neutral,sizeof(neutral)))return false;
+    if(controls.current==M1_TRANSPORT_USB) {
+        if(!usb_ready() || !m1_usb_drained() || midi.panic || midi.count)return false;
+    } else if(!radio_mode(controls.current) || !m1_wireless_local_idle())return false;
+    /* An idle opportunity need not coincide with the 20-ms check cadence.
+     * Recheck the entire snapshot before committing; a just-arrived edit
+     * restarts debounce rather than piggybacking on an older pending save. */
+    if(!device_store_poll(&store,&app,now,true))return false;
+    last_save_attempt=now;
+    if(!storage_ops->begin(storage_ops->context))return false;
+    /* No samples acquired before/during the pause may enter velocity/capture.
+     * begin() owns the actual hardware pause; no new lights/USB work starts. */
+    (void)device_store_update(&store,&app,NULL,m1_storage_read,write_profile);
+    bool resumed=storage_ops->end(storage_ops->context);
+    scan_stream_lost();++losses;seen=false;cancel_input();
+    if(!resumed) {
+        storage_fault=true;enabled=false;store.fault=true;store.error=M1_STORAGE_RESUME;
+    }
+    return true;
+}
 static void snapshot(void)
 {
     if(!scan_stream_gui_enabled() || (uint32_t)(now-last_gui)<GUI_REPORT_PERIOD_MS)return;
@@ -151,6 +201,10 @@ static void snapshot(void)
     status.scan_errors=m1_hal_errors()+losses;
     status.scan_fault=!source_healthy || !seen || (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS;
     status.light_errors=m1_lighting_errors();status.light_fault=!m1_lighting_healthy();
+    status.calibration_generation=store.calibration_generation;
+    status.storage_error=store.error;status.storage_generation=store.generation;
+    status.storage_flags=store.valid | (store.pending<<1u) | (store.fault<<2u);
+    status.storage_slot=store.slot;
     uint8_t out[SCAN_STREAM_GUI_SIZE];
     size_t size=keyboard_telemetry_encode(&app,&status,out,sizeof(out));
     if(size)(void)scan_stream_gui_push(out,size);
@@ -176,6 +230,9 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     }
     bool fresh=source_healthy && seen && (uint32_t)(now-app.last_frame)<SCAN_STALE_MS;
     if(!fresh)scan_stream_lost();
+    /* Before queuing this iteration's heartbeat/GUI/LED traffic, so the
+     * periodic output refresh cannot starve an otherwise idle pending save. */
+    if(persist(fresh)) { snapshot();return; }
     /* Keyboard/performance traffic has first use of each endpoint. MIDI
      * control chunks are bounded and never overwrite an in-flight report. */
     keyboard_app_service(&app,now,fresh && (controls.switching || output_ready()),send_keyboard,

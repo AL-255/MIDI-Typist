@@ -44,7 +44,7 @@ tests/                          native behavior and portability tests
 ```
 
 All board targets compile the same `MT_APP_SOURCES`. The `midi_typist_app`
-object target sees only `firmware/app/include`, standard C headers and its
+target sees only `firmware/app/include`, standard C headers and its
 compile-time capacity definitions. A CTest architecture check rejects leaked
 board headers and hardware symbols. The SDK-free reference build independently
 links every shared application source against the synthetic board.
@@ -115,8 +115,9 @@ formats, device identity and bounds validation. The shared application requests
 load/save/clear operations; it cannot erase a flash address. The SDK-free
 `services/device_store` serializer and two-slot journal use board-selected
 record sizes and identities. Huntsman's writer and physical addresses stay in
-its board directory. M1 has a separate SDK/SRAM writer library tested against
-a controller model; its foreground coordinator does not yet use it.
+its board directory. M1's foreground restores the journal and schedules autosave
+through an explicit outer-owner pause/power gate; its SDK/SRAM writer is tested
+separately against a controller model.
 
 ## Scheduling and outputs
 

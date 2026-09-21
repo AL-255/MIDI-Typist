@@ -187,8 +187,8 @@ identity or connectivity test. Huntsman storage addresses are not portable to
 it. M1's distinct `M1P1` journal uses its two reserved application-tail pages,
 not the stock settings/calibration area. Native tests cover all 82 keys and
 every byte-cut point; an ARM audit executes the official SDK and SRAM writer
-against a controller model. The foreground application does not load or save
-these records yet. See [device storage](DEVICE_CONFIG_STORAGE.md#m1-application-tail-backend)
+against a controller model. Foreground restore/autosave uses the journal, with
+writing gated by explicit outer-owner safety callbacks. See [device storage](DEVICE_CONFIG_STORAGE.md#m1-application-tail-backend)
 for the reservation, power/quiescence gate, RAM execution and update-loss contract.
 
 An M1 firmware port still requires verified startup/power behavior, physical
@@ -224,12 +224,12 @@ The factory schema has no verified checksum; plausible in-range corruption
 cannot be detected by marker/range checks alone. These bounds drive custom
 linear lighting/aftertouch, not a claim of physical millimetres.
 
-Foreground initialization rejects invalid/missing factory calibration and
-exposes the loader result to its outer owner. It does not proceed with invented
-travel bounds. A calibration-recovery path and custom profile persistence are
-still required before an installable firmware can handle every device state.
-The GUI reports successfully imported calibration as stored/read-only, with
-no custom generation or writable-profile claim. Tests use synthetic records,
+Foreground initialization exposes the factory loader result and rejects
+invalid/missing bounds unless a valid custom profile supplies calibration.
+It does not proceed with invented travel bounds. A calibration-recovery path
+is still required for devices with neither source. The GUI reports imported
+bounds as stored/read-only; this flag is separate from custom profile durability
+and does not enable calibration writes. Tests use synthetic records,
 read-only emulated flash and no connected-device calibration reads.
 
 ## Power and transport components
@@ -485,9 +485,12 @@ physical enumeration, acquisition cadence or a running M1 application.
 `m1_live` connects periodic scan frames to the shared keyboard/MIDI application,
 LED renderer, USB/radio output and GUI SysEx services. One foreground owner
 calls it with independently maintained wrapping millisecond/microsecond clocks.
-Initialization imports the validated factory bounds described above; unknown
-calibration is not replaced with ADC rails. Settings are volatile: no profile
-storage is advertised, and calibration/RESET commands and Fn hints are disabled.
+Initialization restores the custom journal before accepting the first scan,
+using stored calibration or the validated factory bounds above. Unknown bounds
+are not replaced with ADC rails. Settings save through an explicit
+`m1_live_storage_ops_t` owner gate; pending/saved/fault metadata reaches the GUI.
+Without those callbacks, edits remain pending in RAM. Calibration/RESET commands
+and Fn hints remain disabled until their separate save flow is integrated.
 The caller selects USB, BT1/2/3 or 2.4 GHz at initialization. A wireless choice
 requires a healthy scheduler configured for that mode, then waits for actual
 peer eligibility before accepting keyboard input. HID state goes only to the
@@ -525,10 +528,13 @@ shared services at both packet sizes, decoding snapshots with the GUI codec;
 it also runs all four wireless modes through the real scheduler/SPI/DMA code.
 Acquisition, battery and LED boundaries are scripted, including discontinuities
 and backpressure. Factory loading executes against synthetic read-only flash.
-Radio status, DMA completion and external transport callbacks
+Profile I/O and the storage pause/resume callbacks are scripted; tests cover
+deferred neutral saves, no-change wear, GUI status, restart restoration, write
+failure latching and terminal resume failure. The actual flash driver has its
+own controller-model audit. Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
-The outer startup/power/transport coordinator, verified radio delivery, durable
-storage and an installable application remain unfinished. Link faults are not
+The outer startup/power/transport/storage coordinator, verified radio delivery,
+physical persistence and an installable application remain unfinished. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
 ### USB hardware lifecycle

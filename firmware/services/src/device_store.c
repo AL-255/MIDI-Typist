@@ -230,10 +230,10 @@ bool device_store_update(device_store_t *s,keyboard_app_t *app,const keyboard_ca
     if(s->error) { s->fault=true;return false; } /* bounded attempt, no wear/retry loop */
     accept(s,p,slot);return true;
 }
-bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,cal_read_fn read,cal_write_fn write)
+bool device_store_poll(device_store_t *s,keyboard_app_t *app,uint32_t now,bool force)
 {
     if(!s->ready || !s->applied || s->fault || app->reset_pending || !app->frame_valid) return false;
-    if((uint32_t)(now-s->checked_at)<SETTINGS_CHECK_PERIOD_MS) return false;
+    if(!force && (uint32_t)(now-s->checked_at)<SETTINGS_CHECK_PERIOD_MS) return false;
     s->checked_at=now;
     uint8_t p[CAL_PAGE_SIZE];
     if(!capture(p,s,app,NULL)) { s->error=0x20001;s->fault=true;return false; }
@@ -247,7 +247,11 @@ bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,cal
        app->raw->engine.config.mode || menu->pending || menu->music_page || menu->press_page ||
        menu->velocity_page || menu->reset_confirmation) return false;
     for(unsigned i=0;i<app->raw->count;++i) if(app->raw->raw[i]<=app->raw->release[i]) return false;
-    return device_store_update(s,app,NULL,read,write);
+    return true;
+}
+bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,cal_read_fn read,cal_write_fn write)
+{
+    return device_store_poll(s,app,now,false) && device_store_update(s,app,NULL,read,write);
 }
 bool device_store_clear(device_store_t *s,cal_read_fn read,cal_erase_fn erase)
 {

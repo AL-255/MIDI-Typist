@@ -22,7 +22,7 @@ typedef enum {
     M1_STORAGE_UNSAFE, M1_STORAGE_GEOMETRY, M1_STORAGE_LINK,
     M1_STORAGE_BUSY, M1_STORAGE_CONTROLLER, M1_STORAGE_RECORD,
     M1_STORAGE_UNLOCK, M1_STORAGE_ERASE, M1_STORAGE_PROGRAM,
-    M1_STORAGE_VERIFY
+    M1_STORAGE_VERIFY, M1_STORAGE_RESUME
 } m1_storage_result_t;
 
 /* Privileged foreground, no concurrent flash owner. Buffers are complete

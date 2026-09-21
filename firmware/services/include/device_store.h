@@ -31,5 +31,10 @@ bool device_store_update(device_store_t *s,keyboard_app_t *app,
                          const keyboard_calibration_t *cal,cal_read_fn read,cal_write_fn write);
 bool device_store_service(device_store_t *s,keyboard_app_t *app,uint32_t now,
                           cal_read_fn read,cal_write_fn write);
+/* Read-only planning: update pending/debounce status and return whether a
+ * snapshot is due. Boards may defer for power/transport ownership without
+ * calling a writer or latching a false hardware fault. force rechecks the
+ * current snapshot immediately before committing a previously deferred save. */
+bool device_store_poll(device_store_t *s,keyboard_app_t *app,uint32_t now,bool force);
 bool device_store_clear(device_store_t *s,cal_read_fn read,cal_erase_fn erase);
 #endif

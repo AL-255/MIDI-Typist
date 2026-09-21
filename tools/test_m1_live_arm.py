@@ -4,6 +4,7 @@ Does not open hardware or model physical cadence, DMA movement or LED timing.
 """
 import argparse
 import struct
+import zlib
 from test_m1_usb_arm import Device, INPUT, OUTPUT, USB
 from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI, factory_memory, FACTORY_UPPER
 import midi_sysex as sx
@@ -13,23 +14,27 @@ from firmware_defaults import DEFAULTS as D
 
 
 class Live(Device,RadioArm):
-    def __init__(self,path,high,sequence=0,time=0,mode=6,transports=False):
+    def call(self,name,*args,instructions=3000000):
+        return super().call(name,*args,instructions=instructions)
+
+    def __init__(self,path,high,sequence=0,time=0,mode=6,transports=False,storage=False):
         super().__init__(path,high)
         self.samples=[3900]*82;self.sequence=sequence;self.time=time;self.commands=0
         self.messages=[];self.wire=bytearray();self.events=[];self.hid=bytes(30)
         self.radio_packets=[];self.radio_complete=True;self.peer_mode=mode;self.peer_pending=False
         self.radio_slots=bytes(6);self.radio_bitmap=bytes(15);self.radio_modifiers=0
         self.ops=self.call('m1_test_live_transports') if transports else 0
+        self.storage_ops=self.call('m1_test_live_storage') if storage else 0
         if mode!=6:self.start_radio(mode)
         pages=factory_memory(self)
         assert self.call('m1_live_factory_result')==7
         self.cpu.mem_write(FACTORY_UPPER+2047,b'\0')
-        assert not self.call('m1_live_init',mode,self.ops)
+        assert not self.call('m1_live_init',mode,self.ops,self.storage_ops)
         assert self.call('m1_live_factory_result')==4
         self.cpu.mem_write(FACTORY_UPPER,pages)
-        assert self.call('m1_live_init',mode,self.ops)
+        assert self.call('m1_live_init',mode,self.ops,self.storage_ops)
         assert self.call('m1_live_factory_result')==0
-        assert not self.call('m1_live_init',mode,self.ops) # no live reinitialization
+        assert not self.call('m1_live_init',mode,self.ops,self.storage_ops) # no live reinitialization
         self.tick()
     def start_radio(self,mode):
         self.peer_mode=mode
@@ -116,7 +121,7 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3900,)*82
-        assert s.calibration_flags==2 and not s.storage_flags and s.storage_slot==255
+        assert s.calibration_flags==2 and s.storage_flags in (0,2) and s.storage_slot==255
         d.command('cfg calibrate 1');assert d.snapshot(1).result==2
         d.command('cfg clean 2');assert d.snapshot(2).result==2
         for sensor in (61,33): # physical C/R: unsupported Fn actions stay inactive
@@ -182,9 +187,9 @@ def integration(path):
         rgb=bytes(d.cpu.mem_read(d.call('m1_test_live_get',0),246));assert not any(rgb)
         d.call('m1_live_stop',d.time//1000);d.tick(frame=False)
         assert d.hid==bytes(30)
-        assert not d.call('m1_live_init',6,0) # must drain MIDI releases first
+        assert not d.call('m1_live_init',6,0,0) # must drain MIDI releases first
         for _ in range(160):d.tick(frame=False)
-        assert d.call('m1_live_init',6,0)
+        assert d.call('m1_live_init',6,0,0)
         d.tick();assert not d.call('midi_control_ready')
         print(f'PASS M1 {"HS" if high else "FS"} foreground: scan/keymap/HID/MIDI/GUI, capture loss, rearm, USB epoch, wake exclusion and lighting safety')
     d=Live(path,True,sequence=0xfffffffd,time=0xffffffff*1000-1000)
@@ -200,6 +205,89 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     integration(args.elf)
     wireless_integration(args.elf)
+    persistence(args.elf)
+
+
+def persistence(path):
+    def advance(d,ms):
+        for _ in range(ms):d.tick(step=1000)
+    def snapshot(d):
+        d.messages.clear();return d.snapshot()
+    def stored(d,predicate):
+        # A snapshot already owned by USB may finish after the state changes.
+        for _ in range(16):
+            s=d.snapshot()
+            if predicate(s):return s
+        raise AssertionError((s.storage_flags,s.storage_generation,s.calibration_error))
+    def restart(d):
+        d.call('m1_live_stop',d.time//1000)
+        for _ in range(200):d.tick(frame=False)
+        assert d.call('m1_live_init',6,d.ops,d.storage_ops)
+        d.tick();d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY)
+        d.commands=0;d.command('stream gui')
+    for high in (False,True):
+        d=Live(path,high,storage=True)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
+        d.command('cfg velocity 3 7');d.chord(56) # persist MIDI mode too
+        d.chord(51) # Fn+J: Janko
+        advance(d,400)
+        s=snapshot(d);assert s.storage_flags==2 and not s.storage_generation
+        assert d.call('m1_test_live_storage_count',0)>0
+        assert not d.call('m1_test_live_storage_count',2) # denied gate is not a flash error
+        d.samples[81]=2500;d.tick()
+        d.call('m1_test_live_storage_gate',1,1,0);advance(d,400)
+        assert not d.call('m1_test_live_storage_count',2) # no save while a key is held
+        d.samples[81]=3900;advance(d,400)
+        s=snapshot(d)
+        assert s.storage_flags==1 and s.storage_generation==1 and s.storage_slot==0
+        assert d.call('m1_test_live_storage_count',1)==1 and d.call('m1_test_live_storage_count',2)==1
+        saved=bytes(d.cpu.mem_read(d.call('m1_test_live_storage_page',0),2048))
+        assert d.call('m1_live_scan_losses')==1 # intentional pause is visible to capture
+        advance(d,400);assert d.call('m1_test_live_storage_count',2)==1
+        d.samples[81]=2500;d.events.clear();restart(d);s=snapshot(d)
+        assert s.performance_mode==1 and s.flags&64 and s.velocity_start==7 and s.keyboard_mapping[81]==135
+        assert s.press[81]==2700 and s.release[81]==3100 and s.storage_generation==1
+        assert not s.flags&2 and not any(e[1]==0x90 for e in d.events)
+        d.samples[81]=3900;advance(d,30)
+        # An accepted command is RAM-only until readback accepts the new page.
+        d.command('cfg velocity 4 9');d.call('m1_test_live_storage_gate',1,1,0x3100b)
+        advance(d,400);s=stored(d,lambda s:bool(s.storage_flags&4))
+        assert s.storage_flags&4 and s.storage_generation==1 and s.calibration_error==0x3100b, (
+            s.storage_flags,s.storage_generation,s.calibration_error,
+            d.call('m1_test_live_storage_count',0),d.call('m1_test_live_storage_count',2),s.velocity_start)
+        writes=d.call('m1_test_live_storage_count',2);advance(d,400)
+        assert d.call('m1_test_live_storage_count',2)==writes and not d.call('m1_live_storage_fault')
+        d.call('m1_test_live_storage_gate',0,1,0);restart(d)
+        assert snapshot(d).velocity_start==7
+        # Successful flash plus failed resume is terminal, not permission to
+        # keep feeding stale scan state or silently clear the fault via init.
+        d.command('cfg velocity 5 8');d.call('m1_test_live_storage_gate',1,0,0)
+        advance(d,400)
+        assert d.call('m1_live_storage_fault')
+        assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
+        print(f'PASS M1 {"HS" if high else "FS"} profile lifecycle: pending gate, neutral save, no wear, GUI status, restart restoration, failure latch and terminal resume fault')
+    # Independent synthetic record fixture, with a unique bound for every key.
+    # The six fixed MIDI controls have 8 mapping bits; Fn has none, others 15.
+    record=bytearray(saved);record[5]=1;struct.pack_into('<I',record,10,7)
+    position=19*8
+    for sensor in range(82):
+        position+=23
+        lower,upper=1000+sensor,4000-sensor
+        code=(upper-1)*(upper-2)//2+lower-1
+        for bit in range(23):
+            byte,shift=divmod(position+bit,8)
+            record[byte]=(record[byte]&~(1<<shift))|(((code>>bit)&1)<<shift)
+        position+=23+(0 if sensor==77 else 8 if sensor in (72,73,74,75,76,78) else 15)
+    struct.pack_into('<I',record,2044,zlib.crc32(record[:2044]))
+    d=Live(path,True,storage=True)
+    d.cpu.mem_write(d.call('m1_test_live_storage_page',0),bytes(record))
+    d.cpu.mem_write(FACTORY_UPPER+2047,b'\0')
+    restart(d);s=snapshot(d)
+    assert d.call('m1_live_factory_result')==4 and s.calibration_generation==7
+    assert struct.unpack('<82H',d.cpu.mem_read(d.symbols['lower'],164))==tuple(range(1000,1082))
+    assert struct.unpack('<82H',d.cpu.mem_read(d.symbols['upper'],164))==tuple(range(4000,3918,-1))
+    print('PASS M1 restore: complete custom calibration supersedes invalid factory bounds without modifying factory flash')
 
 
 def wireless_integration(path):
@@ -280,9 +368,9 @@ def wireless_integration(path):
     assert d.call('m1_live_transport')==1 and not d.call('m1_live_transport_fault')
     d.samples[45]=3000;d.run();assert d.radio_held(4)
     d.samples[45]=3900;d.run();d.call('m1_live_stop',d.time//1000);d.run()
-    assert not d.call('m1_live_init',1,d.ops) # local neutral is not host proof
+    assert not d.call('m1_live_init',1,d.ops,0) # local neutral is not host proof
     d.call('m1_test_live_transport_gate',1,1)
-    assert d.call('m1_live_init',1,d.ops)
+    assert d.call('m1_live_init',1,d.ops,0)
     # An adapter claiming success for the wrong/not-ready radio cannot switch.
     d=Live(path,True,transports=True);d.start_radio(0);d.run()
     d.call('m1_test_live_transport_gate',1,1);d.chord(2)
@@ -291,7 +379,7 @@ def wireless_integration(path):
     for _ in range(D['M1_TRANSPORT_SWITCH_TIMEOUT_MS']//10+1):d.tick(step=10000)
     assert d.call('m1_live_transport_fault') and d.call('m1_live_transport')==6
     d.samples[45]=3000;d.run();assert not d.held(4)
-    assert not d.call('m1_live_init',6,d.ops) # no silent fault clear
+    assert not d.call('m1_live_init',6,d.ops,0) # no silent fault clear
     d=Live(path,True,transports=True);d.call('m1_test_live_transport_gate',1,0);d.chord(1)
     assert d.call('m1_test_live_selection',1)>0
     d.sequence+=1;d.tick();assert d.call('m1_live_transport_fault')
