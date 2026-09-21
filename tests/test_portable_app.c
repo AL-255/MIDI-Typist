@@ -21,6 +21,7 @@ static uint8_t rgb[LIGHTING_FRAME_SIZE],packets[1024][4];
 static unsigned logged;
 static uint32_t now;
 static unsigned saved,loaded,resets;
+static keyboard_save_result_t save_result;
 static bool refuse_output;
 static keyboard_report_t hid;
 static bool load_bounds(uint8_t profile,uint8_t count,uint16_t *lower,uint16_t *upper)
@@ -28,10 +29,10 @@ static bool load_bounds(uint8_t profile,uint8_t count,uint16_t *lower,uint16_t *
     assert(((profile==SYN_PROFILE && count==SYN_COUNT) || (profile==43 && count==7)) && lower && upper);
     ++loaded; return false;
 }
-static bool save_bounds(const keyboard_calibration_t *cal)
+static keyboard_save_result_t save_bounds(const keyboard_calibration_t *cal)
 {
     assert(cal->completed==SYN_COUNT && cal->lower[103]==1000);
-    ++saved; return true;
+    ++saved; return save_result;
 }
 static bool clear_settings(void) { ++resets; return true; }
 static const keyboard_app_ops_t ops={load_bounds,save_bounds,clear_settings,NULL,NULL};
@@ -55,7 +56,7 @@ static void init(void)
     synthetic_board_init();
     keyboard_app_init(&app,&raw,&midi,&menu,&app_cal,&ops);
     for(unsigned i=0;i<SYN_COUNT;++i) { samples[i]=3900; lo[i]=1000; hi[i]=4000; }
-    saved=loaded=resets=0; refuse_output=false;
+    saved=loaded=resets=0; refuse_output=false; save_result=KEYBOARD_SAVE_COMPLETE;
     logged=now=0; frame(); drain(); logged=0; assert(raw.armed && loaded==1);
 }
 static void chord(unsigned sensor)
@@ -161,6 +162,73 @@ static void lifecycle(void)
     assert(!app.sent_valid && !raw.armed);
     keyboard_app_frame(&app,NULL,SYN_COUNT,SYN_PROFILE,lo,hi,true,now);
     assert(!raw.valid);
+}
+static void deferred_candidate(void)
+{
+    init(); save_result=KEYBOARD_SAVE_DEFER;
+    assert(keyboard_app_calibrate(&app,now,true));
+    frame(); now+=CALIBRATION_SETTLE_MS; frame();
+    assert(app_cal.state==CAL_COLLECT);
+    for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=1000;
+    frame(); now+=CALIBRATION_HOLD_MS; frame();
+    assert(app_cal.state==CAL_SAVE && saved==1);
+    for(unsigned i=0;i<SYN_COUNT;++i) {
+        assert(lo[i]==1000 && hi[i]==4000);
+        assert(app_cal.lower[i]==1000 && app_cal.upper[i]==3900);
+    }
+}
+static void deferred_calibration(void)
+{
+    deferred_candidate();
+    uint32_t activity=app_cal.activity;
+    for(unsigned i=0;i<5;++i) {
+        frame(); keyboard_app_service(&app,now,true,send_hid,send);
+        assert(app_cal.state==CAL_SAVE && app_cal.activity==activity);
+        assert(hi[103]==4000 && saved==i+2);
+        const keyboard_report_t empty={0}; assert(!memcmp(&hid,&empty,sizeof(hid)));
+    }
+    save_result=KEYBOARD_SAVE_COMPLETE; frame();
+    assert(app_cal.state==CAL_DONE && saved==7 && !raw.armed);
+    for(unsigned i=0;i<SYN_COUNT;++i) assert(lo[i]==1000 && hi[i]==3900);
+    frame(); assert(saved==7); /* no retry after success */
+    for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=3900;
+    frame(); assert(raw.armed);
+
+    /* Failure, bad input, timeout and cancellation must never publish a
+     * pending candidate or call the backend after the candidate is gone. */
+    for(unsigned scenario=0;scenario<9;++scenario) {
+        deferred_candidate();
+        uint32_t ack=0; uint8_t result=0;
+        if(scenario==0 || scenario==1) {
+            save_result=scenario==0?KEYBOARD_SAVE_FAILED:(keyboard_save_result_t)99;
+            frame();
+            assert(app_cal.state==CAL_ERROR && app_cal.reason==CAL_STORAGE && saved==2);
+        } else {
+            if(scenario==2) { now=app_cal.activity+CALIBRATION_IDLE_MS; frame(); }
+            if(scenario==3) { samples[103]=0; frame(); }
+            if(scenario==4) { samples[103]=4097; frame(); }
+            if(scenario==5) {
+                assert(keyboard_app_command(&app,"cfg calcancel 1",now,true,&ack,&result));
+                assert(ack==1 && result==1);
+            }
+            if(scenario==6) keyboard_app_service(&app,app.last_frame+SCAN_STALE_MS,true,send_hid,send);
+            if(scenario==7) keyboard_app_frame(&app,samples,SYN_COUNT,SYN_PROFILE,lo,hi,false,now++);
+            if(scenario==8) keyboard_app_invalidate(&app,now);
+            assert(app_cal.state==CAL_ABORTED && saved==1);
+            assert(app_cal.reason==(scenario==2?CAL_TIMEOUT:scenario==5?CAL_CANCELLED:CAL_INVALID));
+        }
+        assert(!app_cal.completed && !calibration_active(&app_cal));
+        for(unsigned i=0;i<SYN_COUNT;++i) {
+            assert(lo[i]==1000 && hi[i]==4000);
+            assert(!app_cal.lower[i] && !app_cal.upper[i]);
+        }
+        unsigned attempts=saved; frame(); assert(saved==attempts);
+    }
+    deferred_candidate();
+    uint16_t small[7]={3900,3900,3900,3900,3900,3900,3900};
+    keyboard_app_frame(&app,small,7,43,lo,hi,true,now++);
+    assert(!calibration_active(&app_cal) && !app_cal.completed && saved==1);
+    assert(lo[103]==1000 && hi[103]==4000);
 }
 static void commands(void)
 {
@@ -269,6 +337,6 @@ static void unavailable_storage(void)
 }
 int main(void)
 {
-    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
+    normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

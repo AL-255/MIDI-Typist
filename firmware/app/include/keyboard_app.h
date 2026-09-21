@@ -5,11 +5,16 @@
 #include "keyboard_menu.h"
 #include "keyboard_calibration.h"
 
+typedef enum { KEYBOARD_SAVE_FAILED, KEYBOARD_SAVE_COMPLETE, KEYBOARD_SAVE_DEFER } keyboard_save_result_t;
 typedef struct {
     /* Synchronous, single-owner callbacks. Only the board owns storage
      * addresses, erase geometry, current schema and bootloader boundaries. */
     bool (*load_calibration)(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi);
-    bool (*save_calibration)(const keyboard_calibration_t *cal);
+    /* DEFER makes no storage changes and retains the completed candidate.
+     * Retried on fresh frames while CAL_SAVE; normal inactivity/cancellation
+     * rules still apply. COMPLETE means verified durable storage, not queued.
+     * Do not invalidate app/calibration state inside this callback. */
+    keyboard_save_result_t (*save_calibration)(const keyboard_calibration_t *cal);
     bool (*clear_profile)(void);
     void (*reset_sensors)(uint8_t profile);
     void (*log)(const char *message);

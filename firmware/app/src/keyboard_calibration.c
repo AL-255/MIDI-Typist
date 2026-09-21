@@ -40,10 +40,10 @@ bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo
 }
 void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool valid, bool neutral, uint32_t now)
 {
-    if (!calibration_active(s) || s->state == CAL_SAVE) return;
+    if (!calibration_active(s)) return;
     for (unsigned i=0; i<s->count; ++i) if (!raw[i] || raw[i]>4096u) valid=false;
     calibration_tick(s,valid,now);
-    if (!calibration_active(s)) return;
+    if (!calibration_active(s) || s->state == CAL_SAVE) return;
     if (s->state == CAL_RELEASE || s->state == CAL_SETTLE) {
         if (!neutral) { s->state=CAL_RELEASE; return; }
         if (s->state == CAL_RELEASE) { s->state=CAL_SETTLE; s->since=now; s->activity=now; }

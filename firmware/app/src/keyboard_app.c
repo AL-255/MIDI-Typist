@@ -102,12 +102,13 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     if(active) for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
     calibration_frame(s->cal,samples,s->frame_valid,neutral,now);
     if(s->cal->state==CAL_SAVE) {
-        bool success=s->ops && s->ops->save_calibration && s->ops->save_calibration(s->cal);
-        if(success) {
+        keyboard_save_result_t result=s->ops && s->ops->save_calibration?
+            s->ops->save_calibration(s->cal):KEYBOARD_SAVE_FAILED;
+        if(result==KEYBOARD_SAVE_COMPLETE) {
             memcpy(lo,s->cal->lower,count*sizeof(*lo));
             memcpy(hi,s->cal->upper,count*sizeof(*hi));
         }
-        calibration_finish(s->cal,success,now);
+        if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }
     if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(raw);
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);

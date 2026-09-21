@@ -44,11 +44,11 @@ static bool load_calibration(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t
     if(s_cal_store.saved) s_scan.calibrated=count;
     return s_cal_store.saved;
 }
-static bool save_calibration(const keyboard_calibration_t *cal)
+static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal)
 {
     bool ok=device_store_update(&s_cal_store,&s_app,cal,flash_calibration_read,flash_calibration_write);
     if(ok) s_scan.calibrated=cal->count;
-    return ok;
+    return ok?KEYBOARD_SAVE_COMPLETE:KEYBOARD_SAVE_FAILED;
 }
 static bool clear_profile(void)
 {

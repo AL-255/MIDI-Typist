@@ -97,6 +97,11 @@ reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. The M1 group also compiles the HAL/services against the pinned
 Artery SDK. Ordinary builds and native tests do not need that reference.
 
+Shared application tests cover deferred calibration saves: retries preserve
+active bounds and suppress keyboard output; only verified completion publishes
+the candidate. Failure, invalid readings, stale scans, cancellation, layout
+changes and inactivity timeout discard it without further save attempts.
+
 Storage tests cover all supported layouts, settings/calibration preservation,
 keyboard mappings including disabled/international/modifier destinations,
 MIDI+Jankó boot restoration, missing/corrupt saves, fallback generations,

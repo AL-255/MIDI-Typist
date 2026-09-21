@@ -26,6 +26,11 @@ Five seconds without progress aborts and discards the staged result. **Cancel
 calibration** in the GUI also discards it. Scan/USB failure aborts. Existing
 active calibration remains unchanged on failure; no partial result is saved.
 Configuration edits are rejected while the routine is active.
+The shared save callback can defer while its board's storage gate is busy.
+This retains the complete candidate in the save state, but does not extend the
+five-second inactivity deadline or change active bounds. Cancellation and scan
+validation still apply before each retry. Board storage capabilities and safety
+gates are specified in the [porting guide](PORTING.md).
 
 ## Measurement choices
 

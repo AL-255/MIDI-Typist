@@ -475,7 +475,7 @@ invent a journal generation; the GUI renders this combination as read-only.
 | `keyboard_app_ops_t` callback | Board responsibility |
 | --- | --- |
 | `load_calibration(profile, count, lo, hi)` | Validate identity, complete bounds and integrity before changing arrays; false means no valid load |
-| `save_calibration(cal)` | Persist all staged endpoints and verify them before returning true |
+| `save_calibration(cal)` | Return `KEYBOARD_SAVE_COMPLETE` only after persisting and verifying all staged endpoints; `KEYBOARD_SAVE_FAILED` discards the candidate; `KEYBOARD_SAVE_DEFER` leaves storage unchanged and retains the candidate for retry |
 | `clear_profile()` | Clear only owned custom records after an explicit Fn-menu confirmation or accepted MIDI SysEx `cfg clean`; false means clearing was not verified |
 | `reset_sensors(profile)` | Rebuild board-owned fallback state without an unrelated USB reboot or destructive peripheral restart |
 | `log(message)` | Optional bounded diagnostics, not a blocking serial write |
@@ -487,7 +487,14 @@ condition. The shared MIDI SysEx parser requires a valid scan younger than 100 m
 `cfg clean`; its ACK confirms the erase, not that held keys have been released.
 
 Callbacks are synchronous with no context argument; the board supplies its
-single-owner storage context. Loading is attempted once after a valid layout
+single-owner storage context. A deferred calibration save is retried on fresh
+frames in `CAL_SAVE`, without refreshing its inactivity deadline. Cancellation,
+invalid input, stale scans and the normal inactivity timeout discard the pending
+candidate without changing active bounds. Do not invalidate the application or
+mutate its calibration state inside the save callback: it still owns that
+candidate. Publish any acquisition gap after `keyboard_app_frame` returns,
+before accepting new samples. A queued write is not a completed save.
+Loading is attempted once after a valid layout
 frame, not continuously. The board owns storage generation/error telemetry. The shared application
 exposes the chosen Fn-menu levels and flags through `keyboard_menu_t`,
 `keyboard_midi_t` and `keyboard_raw_t`; the board owns their persistence.
