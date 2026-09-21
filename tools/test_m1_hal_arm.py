@@ -19,6 +19,7 @@ CODE, RAM, RETURN = 0x10000000, 0x20000000, 0x1003f000
 SPI, GPIO, DMA, CRM = 0x40003800, 0x40020000, 0x40026000, 0x40023800
 RGB = RAM+0xc000
 ADC, TMR3, TMR6 = 0x40012000, 0x40000400, 0x40001000
+TMR2 = 0x40000000
 LATCH, TIMEOUT = D['M1_LED_LATCH_US'], D['M1_LED_TRANSFER_TIMEOUT_US']
 
 
@@ -151,6 +152,91 @@ class M1Arm:
             for value in (self.rgb[led*3+channel],) for bit in range(8))
         assert bytes(self.cpu.mem_read(pointer,1968))==expected
         return pointer,expected
+
+
+class TimeArm(M1Arm):
+    def write(self,cpu,access,address,size,value,user):
+        self.writes.append((address,size,value))
+        assert (TMR2<=address<TMR2+0x100 or
+            address in (CRM+0x20,CRM+0x40,0xe000e280)),hex(address)
+        if address==CRM+0x20 and value&1:
+            self.cpu.mem_write(TMR2,bytes(0x100))
+
+
+def timebase(elf):
+    def point(d):
+        assert d.call('m1_time_now',RGB)
+        return struct.unpack('<II',d.cpu.mem_read(RGB,8))
+
+    for mask in (0,1):
+        d=TimeArm(elf);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        assert not d.call('m1_time_now',RGB) and not d.call('m1_time_resume',0)
+        assert not d.call('m1_time_suspend',RGB) and not d.call('m1_time_stop')
+        assert not d.writes and d.call('m1_time_start')
+        assert d.call('m1_time_healthy')
+        assert d.u32(TMR2)==0x401 and d.u32(TMR2+0x28)==215
+        assert d.u32(TMR2+0x2c)==0xffffffff and not d.u32(TMR2+12)
+        assert point(d)==(0,0)
+        writes=len(d.writes)
+        assert not d.call('m1_time_start') and not d.call('m1_time_now',0)
+        assert not d.call('m1_time_suspend',0) and len(d.writes)==writes
+        total=0
+        # Includes a flash-sized masked interval, hardware counter overflow,
+        # sub-ms carries, and independently wrapping ms after >49 days.
+        for elapsed in (1,998,1,42001,0xffffffff,20,*([4000000001]*1100)):
+            total+=elapsed;d.put(TMR2+0x24,total)
+            assert point(d)==(total&0xffffffff,(total//1000)&0xffffffff)
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+        assert len(d.writes)==writes  # reads never touch timers, IRQs or SysTick
+        assert d.call('m1_time_suspend',RGB) and not d.u32(TMR2)&1
+        assert d.call('m1_time_healthy') and not d.call('m1_time_now',RGB)
+        assert not d.call('m1_time_suspend',RGB) and not d.call('m1_time_start')
+        # A measured early-wake gap, not the originally requested duration.
+        elapsed=17237
+        assert d.call('m1_time_resume',elapsed)
+        total+=elapsed
+        assert point(d)==(total&0xffffffff,(total//1000)&0xffffffff)
+        d.put(TMR2+0x24,d.u32(TMR2+0x24)+999);total+=999
+        assert point(d)==(total&0xffffffff,(total//1000)&0xffffffff)
+        assert not d.call('m1_time_resume',0)
+        assert d.call('m1_time_suspend',RGB) and d.call('m1_time_resume',0)
+        assert point(d)==(total&0xffffffff,(total//1000)&0xffffffff)
+        assert d.call('m1_time_stop') and not d.call('m1_time_healthy')
+        assert not d.u32(TMR2)&1 and not d.call('m1_time_now',RGB)
+        assert d.call('m1_time_start') and point(d)==(0,0)
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+    # Never seize an in-use timer or start with an invalid clock/PLL denominator.
+    for address,value in ((TMR2,1),(TMR2+12,1),(TMR2+0x20,1),
+            (0xe000e100,1<<28),(CRM+0x20,1),(CRM+8,0),(CRM+4,0)):
+        d=TimeArm(elf);d.put(address,value)
+        assert not d.call('m1_time_start') and not d.writes
+    for reg,value in ((UC_ARM_REG_BASEPRI,1),(UC_ARM_REG_FAULTMASK,1),
+                      (UC_ARM_REG_CONTROL,1),(UC_ARM_REG_IPSR,3)):
+        for method,args in (('m1_time_start',()),('m1_time_now',(RGB,)),
+                ('m1_time_suspend',(RGB,)),('m1_time_resume',(5,)),('m1_time_stop',())):
+            d=TimeArm(elf)
+            if method!='m1_time_start':assert d.call('m1_time_start')
+            if method=='m1_time_resume':assert d.call('m1_time_suspend',RGB)
+            d.writes.clear();d.cpu.reg_write(reg,value)
+            assert not d.call(method,*args) and not d.writes
+    for suspended in (False,True):
+        for address,value in ((TMR2,0),(TMR2+4,16),(TMR2+8,7),
+                (TMR2+12,1),(TMR2+0x20,1),(TMR2+0x28,214),
+                (TMR2+0x2c,65535),(CRM+0x40,0),(CRM+0x20,1),
+                (CRM+8,0),(CRM+4,0),(0xe000e100,1<<28)):
+            d=TimeArm(elf);assert d.call('m1_time_start')
+            if suspended:assert d.call('m1_time_suspend',RGB)
+            old=d.u32(address);d.put(address,value);d.writes.clear()
+            d.cpu.mem_write(RGB,b'\xa5'*8)
+            assert not d.call('m1_time_resume' if suspended else 'm1_time_now',5 if suspended else RGB)
+            assert not d.writes and bytes(d.cpu.mem_read(RGB,8))==b'\xa5'*8
+            assert not d.call('m1_time_healthy')
+            d.put(address,old)  # repair is not permission to pretend no time was lost
+            assert not d.call('m1_time_now',RGB) and not d.call('m1_time_resume',0)
+    d=TimeArm(elf);assert d.call('m1_time_start') and d.call('m1_time_suspend',RGB)
+    d.put(TMR2+0x24,1)  # retained counter changed while suspended
+    assert not d.call('m1_time_resume',100) and not d.call('m1_time_healthy')
+    print('PASS M1 timebase: real SDK 32-bit TMR2, masked intervals, independent us/ms wrap, suspend/gap carry, ownership/context and latched faults')
 
 
 def lighting(elf):
@@ -464,6 +550,9 @@ class StartupArm(M1Arm):
 
 
 def startup(elf):
+    dev=StartupArm(elf);dev.cpu.reg_write(UC_ARM_REG_PRIMASK,1)
+    dev.put(TMR2,1)
+    assert dev.call('m1_clock_init')==10 and not dev.writes
     dev=StartupArm(elf)
     assert dev.call('m1_clock_init')==1 and not dev.writes  # interrupts must be masked
     dev.cpu.reg_write(UC_ARM_REG_PRIMASK,1)
@@ -676,7 +765,7 @@ def sleep_hal(elf):
         writes=len(dev.writes)
         assert dev.call('m1_sleep_wait',30,1)==3 and len(dev.writes)==writes
     for address,bit in ((DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),(DMA+0x6c,1),
-            (TMR3,1),(TMR6,1),(PWC,2),(0xe0042004,2),(ADC+8,1),
+            (TMR2,1),(TMR3,1),(TMR6,1),(PWC,2),(0xe0042004,2),(ADC+8,1),
             (SPI+8,128),(0x40003c08,128),(GPIO+0x414,1<<6),
             (GPIO+0x414,1<<13),(GPIO+0x814,1<<6),(GPIO+0x814,1<<14)):
         dev=SleepArm(elf);assert dev.call('m1_sleep_init')==1
@@ -1505,6 +1594,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf')
     args=parser.parse_args()
+    timebase(args.elf)
     lighting(args.elf)
     scanner(args.elf)
     scanner_pause(args.elf)

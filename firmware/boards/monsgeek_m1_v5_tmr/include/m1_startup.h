@@ -5,11 +5,12 @@
 
 /* Early startup only: interrupts masked, SysTick and peripherals quiescent.
  * These are callable HAL components, not a reset handler or boot image.
+ * TMR2 timebase must be suspended before clock changes.
  * No VTOR, USB, bootloader, flash program/erase or factory-data operations. */
 typedef enum {
     M1_CLOCK_OK, M1_CLOCK_INTERRUPTS, M1_CLOCK_HICK, M1_CLOCK_HICK_SWITCH,
     M1_CLOCK_PLL_STOP, M1_CLOCK_HEXT, M1_CLOCK_PLL, M1_CLOCK_PLL_SWITCH,
-    M1_CLOCK_RATE, M1_CLOCK_HEXT_STOP
+    M1_CLOCK_RATE, M1_CLOCK_HEXT_STOP, M1_CLOCK_TIMEBASE
 } m1_clock_result_t;
 m1_clock_result_t m1_clock_init(void);
 

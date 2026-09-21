@@ -15,6 +15,10 @@ one-shot/invalid contexts and latched faults, discard unread/battery samples,
 preserve IRQ masks and ADC configuration, and require a fresh complete frame
 after restart. Register guards prohibit power-rail and unrelated-DMA changes;
 ADC settling and resumed sample accuracy still require physical validation.
+Timebase tests execute SDK TMR2 setup with scripted counter progression through
+masked intervals, counter/millisecond wrap and suspend/resume gaps. Clock and
+sleep transitions reject a running timebase. Tests verify fractional carry,
+context/ownership rejection and latched faults, not real elapsed-time accuracy.
 The composite USB audit also drives real SDK endpoint/control routines through
 shared SysEx into the 82-key GUI decoder, including configuration ACK/readback,
 bounded control requests, ownership, suspend and session reset at both USB speeds.

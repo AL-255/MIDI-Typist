@@ -25,7 +25,8 @@ void m1_sleep_irq(void);
 /* Requires privileged thread mode, BASEPRI=FAULTMASK=0. Caller proves radio,
  * USB PHY, key reports, power rails and all periodic IRQs quiescent, e.g. via
  * m1_power_can_sleep. False permission never writes hardware. Owned DMA and
- * scan timers are checked again. Other pending IRQs may cause an early wake.
+ * scan timers and the suspended TMR2 timebase are checked again. Other
+ * pending IRQs may cause an early wake.
  * PRIMASK is held through WFI and clock restoration (ARM DUI0553A 2.5.2).
  * TIMER means an RTC flag was observed, not a measured elapsed duration.
  * CLOCK_FATAL leaves interrupts masked and SysTick disabled: caller must not

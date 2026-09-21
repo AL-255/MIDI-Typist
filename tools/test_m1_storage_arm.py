@@ -11,7 +11,7 @@ import tempfile
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UC_HOOK_CODE
 from unicorn.arm_const import (UC_ARM_REG_PC, UC_ARM_REG_PRIMASK,
     UC_ARM_REG_BASEPRI, UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
-from test_m1_hal_arm import M1Arm, CODE, RAM, RGB, DMA, ADC, TMR3, TMR6, SPI
+from test_m1_hal_arm import M1Arm, CODE, RAM, RGB, DMA, ADC, TMR2, TMR3, TMR6, SPI
 
 FLASH, SIZE = 0x40023c00, 0x1ffff7e0
 BASE, A, B, END = 0x08000000, 0x08027000, 0x08027800, 0x08028000
@@ -196,7 +196,13 @@ def run(elf):
     assert d.cpu.mem_read(A,PAGE*2)==b'\xff'*(PAGE*2);d.preserved()
     for mask in (0,1):
         d=Store(elf);d.cpu.mem_write(RGB,record);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+        # The no-IRQ timebase must be allowed to run through a save. Unlike
+        # scan timers it owns no DMA or flash accesses. Register preservation,
+        # not modeled physical timer progression, is established here.
+        d.put(TMR2,0x401);d.put(TMR2+0x28,215);d.put(TMR2+0x2c,0xffffffff)
+        timer=bytes(d.cpu.mem_read(TMR2,0x100))
         assert d.call('m1_storage_write',1,RGB,1)==0;d.preserved(mask)
+        assert bytes(d.cpu.mem_read(TMR2,0x100))==timer
         d.cpu.mem_write(RGB,b'\x5a'*PAGE)
         assert d.call('m1_storage_read',1,RGB)==0
         assert d.cpu.mem_read(RGB,PAGE)==record;d.preserved(mask)

@@ -68,7 +68,7 @@ if(CMAKE_CROSSCOMPILING)
     set_property(TARGET m1_storage_audit APPEND PROPERTY LINK_DEPENDS
         ${CMAKE_SOURCE_DIR}/tests/m1_storage_audit.ld ${MT_BOARD_DIR}/linker/storage_ram.ld)
     add_library(m1_hal STATIC ${MT_BOARD_DIR}/src/m1_hal.c ${MT_BOARD_DIR}/src/m1_lighting_hal.c
-        ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_startup.c ${MT_BOARD_DIR}/src/m1_factory_hal.c
+        ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_time.c ${MT_BOARD_DIR}/src/m1_startup.c ${MT_BOARD_DIR}/src/m1_factory_hal.c
         ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c ${MT_BOARD_DIR}/src/m1_power_gpio.c
         ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c ${MT_BOARD_DIR}/src/m1_usb_power.c
         ${MT_BOARD_DIR}/src/m1_usb_class.c ${MT_BOARD_DIR}/src/m1_usb_descriptors.c

@@ -2,6 +2,7 @@
  * The harness loads this synthetic-address ELF into Unicorn, never a device. */
 #include "m1_lighting.h"
 #include "m1_hal.h"
+#include "m1_time.h"
 #include "m1_startup.h"
 #include "m1_battery_hal.h"
 #include "m1_sleep.h"
@@ -64,6 +65,7 @@ const void *const m1_test_exports[]={
     m1_hal_frame,m1_hal_battery,m1_hal_healthy,m1_hal_periodic_active,m1_hal_errors,
     m1_hal_capture_start,m1_hal_capture_busy,m1_hal_service,
     m1_hal_pause,m1_hal_resume,
+    m1_time_start,m1_time_now,m1_time_suspend,m1_time_resume,m1_time_stop,m1_time_healthy,
     m1_clock_init,m1_startup_begin,m1_startup_service,m1_startup_stop,
     m1_startup_ready,m1_startup_fault,m1_startup_clock_fatal,m1_startup_encoder_phase,
     m1_battery_hal_init,m1_battery_hal_service,m1_test_battery_status,

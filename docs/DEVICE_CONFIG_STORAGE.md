@@ -178,6 +178,9 @@ The scanner provides `m1_hal_pause` / `m1_hal_resume` to stop periodic
 acquisition without reinitializing ADC calibration or power rails. It discards
 partial/unread frames and battery data. This is only one owner primitive:
 it neither qualifies power nor drains lighting/radio/USB or maintains clocks.
+The [TMR2 timebase](MONSGEEK_M1.md#foreground-timebase) counts through masked
+interrupts; leave it running during flash and sample it afterward. It does not
+replace the power/drain coordinator or establish real flash timing.
 
 The physical pause/drain/power coordinator, live calibration save/reset,
 startup RAM copy and complete application image remain unfinished. Foreground

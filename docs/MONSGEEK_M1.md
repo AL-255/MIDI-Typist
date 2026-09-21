@@ -664,6 +664,31 @@ USB exclusion, and cable-arrival restoration. Register effects are scripted;
 electrical pin roles beyond the observed sequence and physical battery startup/
 sleep/wake operation are not established by these tests.
 
+### Foreground timebase
+
+`m1_time_start` configures SDK TMR2 in its **32-bit plus mode** at 1 MHz
+(216 MHz timer clock divided by 216). This custom allocation uses no pins,
+DMA, SysTick, DWT or timer interrupts. `m1_time_now` returns independently
+wrapping microsecond/millisecond timestamps, preserving sub-millisecond carry.
+It must be sampled at least once per counter wrap (about 71 minutes). Keep it
+running during flash operations: hardware counts masked-IRQ time without
+depending on pending SysTick events. This does not measure flash timing itself.
+
+The API has one privileged foreground owner and preserves PRIMASK. Start
+rejects an active/interrupt-owned timer; lost clock or register ownership
+latches a fault instead of publishing an unreliable timestamp. Stop/start
+explicitly discards the previous epoch. Before changing clocks or sleeping,
+use `m1_time_suspend`, then restore the original clocks and pass **measured**
+elapsed microseconds to `m1_time_resume`. It retains fractional milliseconds
+and checks that the stopped counter was preserved. Clock initialization and
+RTC sleep reject a running TMR2. The outer sleep coordinator still needs an
+elapsed-time source; a requested wake interval is not such a measurement.
+
+ARM tests execute the official timer driver with scripted counter progression,
+including masked intervals, hardware wrap, independent millisecond wrap,
+suspend/early-wake gap arithmetic, ownership faults and IRQ preservation.
+They do not measure oscillator accuracy or physical sleep/flash duration.
+
 ### RTC sleep HAL
 
 `m1_sleep_init` configures the reference LICK clock, 7/7 RTC dividers, CK_B
@@ -675,7 +700,7 @@ the wake timer stopped until requested and leaves failed initialization unready.
 `m1_sleep_wait(ticks, platform_quiescent)` accepts 1–65536 RTC ticks, not
 milliseconds. The platform must first drain host reports, coordinate radio and
 USB PHY shutdown, stop periodic interrupts and remove sensor/LED power. The HAL
-rechecks DMA channels 1/2/3/6, ADC, scan timers, both SPI busy flags and owned
+rechecks DMA channels 1/2/3/6, ADC, scan timers, TMR2, both SPI busy flags and owned
 power latches. Missing permission, active hardware, incompatible clocks,
 standby selection or deep-sleep debugging rejects entry without writes.
 

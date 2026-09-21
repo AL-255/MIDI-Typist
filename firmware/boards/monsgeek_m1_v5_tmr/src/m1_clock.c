@@ -24,6 +24,9 @@ static m1_clock_result_t failed(m1_clock_result_t why)
 m1_clock_result_t m1_clock_init(void)
 {
     if(!__get_PRIMASK())return M1_CLOCK_INTERRUPTS;
+    /* A running APB timer would silently count at changing rates. The time
+     * owner must suspend and measure the gap before any clock transition. */
+    if(TMR2->ctrl1_bit.tmren)return M1_CLOCK_TIMEBASE;
     /* Raise wait states before changing frequency; this is the PSR latency
      * register, not an erase/program command. Never lower it on a failed boot. */
     flash_psr_set(FLASH_WAIT_CYCLE_6);

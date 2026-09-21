@@ -409,6 +409,12 @@ events. Start settling delays from fresh time readings after blocking ADC/clock
 initialization or sleep; do not derive a microsecond clock from a wrapping
 millisecond counter. Keep failed clock restoration terminal with ordinary IRQs
 disabled, and require explicit recovery rather than automatic rail cycling.
+An interrupt-counted tick can lose time during flash. Use a free-running counter
+or reconcile against a measured independent source, carrying fractional units
+and handling microsecond/millisecond wrap independently. M1's
+[foreground timebase](MONSGEEK_M1.md#foreground-timebase) owns 32-bit TMR2;
+it runs through flash but must be suspended before clock changes/deep sleep.
+Resume requires measured elapsed time, never an assumed requested sleep delay.
 The [M1 startup HAL](MONSGEEK_M1.md#clock-rails-and-remaining-integration)
 illustrates these contracts without providing an installable image.
 Never write more than capacity into the arrays. Establish fallback bounds

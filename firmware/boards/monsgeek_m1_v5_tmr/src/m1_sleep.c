@@ -82,7 +82,7 @@ m1_sleep_result_t m1_sleep_wait(uint32_t ticks,bool platform_quiescent)
      * explicitly incompatible with the SDK extra-low-power regulator mode. */
     if(DMA1_CHANNEL1->ctrl_bit.chen || DMA1_CHANNEL2->ctrl_bit.chen ||
        DMA1_CHANNEL3->ctrl_bit.chen || DMA1_CHANNEL6->ctrl_bit.chen ||
-       (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) || PWC->ctrl_bit.lpsel ||
+       (TMR2->ctrl1&1u) || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) || PWC->ctrl_bit.lpsel ||
        ADC1->ctrl2_bit.adcen || spi_i2s_flag_get(SPI2,SPI_I2S_BF_FLAG)==SET ||
        spi_i2s_flag_get(SPI3,SPI_I2S_BF_FLAG)==SET ||
        (GPIOB->odt&(GPIO_PINS_6|GPIO_PINS_13)) ||
