@@ -1,7 +1,7 @@
 # MonsGeek M1 V5 TMR
 
 The M1 backend contains scan, lighting, radio-transfer, battery-input, composite USB,
-USB power-down and RTC sleep HALs, clock/wired-startup
+USB power-down and RTC sleep HALs, clock and wired/battery cold-start
 components, an 82-key application library, a wireless report scheduler,
 transport-menu and power-policy components, and matching GUI geometry. Connected-device access is **read-only factory
 identity inspection**, for internal model **ID2949**. There is no flashable M1
@@ -513,12 +513,35 @@ PLL and external oscillator before reconfiguring them, and establishes the
 not retry indefinitely. USB PLL output remains disabled until USB initialization.
 No flash programming or erase operation is linked into this component.
 
-`m1_startup` implements **only the PC13-low rail-startup sequence**: PB6 high,
-10 ms, PB12 low, 10 ms, PC14 high, 10 ms, scanner initialization, PB13 high,
-LED initialization, PC6 high, sensor settling, acquisition start. It rejects
-battery-powered startup and stops on cable loss rather than applying the wired
-sequence to the unimplemented wireless path. This is an implementation limit,
-not a wired-only product policy.
+`m1_startup` implements both PC13 branches of the cold-start rail sequence
+observed at `0x08016D04`. Begin requires explicit caller permission, privileged
+foreground context and quiescent peripherals/transports. Shared GPIO restoration
+establishes normal pin roles and the encoder baseline before selecting a branch:
+
+- **PC13 low (wired):** PB6 high, 10 ms, PB12 low, 10 ms, PC14 high, 10 ms.
+- **PC13 high (battery):** initialize RTC, reduce the idle USB PHY's power,
+  prepare wake GPIO, wait 10 ms with rails low, sleep for 25 RTC ticks, then
+  raise PC14/PB6, initialize the scanner, raise PC6 and settle for 10 µs.
+  Complete and discard one bounded six-bank scan; lower PB6/PC14/PC6, raise
+  PB6, wait 10 ms, restore GPIO/encoder state, wait 10 ms, raise PC14 and
+  wait another 10 ms.
+
+Both paths then initialize the scanner, raise PB13, initialize LEDs, raise PC6,
+settle the sensors and start periodic acquisition. Delays are defaults, not
+measured hardware timings; RTC ticks are not milliseconds. The battery warmup
+uses the custom scanner's complete-frame ownership and timeout instead of the
+reference's unbounded busy wait. No active USB session is allowed, so there is
+no host connection to disconnect during this sequence.
+
+Service takes independent wrapping millisecond/microsecond clocks. Fresh polls
+start settling intervals after potentially blocking initialization or wake;
+the caller must refresh time after service returns. A source change while
+servicing this owner, scan fault or ordinary sleep failure stops owned HALs and
+rails and attempts GPIO restoration. Restart is explicit; failed GPIO restoration
+retains ownership and blocks begin. Fatal clock restoration leaves IRQs masked
+and SysTick stopped: subsequent stop/service calls perform no peripheral work.
+The encoder baseline is available only when ready. Startup does not select a
+radio transport, report keys, start USB, restore profiles or form a boot image.
 
 ### Sleep/wake pin ownership
 
@@ -542,7 +565,7 @@ caller’s interrupt mask and unrelated pins, including debug and power rails.
 They neither enter sleep nor shut down the radio or sensor supplies.
 
 While prepared, battery service invalidates readings without consuming scans;
-battery initialization, wired startup and USB startup cannot take over the pins.
+battery initialization, a new startup and USB startup cannot take over the pins.
 If battery initialization was attempted during that interval, initialize it
 again after restoration. A failed restore retains sleep ownership.
 
@@ -555,7 +578,7 @@ reporting remains separate integration work.
 Linked ARM audits check the ordered SDK writes, drive/pull modes, preserved
 PA11 latch, switch changes between reads, busy/context rejection, battery and
 USB exclusion, and cable-arrival restoration. Register effects are scripted;
-electrical pin roles beyond the observed sequence and full battery startup/
+electrical pin roles beyond the observed sequence and physical battery startup/
 sleep/wake operation are not established by these tests.
 
 ### RTC sleep HAL
@@ -652,8 +675,8 @@ invalid frames. Linked HAL tests cover repeated one-shot DMA chains,
 one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
 timeouts and faults. Wake-to-host key restoration is not integrated yet.
 
-Complete power management still requires the wireless cold-start path,
-binding the radio scheduler and pairing/sleep handshakes, integrating the USB
+Complete power management still requires binding cold startup to the application,
+radio scheduler and pairing/sleep handshakes, integrating the USB
 lifecycle and power helpers, wake-check scheduling and full restoration of held keys. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
@@ -678,7 +701,7 @@ Mocked Tk tests verify identity-selected geometry, sensor 81 edits/capture,
 all-key thresholds and calibration status/cancel. These checks do not validate an M1
 custom application, physical scanner timing, lighting waveform, persistence or updater.
 Battery/filter/menu/power-policy tests are native software tests. Clock,
-wired rail ordering, battery GPIO configuration, fresh-frame acquisition,
+wired/battery cold-start rail ordering, battery GPIO configuration, fresh-frame acquisition,
 SPI3 radio transfers, USB power-down and RTC initialization/sleep/resume also
 execute the linked Cortex-M4 code and official SDK under scripted register
 models. RTC readiness and the WFI wake boundary are scripted, not elapsed-time

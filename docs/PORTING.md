@@ -387,6 +387,14 @@ ownership: invalidate its normal telemetry and prevent other HAL initialization
 from reclaiming it until restoration succeeds. Preserve unowned pin latches
 and debug pins. Do not translate sequential wake-pin reads into synthetic key
 events without the platform's filtering and restoration logic.
+For cold startup, model each power-source branch explicitly and bound scan
+completion. Discard warmup samples instead of reporting them as key or velocity
+events. Start settling delays from fresh time readings after blocking ADC/clock
+initialization or sleep; do not derive a microsecond clock from a wrapping
+millisecond counter. Keep failed clock restoration terminal with ordinary IRQs
+disabled, and require explicit recovery rather than automatic rail cycling.
+The [M1 startup HAL](MONSGEEK_M1.md#clock-rails-and-remaining-integration)
+illustrates these contracts without providing an installable image.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

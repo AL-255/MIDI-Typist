@@ -6,7 +6,7 @@ The separate [M1 backend](MONSGEEK_M1.md#verification-limits) has a physically
 checked read-only identity query, official-SDK ARM library builds, and native
 82-key application/scanner plus GUI tests. Native tests also cover Fn transport
 controls, USB-only MIDI, the battery curve/filter, sleep-request policy and radio packet codec.
-Linked Cortex-M4 tests execute clock, wired-startup, battery-input, USB power-down, RTC sleep,
+Linked Cortex-M4 tests execute clock, wired/battery cold-start, battery-input, USB power-down, RTC sleep,
 scan, LED and SPI3 radio HALs with official SDK drivers; register effects and completion
 events are modeled. These do not validate an installable
 M1 firmware or peripheral timing.
@@ -35,13 +35,17 @@ Sleep-GPIO tests execute ordered SDK pin changes and switch reads, preserving
 unrelated pins and the reference's untouched latch. They check quiescence,
 battery/USB ownership exclusion and restoration after cable arrival. This is
 register-level evidence, not electrical charging or wake validation.
+Cold-start tests compose the actual RTC/PHY/GPIO/scanner code, checking rail
+order, fresh settling timestamps, complete warmup-frame discard, timer wrap,
+scan/PHY/clock failures, cancellation and cable changes. No startup helper is
+stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
 
 ## Automated checks
 
 | Layer | Coverage |
 | --- | --- |
 | Native C/Python | Shared defaults/alternate-initializer builds, lifecycle and architecture, NKRO, Schmitt/velocity, menus, MIDI, parallel calibration, complete storage snapshots, GUI/SysEx transport, device-flashing adapters, current-only rules and capture framing |
-| Linked Cortex-M4 execution | M1 clock waits/failures, wired rail ordering, ADC rank/bank/DMA configuration, battery sampling, SPI LED/radio handling and coexistence, USB power-down guards/timeout, RTC setup/backup preservation and scripted sleep/resume; no analog timing, physical wake or radio-peer simulation |
+| Linked Cortex-M4 execution | M1 clock waits/failures, wired/battery cold-start rail ordering, ADC rank/bank/DMA configuration, battery sampling, SPI LED/radio handling and coexistence, USB power-down guards/timeout, RTC setup/backup preservation and scripted sleep/resume; no analog timing, physical wake or radio-peer simulation |
 | Linked Cortex-M33 execution | SDK startup/USB/DMA/I2C paths, descriptor/control transfers, MIDI packets, LED writes, faults, MIDI SysEx, updater entry and storage integration |
 | Original-reference comparison | Selected scan/editor/lighting behavior and flash register transactions; the original fixture is separate and read-only |
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |

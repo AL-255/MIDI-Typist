@@ -353,12 +353,15 @@ class StartupArm(M1Arm):
     def check_guards(self):
         for start,end in ((0x1c,0x6c),(0x80,0x100)):
             assert bytes(self.cpu.mem_read(DMA+start,end-start))==b'\x5a'*(end-start)
-        # Radio SPI3 pins and encoder inputs remain outside startup ownership.
-        for port,pins in ((GPIO+0x400,(3,4,5,10)),(GPIO+0x800,(10,11,12))):
-            for pin in pins:
+        # Scanner, LED, rails and observed wake GPIO own only these pins.
+        # Preserve every other pin, including radio SPI3 and debug pins.
+        for port,owned,initial in ((GPIO,set(range(8))|{10,11},0),
+                (GPIO+0x400,{0,6,7,8,9,10,12,13},0xa5a5a5a5),
+                (GPIO+0x800,set(range(7))|{10,11,12,13,14},0xa5a5a5a5)):
+            for pin in set(range(16))-owned:
                 for offset,width in ((0,2),(4,1),(8,2),(12,2),(20,1)):
                     mask=((1<<width)-1)<<(width*pin)
-                    assert self.u32(port+offset)&mask==0xa5a5a5a5&mask
+                    assert self.u32(port+offset)&mask==initial&mask
 
 
 def startup(elf):
@@ -380,35 +383,38 @@ def startup(elf):
         if failure in ('hick','hick_switch'):
             assert not any(a==CRM+4 for a,_,_ in dev.writes)
             assert dev.u32(CRM)&(1<<24)
-    # The present rail sequencer is ONLY the verified PC13-low startup path.
-    # Wireless cold-start/sleep requires a separate RTC/scan/radio integration.
+    # Wired branch, including cold GPIO restore and independently wrapped time.
     for start in (0,0xfffffff0):
         dev=StartupArm(elf)
         dev.put(GPIO+0x810,0)
-        assert dev.call('m1_startup_begin',start)==1
+        assert dev.call('m1_startup_begin',start,0)==0 and not dev.writes
+        assert dev.call('m1_startup_begin',start,1)==1
         assert dev.u32(GPIO+0x414)&(1<<6) and not dev.u32(GPIO+0x814)&(1<<14)
-        assert dev.call('m1_startup_begin',start)==0
+        assert dev.call('m1_startup_begin',start,1)==0
         stage=D['M1_POWER_STAGE_MS']
         for delta in (stage-1,stage,2*stage-1):
-            dev.call('m1_startup_service',start+delta)
+            dev.call('m1_startup_service',start+delta,123+delta*1000)
             assert not dev.u32(GPIO+0x814)&(1<<14)
-        dev.call('m1_startup_service',start+2*stage)
+        dev.call('m1_startup_service',start+2*stage,123+2*stage*1000)
         assert dev.u32(GPIO+0x814)&(1<<14)
-        dev.call('m1_startup_service',start+3*stage)
+        dev.call('m1_startup_service',start+3*stage,123+3*stage*1000)
         assert dev.u32(GPIO+0x414)&(1<<13) and dev.u32(GPIO+0x814)&(1<<6)
         assert dev.call('m1_startup_ready')==0
-        dev.call('m1_startup_service',start+3*stage+D['M1_SENSOR_SETTLE_MS'])
+        dev.call('m1_startup_service',start+4*stage,123+4*stage*1000)
+        assert dev.call('m1_startup_ready')==0  # fresh timestamp after ADC calibration
+        dev.call('m1_startup_service',start+4*stage+D['M1_SENSOR_SETTLE_MS'],123+5*stage*1000)
         assert dev.call('m1_startup_ready')==1
         assert dev.u32(TMR6)&1
         dev.put(GPIO+0x810,1<<13)  # do not run wired rail sequencing on battery
-        dev.call('m1_startup_service',start+4*stage)
+        assert dev.call('m1_startup_encoder_phase',RGB)==1
+        dev.call('m1_startup_service',start+5*stage,123+6*stage*1000)
         assert dev.call('m1_startup_fault')==1 and dev.call('m1_startup_ready')==0
         assert not dev.u32(GPIO+0x414)&((1<<6)|(1<<13))
         assert not dev.u32(GPIO+0x814)&((1<<6)|(1<<14))
         assert not dev.u32(TMR6)&1
         dev.call('m1_startup_stop')
         dev.put(GPIO+0x810,0)
-        assert dev.call('m1_startup_begin',start+5*stage)==1
+        assert dev.call('m1_startup_begin',start+6*stage,1)==1
     print('PASS M1 clock/wired startup: SDK sequence, bounded readiness faults, rail ordering, sensor settle, cable loss and wraparound')
 
 
@@ -1043,6 +1049,112 @@ class UsbPowerArm(M1Arm):
                 self.put(GPIO+0x810,self.u32(GPIO+0x810)&~(1<<13))
 
 
+class BatteryStartupArm(SleepArm):
+    """Compose real startup/sleep/USB/scanner code with scripted hardware flags."""
+    def __init__(self,elf,failure=None):
+        super().__init__(elf,failure)
+        self.cpu.mem_map(USB_HS,0x10000)
+        self.cpu.hook_add(UC_HOOK_MEM_WRITE,self.write,begin=USB_HS,end=USB_HS+0xffff)
+        self.cpu.hook_add(UC_HOOK_MEM_READ,self.read_usb,begin=USB_HS,end=USB_HS+0xffff)
+        self.ready_after,self.cable_at,self.status_reads=1,0,0
+        self.put(GPIO+0x810,(1<<13)|(1<<10))
+
+    read_usb=UsbPowerArm.read_usb
+
+    def write(self,cpu,access,address,size,value,user):
+        if address in (CRM+0x78,USB_HS+0x38,USB_HS+0xc,USB_HS+0x804,USB_HS+0xe00):
+            assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
+            self.writes.append((address,size,value))
+        else:super().write(cpu,access,address,size,value,user)
+
+    def service(self,ms,us):
+        self.call('m1_startup_service',ms,us,instructions=3000000)
+
+    def begin_capture(self,start=0,us=0xfffffff0):
+        assert self.call('m1_startup_begin',start,1)==1
+        assert self.call('m1_power_gpio_prepared')
+        self.service(start+100,us)  # stamp AFTER blocking initialization
+        self.service(start+100+D['M1_POWER_STAGE_MS']-1,us)
+        assert self.wakes==0
+        self.service(start+100+D['M1_POWER_STAGE_MS'],us)
+        assert self.wakes==1 and not self.u32(GPIO+0x414)&(1<<6)
+        assert self.u32(RTC+20)==D['M1_COLD_SLEEP_TICKS']-1
+        self.service(start+200,us)  # raise rails and calibrate ADC after wake
+        assert self.u32(GPIO+0x414)&(1<<6) and self.u32(GPIO+0x814)&(1<<14)
+        assert self.u32(GPIO+0x814)&(1<<6) and not self.u32(GPIO+0x414)&(1<<13)
+        assert not self.call('m1_hal_capture_busy')
+        self.service(start+201,us)  # stamp AFTER ADC calibration
+        self.service(start+201,us+D['M1_COLD_SCAN_SETTLE_US']-1)
+        assert not self.call('m1_hal_capture_busy')
+        us+=D['M1_COLD_SCAN_SETTLE_US']
+        self.service(start+201,us)
+        assert self.call('m1_hal_capture_busy') and not self.u32(TMR6)&1
+        return start+201,us
+
+    def complete_capture(self):
+        for bank in range(6):
+            self.cpu.mem_write(self.u32(DMA+0x78),struct.pack('<15H',*([3000]*15)))
+            self.put(DMA,3<<20);self.call('m1_hal_dma_irq')
+        assert not self.call('m1_hal_capture_busy')
+
+    def stopped(self):
+        assert not self.call('m1_startup_ready')
+        assert not self.u32(GPIO+0x414)&((1<<6)|(1<<13))
+        assert not self.u32(GPIO+0x814)&((1<<6)|(1<<14))
+        assert not self.u32(ADC+8)&1 and not self.u32(TMR6)&1
+        assert not self.u32(DMA+0x6c)&1
+
+
+def battery_startup(elf):
+    for start,us,rtc_wake in ((0,0xfffffff0,True),(0xffffff80,1700,False)):
+        d=BatteryStartupArm(elf);d.rtc_wake=rtc_wake
+        ms,us=d.begin_capture(start,us)
+        d.service(ms,us+1);assert d.call('m1_hal_capture_busy')
+        d.complete_capture();d.service(ms+1,us+20)
+        assert not d.call('m1_hal_frame',RGB,RGB+200)  # warmup never reaches application
+        assert d.u32(GPIO+0x414)&(1<<6) and not d.u32(GPIO+0x814)&((1<<6)|(1<<14))
+        stage=D['M1_POWER_STAGE_MS'];ms+=1
+        d.service(ms+stage-1,us+30);assert d.call('m1_power_gpio_prepared')
+        d.service(ms+stage,us+40);assert not d.call('m1_power_gpio_prepared')
+        assert not (d.u32(GPIO+0x400)>>20)&3  # charge pin restored to input
+        d.service(ms+2*stage-1,us+50);assert not d.u32(GPIO+0x814)&(1<<14)
+        d.service(ms+2*stage,us+60);assert d.u32(GPIO+0x814)&(1<<14)
+        d.service(ms+3*stage,us+70)
+        assert d.u32(GPIO+0x414)&(1<<13) and not d.u32(TMR6)&1
+        d.service(ms+4*stage,us+1000);assert not d.call('m1_startup_ready')
+        d.service(ms+4*stage+D['M1_SENSOR_SETTLE_MS'],us+2000)
+        assert d.call('m1_startup_ready') and d.u32(TMR6)&1
+        assert d.call('m1_startup_encoder_phase',RGB) and d.cpu.mem_read(RGB,1)[0]==1
+        assert not d.call('m1_startup_encoder_phase',0)
+        d.call('m1_startup_stop');d.stopped()
+    for failure in ('timeout','dma','cable','cancel'):
+        d=BatteryStartupArm(elf);ms,us=d.begin_capture()
+        if failure=='dma':d.put(DMA,8<<20);d.call('m1_hal_dma_irq')
+        elif failure=='cable':d.put(GPIO+0x810,0)
+        elif failure=='cancel':d.call('m1_startup_stop')
+        d.service(ms+1,us+D['M1_WAKE_SCAN_TIMEOUT_US'])
+        d.stopped();assert not d.call('m1_power_gpio_prepared')
+        assert bool(d.call('m1_startup_fault'))==(failure!='cancel')
+        writes=len(d.writes);d.service(ms+1000,us+1000000)
+        assert len(d.writes)==writes  # no automatic restart after failure
+    for failure in ('lick','phy','cable'):
+        d=BatteryStartupArm(elf,'lick' if failure=='lick' else None)
+        if failure=='phy':d.ready_after=0
+        if failure=='cable':d.cable_at=1
+        assert not d.call('m1_startup_begin',0,1,instructions=5000000)
+        assert d.call('m1_startup_fault');d.stopped()
+        assert not d.call('m1_power_gpio_prepared')
+    # A failed clock restore must not touch GPIO/ADC afterward or unmask IRQs.
+    d=BatteryStartupArm(elf);d.resume_failure='hext';d.put(SYSTICK,7)
+    assert d.call('m1_startup_begin',0,1)
+    d.service(100,0);d.service(100+D['M1_POWER_STAGE_MS'],0)
+    assert d.call('m1_startup_clock_fatal') and d.call('m1_startup_fault')
+    assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==1 and not d.u32(SYSTICK)&1
+    writes=len(d.writes);d.call('m1_startup_stop');d.service(1000,1000000)
+    assert not d.call('m1_startup_begin',1000,1) and len(d.writes)==writes
+    print('PASS M1 battery cold startup: actual SDK sleep/PHY/GPIO/scan composition, fresh settling clocks, six-bank warmup discard, rail order, wrap, cancellation and fail-stop')
+
+
 def usb_power(elf):
     for initial_mask,ready_after in ((0,1),(1,4),(0,216000)):
         dev=UsbPowerArm(elf,ready_after)
@@ -1191,7 +1303,7 @@ def power_gpio(elf):
         d.call('m1_battery_hal_service',2);assert d.battery_reads==1
         d.call('m1_battery_hal_init');d.call('m1_battery_hal_service',1000)
         assert d.call('m1_test_battery_status')==0 and len(d.writes)==writes and d.battery_reads==1
-        assert not d.call('m1_startup_begin',0)
+        assert not d.call('m1_startup_begin',0,1)
         assert d.call('m1_usb_hw_start',1)==2 # BUSY, before any USB/clock writes
         assert len(d.writes)==writes
         # Reconnect while asleep: restoring input roles is still required and
@@ -1241,6 +1353,7 @@ def main():
     scanner(args.elf)
     scanner_capture(args.elf)
     startup(args.elf)
+    battery_startup(args.elf)
     battery(args.elf)
     radio(args.elf)
     wireless(args.elf)

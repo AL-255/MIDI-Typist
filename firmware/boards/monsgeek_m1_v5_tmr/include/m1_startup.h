@@ -13,13 +13,20 @@ typedef enum {
 } m1_clock_result_t;
 m1_clock_result_t m1_clock_init(void);
 
-/* Single foreground owner. After successful clock init and a running
- * millisecond timebase, begin once and poll until ready. PC13 must stay low
- * (wired path). A failure stops HALs and deasserts the owned power controls.
- * Never call begin again to retry a live startup; explicitly stop first. */
-bool m1_startup_begin(uint32_t now_ms);
-void m1_startup_service(uint32_t now_ms);
+/* Single privileged foreground owner. Caller proves existing transports and
+ * peripherals quiescent. PC13 selects wired or battery startup and must remain
+ * in that state while this owner is serviced. No radio mode is selected here. Begin once, then
+ * service with independently wrapping clocks; service may enter RTC sleep on
+ * the battery path. Refresh both time readings after it returns from sleep.
+ * A nonfatal failure stops owned HALs/rails; explicitly stop before retrying.
+ * If GPIO restoration fails, prepared ownership still blocks a new begin. */
+bool m1_startup_begin(uint32_t now_ms,bool platform_quiescent);
+void m1_startup_service(uint32_t now_ms,uint32_t now_us);
 void m1_startup_stop(void);
 bool m1_startup_ready(void);
 bool m1_startup_fault(void);
+/* Fatal clock restoration retains masked interrupts and stopped SysTick.
+ * Stop/service do no further peripheral work; do not resume the application. */
+bool m1_startup_clock_fatal(void);
+bool m1_startup_encoder_phase(uint8_t *phase);
 #endif
