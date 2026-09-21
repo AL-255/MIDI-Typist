@@ -62,6 +62,13 @@ Cold-start tests compose the actual RTC/PHY/GPIO/scanner code, checking rail
 order, measured RTC/TMR2 handoff, fresh settling timestamps, complete warmup-frame discard, timer wrap,
 scan/PHY/clock failures, cancellation and cable changes. No startup helper is
 stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
+The cold application-handoff audit composes these HALs with actual USB startup,
+radio initialization and shared application binding for both power sources and
+all five transports. It checks scan pause before USB, fresh post-USB radio pulse
+timestamps, counter wrap, IRQ-mask preservation, factory-bounds rejection,
+source/USB/time/scan faults and terminal cleanup. Profile reads are modeled as
+erased and writes rejected; it does not execute a reset vector, real enumeration,
+peer delivery, post-handoff runtime power management or physical persistence.
 Sleep-time tests script rates across the supported LICK range and verify
 coherent SDK reads, protected shadow synchronization, independent wraps,
 fractional carry, early-wake deltas and terminal clock/time faults. They do not
@@ -78,7 +85,7 @@ measure physical oscillator rate, drift or sleep duration.
 | Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
-`python3 tools/run_tests.py` runs 25 audit groups, including native Huntsman
+`python3 tools/run_tests.py` runs 26 audit groups, including native Huntsman
 and M1 tests, with a 300-second total deadline. It requires the optional original
 reference and Python/Tk dependencies. Missing dependencies are failures, not
 silent skips. The M1 group also compiles the HAL/services against the pinned

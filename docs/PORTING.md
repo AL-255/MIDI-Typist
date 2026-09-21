@@ -423,6 +423,11 @@ Bound rate qualification and resume, preserve fractional conversion carry,
 and state the resolution/drift limits instead of promising wall-clock accuracy.
 The [M1 startup HAL](MONSGEEK_M1.md#clock-rails-and-remaining-integration)
 illustrates these contracts without providing an installable image.
+Its [cold application handoff](MONSGEEK_M1.md#cold-application-handoff) pauses
+acquisition before blocking USB initialization, timestamps radio startup only
+after that call, then resumes scanning and binds the restored application.
+Keep cold ownership separate from runtime reconnect/wake: initialization success
+does not establish host readiness or permission to abandon an existing host.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

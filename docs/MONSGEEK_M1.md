@@ -547,7 +547,7 @@ failure latching and terminal gate/resume failure. The save-gate audit executes
 actual scanner/time/battery/LED HALs with scripted power and transport readiness;
 the flash driver has its own controller-model audit. Radio status, DMA completion and external transport callbacks
 are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
-The outer startup/power/transport coordinator, verified radio delivery,
+The runtime power/transport coordinator, verified radio delivery,
 physical persistence and an installable application remain unfinished. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
@@ -632,6 +632,41 @@ retains ownership and blocks begin. Fatal clock restoration leaves IRQs masked
 and SysTick stopped: subsequent stop/service calls perform no peripheral work.
 The encoder baseline is available only when ready. Startup does not select a
 radio transport, report keys, start USB, restore profiles or form a boot image.
+
+### Cold application handoff
+
+`m1_boot` connects the cold-start HAL to `m1_live`. Its caller must first
+establish normal clocks and the running TMR2 timebase, install interrupt routes,
+and explicitly prove cold peripheral/host ownership. It is not a reset handler
+or a way to restart an existing host session. The caller selects USB, BT1/2/3
+or 2.4 GHz; transport selection is not yet restored from the custom journal.
+
+The foreground sequence is:
+
+1. Complete the source-specific rail/warmup sequence above.
+2. Pause periodic scanning and discard warmup/unread frames before USB startup.
+3. Attach USB only when PC13 indicates external power. Refresh time after the
+   blocking SDK call; external power also permits USB GUI access while the
+   keyboard's selected transport is wireless.
+4. For wireless selection, initialize SPI3, wait its full startup pulse and
+   initialize the scheduler for that exact mode. No peer link is fabricated.
+5. Initialize battery inputs, resume scanning, then initialize the application
+   with restored profile/factory bounds and the actual `m1_save_ops()` gate.
+
+`READY` transfers ownership to the runtime caller, which must then service the
+application using fresh `m1_time_now` readings. It means initialization completed,
+not that USB enumerated or the radio linked. This coordinator stops doing work
+after handoff. USB selected on battery remains disconnected; it does not silently
+select another transport. Optional transport callbacks are passed through to the
+application and must outlive it; absent callbacks keep Fn transport changes disabled.
+
+Before handoff, a source change or component failure latches a terminal error
+and stops owned links, scan/lighting and rails. A fatal clock-restoration failure
+does no further peripheral cleanup and keeps interrupts masked. There is no
+automatic retry, profile erase or factory-data write. Offline tests execute
+the composed HAL/application chain; profile I/O and hardware effects are modeled.
+Runtime cable transitions, host-release/pairing and sleep/wake coordination,
+reset/vector/linker integration and physical validation remain required.
 
 ### Sleep/wake pin ownership
 
@@ -820,8 +855,8 @@ invalid frames. Linked HAL tests cover repeated one-shot DMA chains,
 one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
 timeouts and faults. Wake-to-host key restoration is not integrated yet.
 
-Complete power management still requires binding cold startup to the application,
-radio scheduler and pairing/sleep handshakes, integrating the USB
+Complete power management still requires runtime radio pairing/sleep handshakes,
+integrating cable transitions with the USB
 lifecycle and power helpers, wake-check scheduling and full restoration of held keys. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must

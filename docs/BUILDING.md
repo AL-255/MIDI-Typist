@@ -108,17 +108,21 @@ python tools/test_m1_usb_arm.py build-m1-hal/m1_usb_audit.elf
 python tools/test_m1_live_arm.py build-m1-hal/m1_live_audit.elf
 python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
 python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
+python tools/test_m1_boot_arm.py build-m1-hal/m1_boot_audit.elf
 ```
 
-The ARM artifacts are `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
+The ARM artifacts are `libm1_boot.a`, `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
 application archive `libmidi_typist_app.a`, plus `libmidi_typist_services.a`. Native CTest passes an
 actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
 no M1 `.bin` to install. `m1_hal_audit.elf`, `m1_usb_audit.elf`,
-`m1_live_audit.elf`, `m1_save_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
+`m1_live_audit.elf`, `m1_save_audit.elf`, `m1_boot_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
 or vector table: none is a flash image. Each test
 requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
+The cold-handoff audit composes actual startup, scan pause/resume, USB/radio
+initialization and application binding on both power sources; only profile I/O
+is substituted. It is not a reset-handler or runtime power-management audit.
 The foreground audit connects scripted scan/battery/LED boundaries to the real
 application, USB class, radio scheduler/SPI/DMA drivers and GUI codec, including
 discontinuity, release handling and gated Fn transport selection. External
