@@ -113,8 +113,9 @@ MIDI-Typist or a supplied Razer application, validate the image and review the
 confirmation. It supports application and bootloader states, including custom
 reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
-The **MonsGeek M1 V5 TMR (identity only)** model option provides a read-only
-factory query, not configuration or flashing. See [M1 support](MONSGEEK_M1.md).
+The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
+before offering a trial conversion. Custom USB startup is not working yet;
+see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 Initialize the updater submodule first:
 

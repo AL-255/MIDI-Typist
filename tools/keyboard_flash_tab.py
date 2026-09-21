@@ -263,7 +263,8 @@ class FlashTab(ttk.Frame):
                 if device.mode=='custom' and self.identity['Firmware'].get().startswith('v'):
                     from dataclasses import replace
                     device=replace(device,version=self.identity['Firmware'].get())
-                self.show_device(device);self.status.set('Device information read. No firmware was written.')
+                self.show_device(device);self.set_options()
+                self.status.set('Device information read. No firmware was written.')
             elif kind=='progress':
                 done,total=payload;self.progress.configure(maximum=total or 1,value=done)
                 self.status.set(f'Programming application · {done:,} / {total:,} bytes · {done*100//(total or 1)}%')
@@ -272,7 +273,7 @@ class FlashTab(ttk.Frame):
                 self.refresh_after_exit=True
                 self.progress.configure(value=self.progress['maximum']);self.invalidate_image()
                 self.device=None;self.set_options();self.badge.set('FLASH COMPLETE')
-                self.status.set('Verified application return. Refresh to read the connected device, then reconnect configuration.')
+                self.status.set('Application transfer complete. See the log for runtime verification; refresh device information before reconnecting configuration.')
                 self.append_log('SUCCESS · application SHA-256 '+str(payload))
             elif kind=='error':
                 self.busy=self.process is not None;self.status.set(str(payload));self.append_log('ERROR · '+str(payload))

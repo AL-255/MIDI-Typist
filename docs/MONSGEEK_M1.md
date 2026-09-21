@@ -3,10 +3,11 @@
 The M1 backend contains scan, lighting, radio-transfer, battery-input, composite USB,
 USB power-down and RTC sleep HALs, clock and wired/battery cold-start
 components, an 82-key application library, a wireless report scheduler,
-transport-menu and power-policy components, an offline-only development ELF,
-and matching GUI geometry. Connected-device access is **read-only factory
-identity inspection**, for internal model **ID2949**. M1 installation is not
-supported. The Huntsman image must never be installed on this keyboard. Wireless
+transport-menu and power-policy components, an experimental application image,
+and matching GUI geometry. The GUI verifies internal model **ID2949** before
+offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+The transfer is hardware-checked, but custom USB startup is not working yet.
+The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.
 
@@ -14,7 +15,7 @@ Bluetooth/2.4 GHz operation and power management are not yet available.
 
 1. Connect the keyboard by USB in wired, normal application mode.
 2. Open the GUI's **Device flashing** tab and select **MonsGeek M1 V5 TMR
-   (identity only)**.
+   (experimental)**.
 3. Refresh, then choose **Read firmware details…**. Linux may request permission
    to open the vendor HID interface.
 
@@ -22,8 +23,9 @@ Refresh only reads Linux device metadata. Explicit inspection sends the vendor
 identity query and requires ID2949 before showing **FACTORY FIRMWARE · ID
 VERIFIED**. The USB revision is shown separately from the queried firmware
 version. An unavailable serial is not synthesized from the USB location.
-There are no install, restore or reflash actions, including in the privileged
-worker. Factory configuration and the keyboard interfaces remain untouched.
+Inspection alone leaves factory configuration untouched. Installation is a
+separate, explicitly confirmed action that resets stock settings. Direct
+bootloader recovery and custom reflash are not yet exposed in the GUI.
 
 ## Board and GUI layout
 
@@ -85,7 +87,7 @@ The shared application is compiled with 82-key storage and the M1 board
 callbacks. Native tests exercise all keys, simultaneous NKRO, the Fn/MIDI menu,
 LED permutation, normalization, incomplete/out-of-order rows and frame drops.
 The ARM build produces static libraries, emulator-only audit ELFs and an
-offline development ELF, **not** a supported installation artifact.
+development ELF and an application-only `.bin` for experimental conversion.
 See [build commands](BUILDING.md#monsgeek-m1-development-build).
 
 `m1_hal_capture_start(now_us)` uses the same ADC/DMA path for one complete
@@ -699,9 +701,9 @@ installation support and physical validation remain required.
 
 ### Development ELF and reset entry
 
-`m1_development.elf` links at the actual application addresses for offline
-auditing. **Do not flash it.** The GUI/privileged worker still rejects all M1
-flash actions; no `.bin`, install target or release package is generated.
+`m1_development.elf` links at the actual application addresses; its generated
+`.bin` is accepted by the GUI's experimental factory-conversion action. Builds
+do not open hardware. See the [trial recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 | Region | Contract |
 | --- | --- |
@@ -723,9 +725,11 @@ disables/clears the implemented external interrupt banks, clears pending
 SysTick/PendSV, installs VTOR and priority grouping, and copies data plus the
 complete SDK/custom flash-writer section into SRAM before clearing BSS and
 calling main. Unused vectors trap with debugger-visible exception information.
-It does not call the SDK's unbounded `SystemInit` or write any flash record.
+It does not call the SDK's unbounded `SystemInit`.
 
-Main checks the flash-density register, establishes clocks/time and invokes
+Main checks the flash-density register and arms the IAP recovery word in an
+already erased boot-flag page using the SRAM-resident SDK writer. It does not
+erase metadata or clear this flag during the trial. It establishes clocks/time and invokes
 `m1_boot`. PC13 external power selects USB; battery selects
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
 not persisted yet. After handoff it polls `m1_live_service` using independent
@@ -950,13 +954,17 @@ require physical validation before describing power management as complete.
 The adapter's identity transaction is physically checked on an ID2949 keyboard
 running **v4.08**, enumerating as `3151:5030` at USB high speed. The reference
 version is v4.10; matching model IDs do not prove identical peripheral or update
-behavior between revisions. The alternate application PID and bootloader state
-are covered only by offline tests/reference analysis.
+behavior between revisions. Guarded factory entry and application IAP transfer
+have a physical checksum/readback success verdict. Custom application USB
+startup is not working, and physical recovery-flag execution is unconfirmed.
+The alternate application PID remains covered only offline.
 
 Offline tests exercise report framing, invalid replies, model rejection,
 changed/ambiguous targets, vendor-interface selection, descriptor identity,
-short transfers, I/O failures and unconditional flashing rejection. Tk checks
-cover model selection and disabled actions. Native C-to-Python tests run the
+short transfers, I/O failures, image bounds and rejection of unverified targets.
+The private v4.10 bootloader instructions independently accept the host packet
+sequence and reject simulated readback corruption. Tk checks cover model
+selection and factory-only conversion actions. Native C-to-Python tests run the
 actual shared command mailbox, telemetry encoder and SysEx stream with 82 keys.
 Mocked Tk tests verify identity-selected geometry, sensor 81 edits/capture,
 all-key thresholds and calibration status/cancel. These checks do not validate an M1

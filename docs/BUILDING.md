@@ -93,8 +93,9 @@ application's USB transport, not libc file I/O.
 
 These commands compile the real shared application with the M1's 82-key layout,
 test its board callbacks natively, and compile its HALs and development ELF for
-Cortex-M4. They never access a keyboard. **Do not flash the M1 development ELF:**
-runtime power/transport recovery and update integration are incomplete.
+Cortex-M4. They never access a keyboard. The application `.bin` is an
+[experimental reset-to-IAP trial](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion),
+not a working plug-and-play release.
 
 ```sh
 git submodule update --init third_party/artery
@@ -111,12 +112,15 @@ python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
 python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
 python tools/test_m1_boot_arm.py build-m1-hal/m1_boot_audit.elf
 python tools/test_m1_image_arm.py build-m1-hal/m1_development.elf
+python tools/test_monsgeek_identity.py
+python tools/test_monsgeek_iap.py
 ```
 
 The ARM artifacts are `libm1_boot.a`, `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
 application archive `libmidi_typist_app.a`, plus `libmidi_typist_services.a`. Native CTest passes an
 actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
-no M1 `.bin` to install. `m1_hal_audit.elf`, `m1_usb_audit.elf`,
+a generated `m1_development.bin` for the GUI's M1 factory-conversion action.
+`m1_hal_audit.elf`, `m1_usb_audit.elf`,
 `m1_live_audit.elf`, `m1_save_audit.elf`, `m1_boot_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
 or vector table: none is a flash image. Each test
 requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
@@ -124,7 +128,7 @@ requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
 link includes a reset/vector table, SRAM-code/data initialization and a basic
 foreground loop. Its separate image audit checks all load ranges, executes the
 reset code and tests main-loop ordering with component calls stubbed. This is
-not end-to-end execution or hardware qualification; there is no packaging/flash target.
+not end-to-end execution or hardware qualification. The build never flashes.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
 The cold-handoff audit composes actual startup, scan pause/resume, USB/radio

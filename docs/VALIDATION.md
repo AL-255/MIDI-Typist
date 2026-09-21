@@ -3,7 +3,7 @@
 This is the common evidence boundary for the complete `huntsman` build. Do not treat modeled hardware as a physical test.
 Commands and dependencies are in [Building](BUILDING.md).
 The separate [M1 backend](MONSGEEK_M1.md#verification-limits) has a physically
-checked read-only identity query, official-SDK ARM library/development-ELF builds, and native
+checked identity query and IAP transfer, official-SDK ARM library/application builds, and native
 82-key application/scanner plus GUI tests. Native tests also cover Fn transport
 controls, USB-only MIDI, the battery curve/filter, sleep-request policy and radio packet codec.
 Linked Cortex-M4 tests execute clock, wired/battery cold-start, battery-input, USB power-down, RTC sleep,
@@ -137,9 +137,14 @@ Remapping tests exercise every accepted usage, duplicate-source ownership,
 held-key edits, immutable Fn shortcuts, GUI dropdown/ACK/readback, and compiled
 ARM save/reboot. These are offline tests, not a physical unplug/replug check.
 
-M1 physical access is limited to its vendor identity query: ID2949, factory
-v4.08, USB high speed. No M1 configuration, bootloader-entry or flash commands
-have been sent. The M1 development ELF is offline-only; installation is unsupported.
+M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
+entry, and an application transfer accepted by the bootloader's checksum and
+per-byte readback verdict. The custom application does not yet enumerate on
+USB; kernel messages show the bootloader disconnect without an application
+return. The early recovery-flag writer passes the SRAM/SDK model, but its
+execution on the device and reset-to-IAP recovery remain unconfirmed.
+No custom keyboard, MIDI, lighting, calibration or wireless behavior is claimed
+physically working. See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 Velocity uses each board's declared scan rate, not USB delivery timestamps.
 The GUI's measured capture throughput does not establish the acquisition rate.

@@ -3,6 +3,8 @@
 #include "m1_board.h"
 #include "m1_controls.h"
 #include "m1_factory.h"
+/* Accepted only over the active control session with a verified armed IAP flag. */
+bool m1_live_update_requested(void);
 /* Serialized foreground application owner. HAL clock/rails, periodic
  * scanner, lighting, battery inputs and USB lifecycle are initialized by the
  * outer startup/power coordinator, not implicitly retried here.

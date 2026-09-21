@@ -30,4 +30,4 @@ uint32_t m1_test_store_status(void)
 { return journal.generation | ((uint32_t)menu.brightness<<16) | ((uint32_t)journal.fault<<31); }
 __attribute__((used,section(".test_exports")))
 const void *const m1_storage_exports[]={m1_storage_read,m1_storage_write,m1_storage_erase,
-    m1_storage_fatal,m1_test_store_boot,m1_test_store_save,m1_test_store_clear,m1_test_store_status};
+    m1_storage_fatal,m1_storage_arm_recovery,m1_test_store_boot,m1_test_store_save,m1_test_store_clear,m1_test_store_status};

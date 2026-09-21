@@ -1,4 +1,5 @@
 #include "m1_storage.h"
+#include "m1_image.h"
 #include "device_store.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -119,3 +120,46 @@ uint32_t m1_storage_write(unsigned slot,const uint8_t *page,bool platform_safe)
 { return page?change(slot,page,platform_safe):M1_STORAGE_ARGUMENT; }
 uint32_t m1_storage_erase(unsigned slot,bool platform_safe)
 { return change(slot,NULL,platform_safe); }
+
+static IN_RAM uint32_t arm_recovery(void)
+{
+    flash_unlock();
+    uint32_t result=M1_STORAGE_OK;
+    if(FLASH->ctrl_bit.oplk)result=M1_STORAGE_UNLOCK;
+    else {
+        flash_flag_clear(FLASH_ODF_FLAG);
+        flash_status_type status=flash_word_program(M1_RECOVERY_FLAG_ADDRESS,M1_RECOVERY_FLAG_VALUE);
+        if(FLASH->sts_bit.obf)fail_stop();
+        if(status!=FLASH_OPERATE_DONE)result=M1_STORAGE_PROGRAM;
+        else if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)
+            result=M1_STORAGE_VERIFY;
+    }
+    flash_lock();__DSB();__ISB();
+    if(!FLASH->ctrl_bit.oplk)result=M1_STORAGE_CONTROLLER;
+    return result;
+}
+uint32_t m1_storage_arm_recovery(bool platform_safe)
+{
+    if(!context())return M1_STORAGE_CONTEXT;
+    if(!platform_safe)return M1_STORAGE_UNSAFE;
+    uint32_t mask=__get_PRIMASK();__disable_irq();
+    uint32_t result=readable();
+    if(!result && active())result=M1_STORAGE_UNSAFE;
+    if(!result && FLASH->ctrl!=0x80u)result=M1_STORAGE_CONTROLLER;
+    if(!result) {
+        /* A successful factory update erases this page. Refuse any other
+         * contents instead of erasing boot metadata speculatively. */
+        const volatile uint32_t *flag=(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS;
+        for(unsigned i=0;i<M1_STORAGE_PAGE_BYTES/4u;++i)
+            if(flag[i]!=UINT32_MAX) { result=M1_STORAGE_VERIFY;break; }
+    }
+    if(!result) {
+        uint32_t vector=SCB->VTOR;
+        for(unsigned i=0;i<16;++i)emergency_vectors[i]=(uintptr_t)fail_stop;
+        emergency_vectors[0]=__get_MSP();
+        SCB->VTOR=(uintptr_t)emergency_vectors;__DSB();__ISB();
+        result=arm_recovery();
+        SCB->VTOR=vector;__DSB();__ISB();
+    }
+    __set_PRIMASK(mask);return result;
+}

@@ -593,8 +593,10 @@ Huntsman addresses for another platform. Preserve the shared SysEx/MTG3 contract
 a different host presentation can call the same common configuration command engine.
 Adapters declare `inspection_modes` separately from flash actions; identity-only
 support must also reject flashing in the privileged worker, not just hide a
-button. The [M1 adapter](MONSGEEK_M1.md) demonstrates this boundary while its
-custom firmware is unavailable.
+button. The [M1 adapter](MONSGEEK_M1.md) permits experimental conversion only
+after factory ID2949 verification; a shared bootloader PID cannot establish
+model identity or persistent recovery state. A transfer verdict must not be
+reported as proof that the new application enumerated or functions correctly.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,
 not necessarily accepted. Inspect the ACK ID/result and serialize requests.

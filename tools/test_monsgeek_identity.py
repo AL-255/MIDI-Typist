@@ -173,16 +173,23 @@ class IdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'no query'):
                 self.adapter.inspect(device.token)
 
-    def test_every_flash_entry_point_rejects_without_io(self):
+    def test_only_verified_factory_has_conversion_actions(self):
         self.device()
         device, = self.adapter.discover()
         with patch('os.open', side_effect=AssertionError('Opened hardware')):
-            for mode in ('candidate', 'factory', 'custom', 'bootloader', 'unverified_bootloader'):
+            for mode in ('candidate', 'custom', 'bootloader', 'unverified_bootloader'):
                 self.assertEqual(self.adapter.actions(replace(device, mode=mode)), ())
-            with self.assertRaisesRegex(RuntimeError, 'no file'):
-                self.adapter.load_image('/missing/firmware.bin', 'custom')
-            with self.assertRaisesRegex(RuntimeError, 'disabled'):
+            self.assertEqual([a.id for a in self.adapter.actions(replace(device,mode='factory'))],
+                             ['install','restore'])
+            with self.assertRaises(FileNotFoundError):
                 self.adapter.flash(device.token, 'install', '/missing/firmware.bin', '', None, None)
+
+    def test_guarded_boot_entry_packet(self):
+        request=m1.boot_request()
+        self.assertEqual(len(request),65)
+        self.assertEqual(request[:6],b'\0\x7f\x55\xaa\x55\xaa')
+        self.assertEqual(sum(request[1:9])&255,255)
+        self.assertEqual(request[9:],bytes(56))
 
 
 if __name__ == '__main__':

@@ -6,8 +6,10 @@ MCU startup, USB descriptors, pins, scan transport, LEDs, flash ownership and
 updater entry must match the actual hardware.
 
 The complete supported physical port is the Razer Huntsman V3 Pro Mini/LPC5528.
-The [M1 backend](MONSGEEK_M1.md) provides HAL/application libraries, an offline-only
-development ELF and an 82-key GUI preview. M1 installation is not supported.
+The [M1 backend](MONSGEEK_M1.md) provides HAL/application libraries, an
+experimental application image, a guarded factory updater and an 82-key GUI
+preview. Its transfer is verified on hardware, but application USB startup
+is not working; it is not a supported daily-use keyboard port.
 The desktop synthetic port exercises a different layout and acquisition model;
 it is not evidence that another commercial keyboard is ready to flash.
 Use the [porting guide](PORTING.md) for a build-manifest pattern, a lifecycle

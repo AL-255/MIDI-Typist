@@ -1,4 +1,4 @@
-# M1 libraries and an offline-only development ELF; not enabled for flashing.
+# M1 libraries and an experimental application with reset-to-IAP recovery.
 # Runtime transport/power recovery remains incomplete. Native build runs this board
 # against the real shared application; ARM build uses the pinned official SDK.
 add_library(midi_typist_app STATIC ${MT_APP_SOURCES})
@@ -86,7 +86,7 @@ if(CMAKE_CROSSCOMPILING)
     add_library(m1_boot STATIC ${MT_BOARD_DIR}/src/m1_boot.c)
     target_link_libraries(m1_boot PUBLIC m1_live)
     target_compile_options(m1_boot PRIVATE -Wall -Wextra -Werror)
-    # Real-address development link, deliberately no .bin/flash/package target.
+    # Application-only experimental image; never package boot/factory pages.
     add_executable(m1_development ${MT_BOARD_DIR}/src/m1_entry.c ${MT_BOARD_DIR}/src/m1_main.c)
     set_target_properties(m1_development PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_development PRIVATE m1_boot)
@@ -97,6 +97,10 @@ if(CMAKE_CROSSCOMPILING)
         -T${MT_BOARD_DIR}/linker/application.ld)
     set_property(TARGET m1_development APPEND PROPERTY LINK_DEPENDS
         ${MT_BOARD_DIR}/linker/application.ld ${MT_BOARD_DIR}/linker/storage_ram.ld)
+    add_custom_command(TARGET m1_development POST_BUILD
+        COMMAND ${CMAKE_OBJCOPY} -O binary --gap-fill=0xff
+            $<TARGET_FILE:m1_development> ${CMAKE_BINARY_DIR}/m1_development.bin
+        BYPRODUCTS ${CMAKE_BINARY_DIR}/m1_development.bin VERBATIM)
     add_executable(m1_boot_audit tests/m1_hal_audit.c tests/m1_boot_audit.c)
     set_target_properties(m1_boot_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_boot_audit PRIVATE m1_boot)

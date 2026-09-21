@@ -23,11 +23,13 @@ class Store(M1Arm):
     def call(self,name,*args,instructions=3000000):
         return super().call(name,*args,instructions=instructions)
 
-    def __init__(self, elf):
+    def __init__(self, elf, recovery=False):
+        self.recovery=recovery
         super().__init__(elf)
         self.cpu.mem_map(BASE,0x40000)
         self.cpu.mem_write(BASE,b'\xa5'*0x40000)
         self.cpu.mem_write(A,b'\xff'*(2*PAGE))
+        if recovery:self.cpu.mem_write(BASE+0x4800,b'\xff'*PAGE)
         self.cpu.mem_map(0x1ffff000,0x1000)
         self.cpu.mem_write(SIZE,struct.pack('<H',256))
         self.put(FLASH+16,0x80)
@@ -126,13 +128,15 @@ class Store(M1Arm):
                 self.operation=None
 
     def read_flash(self,cpu,access,address,size,value,user):
-        assert A<=address and address+size<=END,hex(address)
+        assert (A<=address and address+size<=END or
+                self.recovery and BASE+0x4800<=address<address+size<=BASE+0x5000),hex(address)
         assert not self.u32(FLASH+12)&1,'flash read while busy'
         assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
 
     def program(self,cpu,access,address,size,value,user):
         self.flush();self.guarded()
-        assert size==4 and address%4==0 and A<=address<END
+        assert size==4 and address%4==0 and (A<=address<END or
+            self.recovery and address==BASE+0x4800 and value==0x55aa55aa)
         assert self.u32(FLASH+16)&3==1
         assert self.u32(address)==0xffffffff
         self.program_count+=1
@@ -147,7 +151,10 @@ class Store(M1Arm):
     def check_guards(self):
         # This fixture intentionally sets DMA busy bits in rejection tests;
         # all CPU peripheral stores are independently whitelisted by write().
-        assert self.cpu.mem_read(BASE,A-BASE)==b'\xa5'*(A-BASE)
+        if self.recovery:
+            assert self.cpu.mem_read(BASE,0x4800)==b'\xa5'*0x4800
+            assert self.cpu.mem_read(BASE+0x5000,A-BASE-0x5000)==b'\xa5'*(A-BASE-0x5000)
+        else:assert self.cpu.mem_read(BASE,A-BASE)==b'\xa5'*(A-BASE)
         assert self.cpu.mem_read(END,BASE+0x40000-END)==b'\xa5'*(BASE+0x40000-END)
 
     def stop(self,cpu,address,size,user):
@@ -271,6 +278,28 @@ def run(elf):
     print('PASS M1 journal/SDK storage: owned slots, SRAM execution/vectors, guards, full readback, failures, reboot fallback and bounded fail-stop')
 
 
+def recovery_check(elf):
+    for failure,expected in ((None,0),('unlock_fails',UNLOCK),
+                              ('program_fails',PROGRAM),('drop_program',VERIFY)):
+        d=Store(elf,recovery=True)
+        before=bytes(d.cpu.mem_read(BASE,0x40000))
+        if failure:setattr(d,failure,1)
+        assert d.call('m1_storage_arm_recovery',1)==expected
+        after=bytes(d.cpu.mem_read(BASE,0x40000))
+        assert before[:0x4800]==after[:0x4800] and before[0x4804:]==after[0x4804:]
+        assert not any(kind=='erase' for kind,_ in d.commands)
+        assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==0 and d.u32(VTOR)==0x08005200
+        assert d.u32(FLASH+16)==0x80
+        if not failure:assert d.u32(BASE+0x4800)==0x55aa55aa
+    d=Store(elf,recovery=True);d.put(BASE+0x4804,0)
+    assert d.call('m1_storage_arm_recovery',1)==VERIFY and not d.commands
+    d=Store(elf,recovery=True)
+    assert d.call('m1_storage_arm_recovery',0)==UNSAFE and not d.commands
+    print('PASS M1 trial recovery: exact boot-flag word, no erase, SRAM SDK/vectors, readback and failure guards')
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('elf')
-    run(parser.parse_args().elf)
+    parser.add_argument('--recovery-only',action='store_true');args=parser.parse_args()
+    recovery_check(args.elf)
+    if not args.recovery_only:run(args.elf)

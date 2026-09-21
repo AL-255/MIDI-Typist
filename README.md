@@ -15,8 +15,9 @@ requires a board port, not this binary.
 
 The [MonsGeek M1 V5 TMR backend](docs/MONSGEEK_M1.md) provides official-SDK
 scan/lighting/radio/battery/power HAL components, an 82-key application library, offline-tested
-transport/power policies, an offline-only development ELF and a matching GUI preview.
-Connected M1 device access is read-only identification; M1 flashing is unsupported.
+transport/power policies, an experimental application image and a matching GUI preview.
+The application transfer is hardware-checked, but custom USB startup is not working.
+See the [M1 trial and recovery limits](docs/DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Each hardware backend builds separately—not one universal binary.
 
 ## Use the keyboard

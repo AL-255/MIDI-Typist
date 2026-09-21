@@ -36,6 +36,11 @@ void m1_main(void)
 {
     uint16_t density=*(const volatile uint16_t *)M1_FLASH_SIZE_REGISTER;
     if(density!=M1_FLASH_SIZE_KIB)halted(M1_MAIN_GEOMETRY_FAULT,density);
+    /* Before changing clocks or starting bus masters: retain reset-to-IAP
+     * recovery throughout this experimental runtime. Never clear automatically
+     * merely because USB enumeration or a synthetic scan looks healthy. */
+    uint32_t recovery=m1_storage_arm_recovery(true);
+    if(recovery)halted(M1_MAIN_RECOVERY_FAULT,recovery);
     m1_main_state=M1_MAIN_CLOCK;
     m1_clock_result_t clock=m1_clock_init();
     if(clock!=M1_CLOCK_OK)halted(M1_MAIN_CLOCK_FAULT,clock);
@@ -63,6 +68,12 @@ void m1_main(void)
          * implicit cold reboot or an unverified physical transport change. */
         if(wired()!=external)stop_live(M1_MAIN_SOURCE_FAULT,external,now.ms);
         m1_live_service(now.ms,now.us);
+        if(m1_live_update_requested()) {
+            __disable_irq();
+            m1_live_stop(now.ms);(void)m1_usb_hw_stop();
+            m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
+            NVIC_SystemReset();
+        }
         uint32_t faults=(!m1_hal_healthy()?M1_DEVICE_SCAN:0u) |
             (!m1_lighting_healthy()?M1_DEVICE_LIGHT:0u) |
             (m1_live_transport_fault()?M1_DEVICE_TRANSPORT:0u) |

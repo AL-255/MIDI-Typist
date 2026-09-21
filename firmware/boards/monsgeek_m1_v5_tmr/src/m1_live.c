@@ -9,6 +9,7 @@
 #include "scan_stream.h"
 #include "device_store.h"
 #include "m1_storage.h"
+#include "m1_image.h"
 #include <string.h>
 
 static keyboard_app_t app;
@@ -27,6 +28,8 @@ static m1_factory_result_t factory_result=M1_FACTORY_NOT_LOADED;
 static device_store_t store;
 static const m1_live_storage_ops_t *storage_ops;
 static bool storage_fault,storage_gap;
+static bool update_requested;
+bool m1_live_update_requested(void) { return update_requested; }
 static uint32_t last_save_attempt;
 static enum { POWER_AWAKE,POWER_DRAINING,POWER_PARKED,POWER_STOPPED } power_state;
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal);
@@ -106,6 +109,10 @@ static bool decimal(const char **text,uint32_t *value)
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
+    if(!strcmp(line,"bootloader")) {
+        if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)return false;
+        update_requested=true;return true;
+    }
     if(!strcmp(line,"stream gui")) { scan_stream_gui();return true; }
     if(!strcmp(line,"stream off")) { scan_stream_stop();return true; }
     if(!strncmp(line,"stream key ",11)) {
@@ -151,6 +158,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     }
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
+    update_requested=false;
     power_state=POWER_AWAKE;
     status=(keyboard_telemetry_status_t){.storage_slot=255,.calibration_saved=true,
                                       .calibration_supported=storage!=NULL};

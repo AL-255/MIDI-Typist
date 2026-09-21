@@ -7,6 +7,12 @@ OUT `0x02` and IN `0x82`; the driver exposes two paired MIDI ports.
 This describes the complete Huntsman custom application. The GUI's separate
 [M1 factory identity query](MONSGEEK_M1.md#identity-protocol) uses vendor HID,
 not these custom telemetry frames; it exposes no configuration stream.
+The experimental M1 application accepts the ASCII command `bootloader` on its
+active SysEx control session only if the factory IAP flag is armed. It requests
+a reset after stopping local peripherals; disconnect, not an ACK alone, is the
+transition. The factory updater then erases the application and custom saves.
+This custom command has not been physically exercised because M1 application
+USB startup is not yet working.
 
 ## SysEx envelope
 

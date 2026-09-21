@@ -7,9 +7,8 @@ to detect a Razer keyboard or its bootloader.
 ## Choose a keyboard and destination
 
 The model dropdown offers **Razer Huntsman Pro Mini V3** (the
-Huntsman V3 Pro Mini, RZ03-0499) and **MonsGeek M1 V5 TMR (identity only)**.
-Only Huntsman supports flashing; the M1 option performs
-[read-only factory identification](MONSGEEK_M1.md) with all flash actions disabled.
+Huntsman V3 Pro Mini, RZ03-0499) and **MonsGeek M1 V5 TMR (experimental)**.
+The M1 has a separate [experimental conversion path](#monsgeek-m1-experimental-conversion).
 The conversion instructions below apply to Huntsman. Detection shows product, reported serial,
 software build when available, USB VID/PID, physical port, speed and USB revision.
 The firmware identity includes its embedded full Git commit and clean/dirty
@@ -76,7 +75,7 @@ models in `adapters()` and implement their discovery, identity, image validation
 allowed transitions and updater boundary in a separate adapter.
 Each adapter declares its inspectable modes; remembered image paths are scoped
 to the model and destination. `flash_monsgeek.py` verifies M1 ID2949 through
-vendor HID without implementing any bootloader-entry or write command.
+vendor HID before allowing its guarded factory-to-IAP transition.
 
 `flash_huntsman.py` owns Linux detection and the Razer-specific application
 updater. Before any write it revalidates the device token and confirmed image
@@ -91,3 +90,35 @@ actions, confirmation and validation invalidation without device access.
 The live GUI reflash path is checked on a connected MIDI-Typist keyboard.
 Stock restoration and an initially bootloader-only device are covered offline,
 not claimed as separate physical conversion tests. See [validation](VALIDATION.md).
+
+## MonsGeek M1 experimental conversion
+
+**The transfer works, but the custom application does not yet reappear on USB
+on the test keyboard. Do not install it for normal use.**
+
+Select the M1 model and use **Read firmware details…** to confirm internal
+ID2949. Only a verified factory application offers installation actions. Choose
+`build-m1-hal/m1_development.bin` for the current trial, or supply your own
+ID2949 factory `.bin`. A factory file may be application-only or boot-prefixed;
+only its application slice from `0x5000` through at most `0x28000` is sent.
+No vendor image is bundled. Linux needs libusb and the GUI Python dependencies.
+
+**Factory entry resets stock user settings.** It preserves sensor-calibration
+pages `0x08032000/0x08032800` and bootloader code. The bootloader erases the
+application and both custom save slots before enumerating. The adapter binds
+the transition to the same physical port, serializes 64-byte writes without
+automatic retries, and requires the bootloader's checksum/readback verdict.
+That verdict confirms transfer, not working keyboard functionality.
+
+**The trial deliberately keeps reset-to-IAP recovery armed.** Before starting
+peripherals, it programs only the IAP magic word at `0x08004800`, from SRAM,
+and refuses a nonblank metadata page. It does not erase bootloader metadata.
+If this startup step completes, the next reset/power cycle enters the factory
+updater and erases the trial application and custom saves. Physical execution
+of this recovery step has not yet been confirmed.
+
+A pre-existing shared bootloader PID is not sufficient model/recovery proof,
+so the GUI does not offer direct bootloader recovery or custom reflash yet.
+The trial's SysEx `bootloader` command permits a controlled reset only while
+the recovery flag is armed. Full transport switching and power management
+remain incomplete.

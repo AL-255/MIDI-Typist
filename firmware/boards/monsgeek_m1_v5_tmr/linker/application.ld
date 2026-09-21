@@ -1,4 +1,4 @@
-/* Application-only DEVELOPMENT ELF. Not enabled in the GUI flasher.
+/* Application-only experimental image, with early reset-to-IAP recovery.
  * No bootloader/boot flag, factory settings or custom profile page contents. */
 ENTRY(M1_Reset_Handler)
 MEMORY {

@@ -185,12 +185,15 @@ def main_loop(image):
     for external,failure,expected in ((True,None,3),(False,None,3),(True,'geometry',4),
         (True,'clock',5),(True,'time_start',6),(True,'boot_begin',7),(True,'boot_service',7),
         (True,'time_now',6),(True,'source',8),(False,'source',8),(True,'device',9),
-        (True,'lighting',9),(True,'transport',9),(True,'storage',9),(False,'radio',9)):
+        (True,'lighting',9),(True,'transport',9),(True,'storage',9),(False,'radio',9),
+        (True,'recovery',11)):
         d=Reset(image);d.reset();s=d.s;trace=[];live=0;times=[]
         d.cpu.mem_write(SIZE,struct.pack('<H',128 if failure=='geometry' else 256))
         d.put(GPIOC+0x10,0 if external else 1<<13)
         d.put(GPIOC,0) # input source pin, real SDK GPIO setup is allowed
-        results={'m1_clock_init':6 if failure=='clock' else 0,
+        results={'m1_storage_arm_recovery':0x3100c if failure=='recovery' else 0,
+            'm1_live_update_requested':0,
+            'm1_clock_init':6 if failure=='clock' else 0,
             'm1_time_start':failure!='time_start','m1_boot_begin':failure!='boot_begin',
             'm1_boot_state':6 if failure=='boot_service' else 5,'m1_boot_error':5,
             'm1_hal_healthy':failure!='device','m1_lighting_healthy':failure!='lighting',
@@ -229,6 +232,7 @@ def main_loop(image):
             assert d.u32(s['m1_main_detail'])=={'device':1,'lighting':2,'transport':4,'storage':8,'radio':16}[failure]
         labels=[x[0] for x in trace]
         if expected==3:
+            assert labels.index('m1_storage_arm_recovery')<labels.index('m1_clock_init')
             assert live==2 and times==[(0xfffffffc,125)]*2
             assert labels.index('m1_boot_service')<labels.index('m1_live_service')
             begin=next(x for x in trace if x[0]=='m1_boot_begin')

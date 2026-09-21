@@ -41,4 +41,8 @@ uint32_t m1_storage_read(unsigned slot,uint8_t *page);
 uint32_t m1_storage_write(unsigned slot,const uint8_t *page,bool platform_safe);
 uint32_t m1_storage_erase(unsigned slot,bool platform_safe);
 bool m1_storage_fatal(void);
+/* Experimental installation recovery: cold, quiescent startup only. Program
+ * the exact factory IAP flag in an already erased metadata page; never erase
+ * or accept an address from the caller. Leaves the flag armed across resets. */
+uint32_t m1_storage_arm_recovery(bool platform_safe);
 #endif

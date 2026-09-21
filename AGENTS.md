@@ -113,7 +113,11 @@
   serial-number storage, factory/security data and secondary-ASIC firmware.
   On Huntsman, calibration and profile RESET may modify only 0x78000/0x78200
   (verified FF inside the original allocator's free block). On M1, only the
-  application-tail reservation above is writable. Do not execute RESET on a
+  application-tail reservation above is writable for profiles. The M1 experimental
+  startup may program only the factory IAP magic at 0x08004800 in an already
+  erased boot-flag page, from SRAM; it must not erase bootloader metadata or code.
+  The authorized stock-to-custom entry command resets stock user settings, but
+  must leave factory sensor-calibration pages untouched. Do not execute RESET on a
   user's saved calibration merely to test it.
 - Use the supplied updater, vendored as the `third_party/huntsman_updater`
   submodule, for application flashing; the GUI uses the private

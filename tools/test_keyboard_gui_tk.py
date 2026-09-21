@@ -36,7 +36,7 @@ def main():
         tab=app.flash_tab
         assert len(app.notebook.tabs())==2
         assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3',
-                                                'MonsGeek M1 V5 TMR (identity only)']
+                                                'MonsGeek M1 V5 TMR (experimental)']
         with patch.object(tab.adapter,'discover',side_effect=AssertionError('demo accessed USB')):
             app.notebook.select(tab);root.update()
         assert str(tab.flash_button['state'])=='disabled'
@@ -60,11 +60,14 @@ def main():
             tab.show_device(replace(device,mode=mode));tab.set_options()
             assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
         huntsman_name=tab.model.get()
-        tab.model.set('MonsGeek M1 V5 TMR (identity only)')
+        tab.model.set('MonsGeek M1 V5 TMR (experimental)')
         for mode in ('candidate','factory','unverified_bootloader'):
             tab.show_device(replace(device,model=tab.adapter.id,mode=mode,version='v4.08'))
             tab.set_options()
-            assert not tab.action_widgets and tab.option is None
+            if mode=='factory':
+                assert [w['text'] for w in tab.action_widgets]==[
+                    'Install experimental MIDI-Typist','Install MonsGeek factory application']
+            else:assert not tab.action_widgets and tab.option is None
             assert str(tab.flash_button['state'])=='disabled'
             assert str(tab.inspect_button['state'])==('disabled' if mode=='unverified_bootloader' else 'normal')
             assert tab.identity['Firmware'].get()=='v4.08'
