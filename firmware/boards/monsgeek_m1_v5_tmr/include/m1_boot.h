@@ -25,7 +25,9 @@ bool m1_boot_begin(m1_transport_t transport,const m1_transport_ops_t *ops,
  * no further service/health monitoring occurs here. USB may still enumerate,
  * and a radio peer may still be unlinked: READY is not host readiness.
  * Failure is terminal until reset, without automatic peripheral retries.
- * Ordinary failures stop owned links/scanner/rails before any typing starts.
+ * USB attaches before sensor/LED initialization. Ordinary failures stop
+ * scanner/radio/rails before any typing starts, retaining an established
+ * wired USB link for diagnostics unless its source/timebase is lost.
  * CLOCK_FATAL performs no peripheral cleanup and retains masked interrupts. */
 void m1_boot_service(void);
 m1_boot_state_t m1_boot_state(void);

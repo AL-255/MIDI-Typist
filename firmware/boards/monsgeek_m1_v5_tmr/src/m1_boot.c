@@ -23,10 +23,12 @@ static void fail(m1_boot_error_t why)
 {
     error=why;
     if(m1_startup_clock_fatal()) { state=M1_BOOT_CLOCK_FATAL;return; }
-    /* No application reports have been offered yet. Stop USB before touching
-     * shared sleep GPIO/rails; local radio idle is not used as host proof. */
+    /* No application reports have been offered yet. Retain an already working
+     * wired USB link for boot diagnostics unless its source/timebase is lost.
+     * No GPIO restoration is needed on this wired cold-start failure path. */
     if(radio_owned) { m1_wireless_stop();m1_radio_stop(); }
-    if(usb_owned)(void)m1_usb_hw_stop();
+    if(usb_owned && (why==M1_BOOT_SOURCE || why==M1_BOOT_TIME))
+        (void)m1_usb_hw_stop();
     /* Startup has already attempted its own cleanup on failure. Do not
      * implicitly retry a GPIO restoration it could not establish. */
     if(board_owned && !m1_startup_fault())m1_startup_stop();
@@ -59,20 +61,22 @@ void m1_boot_service(void)
     if(wired()!=external) { fail(M1_BOOT_SOURCE);return; }
     switch(state) {
     case M1_BOOT_RAILS:
+        if(external && !usb_owned) {
+            /* GPIO restoration is complete, but sensor/LED initialization has
+             * not started. Attach control USB now, without a scan dependency. */
+            if(m1_usb_hw_start(true)!=M1_USB_HW_OK) { fail(M1_BOOT_USB);return; }
+            usb_owned=true;
+            return; /* refresh time after the masked SDK initializer */
+        }
         m1_startup_service(now.ms,now.us);
         if(m1_startup_fault()) { fail(M1_BOOT_STARTUP);return; }
         if(!m1_startup_ready())return;
-        /* No live application exists yet: discard warmup/unread frames and
-         * stop ADC/DMA before the IRQ-masked SDK USB initializer. */
+        /* No live application exists yet: discard warmup/unread frames before
+         * binding calibration/profile data and starting normal reports. */
         if(!m1_hal_pause()) { fail(M1_BOOT_PAUSE);return; }
         state=M1_BOOT_LINKS;return;
     case M1_BOOT_LINKS:
-        if(external) {
-            if(m1_usb_hw_start(true)!=M1_USB_HW_OK) { fail(M1_BOOT_USB);return; }
-            usb_owned=true;
-        }
-        /* SDK USB attachment may consume tens of milliseconds. Never stamp
-         * a radio pulse using the time sampled before that blocking call. */
+        /* Sample immediately before starting the radio reset pulse. */
         if(!m1_time_now(&now)) { fail(M1_BOOT_TIME);return; }
         if(wired()!=external) { fail(M1_BOOT_SOURCE);return; }
         if(selected!=M1_TRANSPORT_USB) {

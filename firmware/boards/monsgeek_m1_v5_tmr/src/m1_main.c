@@ -1,6 +1,7 @@
 #include "m1_image.h"
 #include "m1_storage.h"
 #include "m1_boot.h"
+#include "m1_diagnostics.h"
 #include "m1_startup.h"
 #include "m1_time.h"
 #include "m1_hal.h"
@@ -57,8 +58,21 @@ void m1_main(void)
         m1_boot_service();
         m1_boot_state_t state=m1_boot_state();
         if(state==M1_BOOT_READY)break;
-        if(state==M1_BOOT_FAILED || state==M1_BOOT_CLOCK_FATAL)
+        if(state==M1_BOOT_CLOCK_FATAL)
             halted(M1_MAIN_BOOT_FAULT,m1_boot_error());
+        m1_time_point_t now;
+        if(!m1_time_now(&now))halted(M1_MAIN_TIME_FAULT,0);
+        if(state==M1_BOOT_FAILED) {
+            m1_main_state=M1_MAIN_BOOT_FAULT;m1_main_detail=m1_boot_error();
+            if(!m1_usb_hw_running())halted(M1_MAIN_BOOT_FAULT,m1_boot_error());
+        }
+        /* After a valid-clock failure, keep the cold-start control channel
+         * alive. Never retry startup, accept settings or emit keyboard notes. */
+        if(m1_diagnostics_service(now.ms)) {
+            __disable_irq();(void)m1_usb_hw_stop();
+            m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
+            NVIC_SystemReset();
+        }
     }
     m1_main_state=M1_MAIN_RUNNING;
     for(;;) {

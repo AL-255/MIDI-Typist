@@ -432,6 +432,17 @@ class Tests(unittest.TestCase):
         device.start(); connection.start()
         return master,slave,device,connection
 
+    def test_m1_boot_failure_log_is_actionable_and_not_telemetry(self):
+        connection=Connection('unused')
+        connection.build_target='MG-M1V5TMR'
+        connection.heartbeat=connection.last_rx=time.monotonic()
+        message=(sx.LOG,connection.session,0,b'Boot failed: application factory=0x00000003')
+        with patch.object(connection,'receive',return_value=message):
+            with self.assertRaisesRegex(RuntimeError,'application factory=0x00000003'):
+                connection.poll()
+        self.assertFalse(connection.connected)
+        self.assertIsNone(connection.snapshot())
+
     def cleanup(self,master,slave,device,connection):
         connection.stop(); connection.join(1)
         device.stop_event.set(); device.join(1)

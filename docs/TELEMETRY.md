@@ -14,6 +14,24 @@ transition. The factory updater then erases the application and custom saves.
 This custom command has not been physically exercised because M1 application
 USB startup is not yet working.
 
+## Cold-start failure reporting
+
+`LOG` payloads beginning with the reserved ASCII prefix `Boot failed: ` indicate
+that normal application configuration is unavailable. The GUI surfaces the text,
+ends its configuration session and does not accept it as a scan snapshot. This
+contract is board-independent; the text after the prefix is board-specific.
+
+The M1 cold-start owner reports, for example,
+`Boot failed: application factory=0x00000003`. The named error follows
+`m1_boot_error_t`; the eight hexadecimal digits hold `m1_factory_result_t`.
+`boot status` requests the current failure log. Build/git and the guarded
+`bootloader` request remain available on an established control link, while
+configuration writes are rejected. The GUI's `stream gui`/`cfg get` read probes
+are acknowledged only to allow the failure log through; no snapshot or successful
+configuration readback is fabricated. This service hands ownership to the normal
+application on successful startup. It cannot report failures before USB or after
+loss of the clock/timebase; those still require external recovery/debugging.
+
 ## SysEx envelope
 
 `F0 7D 4D 54 03 KIND PACKED_BODY F7`

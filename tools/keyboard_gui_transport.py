@@ -156,7 +156,10 @@ class Connection(threading.Thread):
                         if self.key_decoder.key != self.key_sensor: raise ValueError('Unexpected capture sensor')
                         self.push_sample(raw)
             elif kind == sx.LOG:
-                self.notify(payload.decode('ascii', 'replace').strip())
+                message_text=payload.decode('ascii', 'replace').strip()
+                if message_text.startswith('Boot failed: '):
+                    raise RuntimeError(message_text+'; configuration is unavailable. The control USB link remains available for recovery.')
+                self.notify(message_text)
             elif kind == sx.ERROR:
                 raise ValueError('Device control error: '+payload.decode('ascii', 'replace'))
         if time.monotonic()-self.last_rx > D['MIDI_CONTROL_LEASE_MS']/1000:

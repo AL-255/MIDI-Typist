@@ -83,7 +83,7 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_options(m1_save PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(m1_live PUBLIC m1_save m1_hal m1_storage midi_typist_services)
     target_compile_options(m1_live PRIVATE -Wall -Wextra -Werror)
-    add_library(m1_boot STATIC ${MT_BOARD_DIR}/src/m1_boot.c)
+    add_library(m1_boot STATIC ${MT_BOARD_DIR}/src/m1_boot.c ${MT_BOARD_DIR}/src/m1_diagnostics.c)
     target_link_libraries(m1_boot PUBLIC m1_live)
     target_compile_options(m1_boot PRIVATE -Wall -Wextra -Werror)
     # Application-only experimental image; never package boot/factory pages.

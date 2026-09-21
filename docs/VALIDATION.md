@@ -64,11 +64,15 @@ scan/PHY/clock failures, cancellation and cable changes. No startup helper is
 stubbed; hardware readiness, ADC data and the WFI wake boundary are scripted.
 The cold application-handoff audit composes these HALs with actual USB startup,
 radio initialization and shared application binding for both power sources and
-all five transports. It checks scan pause before USB, fresh post-USB radio pulse
+all five transports. It checks wired USB attachment before scanner initialization, fresh radio pulse
 timestamps, counter wrap, IRQ-mask preservation, factory-bounds rejection,
 source/USB/time/scan faults and terminal cleanup. Profile reads are modeled as
 erased and writes rejected; it does not execute a reset vector, real enumeration,
 peer delivery, post-handoff runtime power management or physical persistence.
+The cold-start diagnostic test executes the compiled SysEx service with abstract
+USB callbacks: build handshake, failure text, rejected mutations, boot-flag-gated
+reset requests, USB-generation invalidation and handoff to the live owner. A GUI
+test confirms that a failure log cannot be mistaken for valid scan telemetry.
 Sleep-time tests script rates across the supported LICK range and verify
 coherent SDK reads, protected shadow synchronization, independent wraps,
 fractional carry, early-wake deltas and terminal clock/time faults. They do not
@@ -143,6 +147,7 @@ per-byte readback verdict. The custom application does not yet enumerate on
 USB; kernel messages show the bootloader disconnect without an application
 return. The early recovery-flag writer passes the SRAM/SDK model, but its
 execution on the device and reset-to-IAP recovery remain unconfirmed.
+The early USB/diagnostic path has not yet been tested on the physical keyboard.
 No custom keyboard, MIDI, lighting, calibration or wireless behavior is claimed
 physically working. See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 

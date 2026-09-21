@@ -597,6 +597,10 @@ button. The [M1 adapter](MONSGEEK_M1.md) permits experimental conversion only
 after factory ID2949 verification; a shared bootloader PID cannot establish
 model identity or persistent recovery state. A transfer verdict must not be
 reported as proof that the new application enumerated or functions correctly.
+Where clocks and power allow, keep the control channel available after a
+startup failure instead of making USB depend on valid calibration or scanning.
+The reserved `Boot failed: ` SysEx log prefix makes the GUI reject configuration
+with an actionable error; never substitute fabricated sensor data for diagnostics.
 Pass bounded, NUL-terminated lines without CR/LF to `keyboard_app_command`.
 False means another handler may inspect the line; true means it was consumed,
 not necessarily accepted. Inspect the ACK ID/result and serialize requests.

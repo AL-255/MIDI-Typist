@@ -116,6 +116,9 @@ protected regions, permission requirements and restoration limits.
 The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
 before offering a trial conversion. Custom USB startup is not working yet;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+If an experimental backend reports `Boot failed: …` over SysEx, the GUI shows
+the failure and leaves configuration disabled. This is not a connected keyboard
+snapshot; recovery must use the flashing workflow supported by that backend.
 
 Initialize the updater submodule first:
 

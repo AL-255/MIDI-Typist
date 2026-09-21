@@ -7,7 +7,8 @@ No device access, reset vector, application flash image or real flash writes.
 import argparse
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
-                              UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR, UC_ARM_REG_FAULTMASK)
+                              UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR, UC_ARM_REG_FAULTMASK,
+                              UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_PC,UC_ARM_REG_LR)
 from test_m1_hal_arm import (BatteryStartupArm, CRM, GPIO, DMA, TMR2, TMR6,
                              ADC, RTC, RADIO_SPI, factory_memory, FACTORY_UPPER)
 from test_m1_usb_arm import Hardware, USB, DWT, DEMCR
@@ -92,7 +93,8 @@ class Boot(BatteryStartupArm):
 
     def failed(self,error):
         assert self.state()==FAILED and self.call('m1_boot_error')==error
-        assert not self.call('m1_usb_hw_running') and not self.call('m1_radio_healthy')
+        assert self.call('m1_usb_hw_running')==bool(self.attaches and error not in (1,3))
+        assert not self.call('m1_radio_healthy')
         assert not self.call('m1_hal_healthy') and not self.call('m1_lighting_healthy')
         assert not self.u32(GPIO+0x414)&((1<<6)|(1<<13))
         assert not self.u32(GPIO+0x814)&((1<<6)|(1<<14))
@@ -108,10 +110,13 @@ def handoff(path):
                 d=Boot(path,external);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
                 if mask:d.put(TMR2+0x24,0xffff0000)
                 assert d.call('m1_boot_begin',mode,0,1)
+                if external:
+                    before=d.u32(TMR2+0x24);d.tick()
+                    assert (d.u32(TMR2+0x24)-before)&0xffffffff>=26000
+                    assert d.attaches==1 and not d.call('m1_hal_healthy')
                 d.until(LINKS)
                 assert not d.call('m1_hal_periodic_active') and not d.u32(ADC+8)&1
                 before=d.u32(TMR2+0x24);d.tick()
-                if external:assert (d.u32(TMR2+0x24)-before)&0xffffffff>=26000
                 if mode!=6:
                     assert d.state()==RADIO
                     stamp=d.u32(TMR2+0x24)
@@ -150,18 +155,18 @@ def faults(path):
     d=Boot(path);d.call('m1_time_stop')
     assert not d.call('m1_boot_begin',6,0,1) and d.call('m1_boot_error')==1
     # A DMA error latched at the exact startup/pause boundary is fatal, not a
-    # reason to attach USB while acquisition still owns a partial frame.
+    # reason to restart peripherals. USB was attached before acquisition.
     d=Boot(path)
     address=d.symbols['m1_hal_pause']&~1
     d.cpu.hook_add(UC_HOOK_CODE,lambda *args:d.put(DMA,8<<20),begin=address,end=address)
     assert d.call('m1_boot_begin',6,0,1)
-    d.until(FAILED);d.failed(4);assert not d.attaches
+    d.until(FAILED);d.failed(4);assert d.attaches==1
     for stage in (RAILS,LINKS,RADIO,APPLICATION):
         d=Boot(path);assert d.call('m1_boot_begin',0,0,1);d.until(stage)
         d.put(GPIO+0x810,1<<13);d.tick();d.failed(3)
     for failure in ('counter','pllu','unplug'):
         d=Boot(path,failure=failure);assert d.call('m1_boot_begin',6,0,1)
-        d.until(LINKS);d.tick();d.failed(5)
+        d.until(FAILED);d.failed(5)
     d=Boot(path);assert d.call('m1_boot_begin',6,0,1);d.until(APPLICATION)
     d.cpu.mem_write(FACTORY_UPPER+2047,b'\0');d.factory=bytes(d.cpu.mem_read(FACTORY_UPPER,len(d.factory)))
     d.tick();d.failed(9) # real application refuses malformed factory bounds
@@ -182,7 +187,53 @@ def faults(path):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('elf')
-    args=parser.parse_args();handoff(args.elf);faults(args.elf)
+    args=parser.parse_args();handoff(args.elf);faults(args.elf);diagnostics(args.elf)
+
+
+def diagnostics(path):
+    """Real diagnostic/SysEx code; abstract port readiness and USB transfers."""
+    import midi_sysex as sx
+    from test_m1_hal_arm import M1Arm,RGB
+    d=M1Arm(path);wire=bytearray();messages=[]
+    d.cpu.mem_map(0x08004000,0x1000)
+    responses={'m1_usb_hw_running':1,'m1_usb_ready':1,'m1_usb_generation':1,
+               'm1_usb_midi_take':0,'m1_boot_state':FAILED,'m1_boot_error':9,
+               'm1_live_factory_result':3,'m1_usb_midi_send':1}
+    names={d.symbols[name]&~1:name for name in responses}
+    def port(cpu,address,size,user):
+        name=names.get(address)
+        if not name:return
+        if name=='m1_usb_midi_send':
+            assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1
+            events=bytes(cpu.mem_read(cpu.reg_read(UC_ARM_REG_R0),cpu.reg_read(UC_ARM_REG_R1)))
+            for at in range(0,len(events),4):
+                cin=events[at]&15;assert events[at]>>4==1 and 4<=cin<=7
+                count=3 if cin==4 else cin-4;wire.extend(events[at+1:at+1+count])
+                if cin!=4:messages.append(sx.decode(wire));wire.clear()
+        cpu.reg_write(UC_ARM_REG_R0,responses[name]);cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
+    d.cpu.hook_add(UC_HOOK_CODE,port)
+    def service():
+        result=0
+        for _ in range(12):result=d.call('m1_diagnostics_service',10)
+        return result
+    def send(kind,seq=0,payload=b''):
+        events=sx.usb_events(sx.encode(kind,123,seq,payload))
+        d.cpu.mem_write(RGB,events);d.call('midi_control_receive_usb',RGB,len(events))
+        return service()
+    assert not service() and not messages  # no unsolicited traffic without HELLO
+    assert not send(sx.HELLO)
+    assert messages[0][0]==sx.READY and b'MG-M1V5TMR' in messages[0][3]
+    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Boot failed: application factory=0x00000003'
+    assert not send(sx.COMMAND,1,b'cfg set 7 1 2500 2800') and messages[-1][0]==sx.ERROR
+    assert not send(sx.COMMAND,2,b'bootloader') and messages[-1][0]==sx.ERROR
+    assert not send(sx.COMMAND,3,b'boot status') and messages[-1][0]==sx.LOG
+    d.put(0x08004800,0x55aa55aa)
+    assert send(sx.COMMAND,4,b'bootloader') and messages[-1][0]==sx.ACK
+    responses['m1_usb_generation']=2
+    assert not service() and not d.call('midi_control_ready')
+    responses['m1_boot_state']=READY
+    count=len(messages);assert not service() and len(messages)==count
+    print('PASS M1 cold-start control: build handshake, failure text, mutation rejection, guarded reset request, USB epoch and live-owner handoff')
 
 
 if __name__=='__main__':main()

@@ -674,11 +674,13 @@ or 2.4 GHz; transport selection is not yet restored from the custom journal.
 
 The foreground sequence is:
 
-1. Complete the source-specific rail/warmup sequence above.
-2. Pause periodic scanning and discard warmup/unread frames before USB startup.
-3. Attach USB only when PC13 indicates external power. Refresh time after the
-   blocking SDK call; external power also permits USB GUI access while the
-   keyboard's selected transport is wireless.
+1. Begin the source-specific GPIO/rail sequence above.
+2. With external power, attach USB before sensor/LED initialization, while no
+   acquisition DMA is active. Refresh time after the blocking SDK call.
+3. Complete rail/warmup initialization, then pause scanning and discard unread
+   frames before binding profiles/calibration. USB control does not depend on
+   valid sensors; it also remains available for a wireless-selected keyboard
+   while external power is present.
 4. For wireless selection, initialize SPI3, wait its full startup pulse and
    initialize the scheduler for that exact mode. No peer link is fabricated.
 5. Initialize battery inputs, resume scanning, then initialize the application
@@ -692,12 +694,20 @@ select another transport. Optional transport callbacks are passed through to the
 application and must outlive it; absent callbacks keep Fn transport changes disabled.
 
 Before handoff, a source change or component failure latches a terminal error
-and stops owned links, scan/lighting and rails. A fatal clock-restoration failure
+and stops radio, scan/lighting and rails. An established wired USB link stays
+available for cold-start diagnostics unless its source or timebase is lost.
+`m1_diagnostics_service` owns the same SysEx channel until successful application
+handoff, with build/git queries, a `boot status` query and the guarded `bootloader`
+request. It rejects setting changes, emits no fabricated scan snapshots, and
+reports a failure through the reserved `Boot failed: ` log prefix. The GUI
+displays that failure and disables configuration instead of claiming connection.
+A fatal clock-restoration failure
 does no further peripheral cleanup and keeps interrupts masked. There is no
 automatic retry, profile erase or factory-data write. Offline tests execute
 the composed HAL/application chain; profile I/O and hardware effects are modeled.
-Runtime cable transitions, host-release/pairing and sleep/wake coordination,
-installation support and physical validation remain required.
+Failures before USB startup remain debugger-only diagnostics. Runtime cable
+transitions, host-release/pairing and sleep/wake coordination and physical
+validation remain required.
 
 ### Development ELF and reset entry
 
