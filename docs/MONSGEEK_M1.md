@@ -359,8 +359,8 @@ Native tests cover every common keycode, bitmap boundaries, ownership across
 releases, rollover recovery and evolving polyphony. Linked ARM tests execute
 the scheduler and official SPI/DMA drivers with scripted replies/completion,
 covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
-backpressure, stale/invalid status, faults and timer wrap. This component is not
-yet bound to `m1_live` or a complete transport/power coordinator. Pairing,
+backpressure, stale/invalid status, faults and timer wrap. `m1_live` binds this
+component to the shared keyboard application. A complete transport/power owner, pairing,
 physical host delivery and the electrical sleep handoff remain required.
 
 ### Radio battery and sleep-control handoff
@@ -440,30 +440,55 @@ cleanup, independent TX/RX flush timeouts and 82-key ACK/readback.
 Endpoint completions and register effects are modeled. This does **not** prove
 physical enumeration, acquisition cadence or a running M1 application.
 
-### Foreground USB application
+### Foreground application and transport routing
 
 `m1_live` connects periodic scan frames to the shared keyboard/MIDI application,
-LED renderer, composite USB class and GUI SysEx services. One foreground owner
+LED renderer, USB/radio output and GUI SysEx services. One foreground owner
 calls it with independently maintained wrapping millisecond/microsecond clocks.
 Initialization requires verified canonical per-key travel bounds; unknown
 calibration is not replaced with ADC rails. Settings are volatile: no profile
 storage is advertised, and calibration/RESET commands and Fn hints are disabled.
+The caller selects USB, BT1/2/3 or 2.4 GHz at initialization. A wireless choice
+requires a healthy scheduler configured for that mode, then waits for actual
+peer eligibility before accepting keyboard input. HID state goes only to the
+selected transport. The radio uses the same physical-to-keycode mapping and
+Schmitt logic as USB; MIDI performance is disabled in all wireless modes.
+Filtered battery metadata is forwarded to the radio and Fn+Space renders the
+battery hint. USB SysEx remains available for GUI configuration while the
+keyboard reports to a wireless host; it does not carry wireless performance MIDI.
 
 Only complete periodic frames enter velocity and capture processing, never
 one-shot wake scans. Sequence gaps or duplicates cancel held outputs and partial
 velocity windows, require neutral before rearming, and terminate a per-key
 capture with an explicit loss marker. GUI snapshots remain latest-only.
-USB generation changes invalidate output ownership and the GUI session before
-new submissions. Stop neutralizes application state without changing rails;
-continue servicing releases before explicit reinitialization.
+USB generation changes always reset the GUI session, but invalidate key
+ownership only when USB is the active keyboard transport. Reconnecting the GUI
+must not release wireless keys. Stop neutralizes application state without
+changing rails; continue servicing releases before explicit reinitialization.
+Wireless restart additionally requires the outer owner's host-release proof;
+neither local idle nor a neutral SPI packet supplies that proof.
+
+Optional `m1_transport_ops_t` callbacks connect Fn+F1–F5 to the outer physical
+transport owner. Without these callbacks, selection hints/actions are disabled.
+The foreground owner waits for neutral reports, USB MIDI cleanup where relevant,
+local drain **and** the external host-release confirmation before calling select.
+It latches that release proof while selection is in progress, since the old
+driver may then be stopped. Confirmation also requires the selected USB endpoint
+or matching radio scheduler to be ready; a callback cannot bypass those checks.
+An interrupted or timed-out attempted selection latches a terminal transport
+fault instead of resuming typing on an ambiguous host. A USB session change
+during an authorized selection resets control traffic without revoking the
+already established old-host release proof.
 
 `m1_live_audit.elf` exercises this coordinator through the real USB class and
-shared services at both packet sizes, decoding snapshots with the GUI codec.
+shared services at both packet sizes, decoding snapshots with the GUI codec;
+it also runs all four wireless modes through the real scheduler/SPI/DMA code.
 Acquisition, battery and LED boundaries are scripted, including discontinuities
-and backpressure; these are not physical scans or measured 8 kHz operation.
-The outer startup/power coordinator, radio delivery, durable storage and an
-installable application remain unimplemented. This USB binding is not a
-wired-only product policy.
+and backpressure. Radio status, DMA completion and external transport callbacks
+are scripted, not proof of host delivery, physical scans or measured 8 kHz operation.
+The outer startup/power/transport coordinator, verified radio delivery, durable
+storage and an installable application remain unfinished. Link faults are not
+automatically restarted, and disconnected-host transport recovery is not implemented.
 
 ### USB hardware lifecycle
 

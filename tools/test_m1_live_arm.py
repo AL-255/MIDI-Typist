@@ -5,23 +5,32 @@ Does not open hardware or model physical cadence, DMA movement or LED timing.
 import argparse
 import struct
 from test_m1_usb_arm import Device, INPUT, OUTPUT, USB
+from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI
 import midi_sysex as sx
 from keyboard_gui_model import decode
 from keyboard_capture import KeyDecoder, StreamError
 from firmware_defaults import DEFAULTS as D
 
 
-class Live(Device):
-    def __init__(self,path,high,sequence=0,time=0):
+class Live(Device,RadioArm):
+    def __init__(self,path,high,sequence=0,time=0,mode=6,transports=False):
         super().__init__(path,high)
         self.samples=[3900]*82;self.sequence=sequence;self.time=time;self.commands=0
         self.messages=[];self.wire=bytearray();self.events=[];self.hid=bytes(30)
+        self.radio_packets=[];self.radio_complete=True;self.peer_mode=mode;self.peer_pending=False
+        self.radio_slots=bytes(6);self.radio_bitmap=bytes(15);self.radio_modifiers=0
+        self.ops=self.call('m1_test_live_transports') if transports else 0
+        if mode!=6:self.start_radio(mode)
         self.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
         self.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-        assert not self.call('m1_live_init',0,OUTPUT)
-        assert self.call('m1_live_init',INPUT,OUTPUT)
-        assert not self.call('m1_live_init',INPUT,OUTPUT) # no live reinitialization
+        assert not self.call('m1_live_init',0,OUTPUT,mode,self.ops)
+        assert self.call('m1_live_init',INPUT,OUTPUT,mode,self.ops)
+        assert not self.call('m1_live_init',INPUT,OUTPUT,mode,self.ops) # no live reinitialization
         self.tick()
+    def start_radio(self,mode):
+        self.peer_mode=mode
+        self.time=self.radio_init(self.time)
+        assert self.call('m1_wireless_init',mode,1,self.time)
     def collect(self):
         if self.u32(USB+0x920)&(1<<31):
             self.hid=bytes(self.cpu.mem_read(self.get(0),30));self.complete(1)
@@ -38,6 +47,22 @@ class Live(Device):
                     self.wire.append(byte)
                     if byte==0xf7:
                         self.messages.append(sx.decode(self.wire));self.wire.clear()
+        if self.radio_complete and self.u32(DMA+0x1c)&1:
+            n=self.u32(DMA+0x20)
+            packet=bytes(self.cpu.mem_read(self.u32(DMA+0x28),n));self.radio_packets.append(packet)
+            reply=bytes(n)
+            if packet[0]==0x93:self.peer_mode=packet[2]
+            if packet[0]==0x92:self.peer_pending=True
+            if packet[0]==0x81 and packet[2]==1:
+                self.radio_modifiers=packet[3];self.radio_slots=packet[4:10]
+            if packet[0]==0x81 and packet[2]==2:self.radio_bitmap=packet[3:18]
+            if packet[0]==9:
+                payload=bytes((0x10,0,3,self.peer_mode))
+                reply=(bytes((0,4))+payload+bytes((sum(payload)&255,))).ljust(n,b'\0')
+                self.peer_pending=False
+            self.put(GPIO+0xc10,0 if self.peer_pending else 4)
+            self.cpu.mem_write(self.u32(DMA+0x3c),reply)
+            self.put(DMA,0x330);self.put(RADIO_SPI+8,2)
     def tick(self,frame=True,step=125):
         self.time+=step
         if frame:
@@ -71,6 +96,10 @@ class Live(Device):
         raise AssertionError('No matching configuration readback')
     def held(self,usage):
         return bool(self.hid[2+(usage-4)//8]&(1<<((usage-4)%8)))
+    def radio_held(self,usage):
+        return usage in self.radio_slots or (usage<120 and bool(self.radio_bitmap[usage//8]&(1<<(usage%8))))
+    def run(self,ticks=200):
+        for _ in range(ticks):self.tick()
     def chord(self,sensor):
         self.samples[77]=self.samples[sensor]=3000;self.tick()
         self.samples[77]=self.samples[sensor]=3900;self.tick();self.tick()
@@ -151,9 +180,9 @@ def integration(path):
         assert d.hid==bytes(30)
         d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
         d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
-        assert not d.call('m1_live_init',INPUT,OUTPUT) # must drain MIDI releases first
+        assert not d.call('m1_live_init',INPUT,OUTPUT,6,0) # must drain MIDI releases first
         for _ in range(160):d.tick(frame=False)
-        assert d.call('m1_live_init',INPUT,OUTPUT)
+        assert d.call('m1_live_init',INPUT,OUTPUT,6,0)
         d.tick();assert not d.call('midi_control_ready')
         print(f'PASS M1 {"HS" if high else "FS"} foreground: scan/keymap/HID/MIDI/GUI, capture loss, rearm, USB epoch, wake exclusion and lighting safety')
     d=Live(path,True,sequence=0xfffffffd,time=0xffffffff*1000-1000)
@@ -168,4 +197,106 @@ def integration(path):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     integration(args.elf)
+    wireless_integration(args.elf)
+
+
+def wireless_integration(path):
+    for mode in (0,1,2,5):
+        d=Live(path,True,mode=mode)
+        assert not d.call('m1_wireless_ready')  # status is not manufactured by live init
+        d.run();assert d.call('m1_wireless_ready') and d.call('m1_live_transport')==mode
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        assert d.snapshot().performance_mode==0
+        d.command('cfg key 1 81 135');assert d.snapshot(1).result==1
+        d.command('cfg key 2 45 135');assert d.snapshot(2).result==1
+        d.samples[81]=d.samples[45]=3000;d.run();assert d.radio_held(135)
+        assert d.hid==bytes(30) and not d.events
+        # GUI endpoint/session resets are independent of the active radio host.
+        d.call('m1_test_usb_event',2);d.run()
+        assert not d.call('m1_usb_ready') and d.radio_held(135)
+        d.call('m1_test_usb_event',3);d.run()
+        assert d.radio_held(135) and not d.call('midi_control_ready')
+        d.samples[81]=3900;d.run();assert d.radio_held(135)
+        d.samples[45]=3900;d.run();assert not d.radio_held(135)
+        d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY);d.commands=0
+        d.command('stream gui');d.chord(56)
+        assert d.snapshot().performance_mode==0 and not d.events
+        # Filtered metadata flows to the peer and Fn+Space stays a local menu.
+        d.call('m1_test_live_battery',57,1);d.run()
+        assert any(p[:4]==bytes((0x90,1,57,57)) for p in d.radio_packets)
+        d.samples[77]=d.samples[75]=3000;d.run()
+        assert not d.radio_held(44) and not any(d.radio_slots) and not any(d.radio_bitmap)
+        assert any(d.cpu.mem_read(d.call('m1_test_live_get',0),246))
+        d.samples=[3900]*82;d.run()
+        # The copied report pair must outlive application state changes.
+        d.samples[81]=3000;d.run()
+        d.radio_complete=False
+        d.samples[81]=3900
+        for _ in range(100):
+            d.tick()
+            if d.u32(DMA+0x1c)&1:break
+        assert d.u32(DMA+0x1c)&1
+        pointer=d.u32(DMA+0x28);n=d.u32(DMA+0x20)
+        before=bytes(d.cpu.mem_read(pointer,n));d.run(20)
+        assert bytes(d.cpu.mem_read(pointer,n))==before
+        d.radio_complete=True;d.run();assert not d.radio_held(135)
+        d.samples[81]=3000;d.run();assert d.radio_held(135)
+        d.sequence+=1;d.tick();d.run()
+        assert d.call('m1_live_scan_losses')==1 and not d.radio_held(135)
+        d.samples[81]=3900;d.run();d.samples[81]=3000;d.run();assert d.radio_held(135)
+        d.call('m1_live_stop',d.time//1000);d.run();assert not d.radio_held(135)
+        assert not d.events and d.hid==bytes(30)
+        print(f'PASS M1 wireless mode {mode}: actual app/radio/SDK reports, GUI remapping, duplicate ownership, MIDI exclusion, battery, backpressure, GUI epochs and loss/release')
+    # The board's host-delivery authorization is independently scripted here;
+    # actual report DMA and peer mode eligibility are still required.
+    d=Live(path,True,transports=True);d.start_radio(0);d.run();d.chord(56)
+    d.events.clear()
+    for i in range(D['RAW_VELOCITY_WINDOW']):d.samples[29]=3499-100*i;d.tick()
+    d.run(10);assert any(e[1]==0x90 and e[3] for e in d.events)
+    d.samples[29]=3900;d.run()
+    d.chord(1);assert d.call('m1_live_transport')==6
+    assert not d.call('m1_test_live_selection',1)  # local idle alone is insufficient
+    d.call('m1_test_live_transport_gate',1,0);d.run(10)
+    assert d.call('m1_test_live_selection',1)>0 and d.call('m1_live_transport')==6
+    d.call('m1_test_live_transport_gate',1,1);d.run()
+    assert d.call('m1_live_transport')==0
+    d.samples[45]=3000;d.run();assert d.radio_held(4) and d.hid==bytes(30)
+    d.samples[45]=3900;d.run()
+    d.call('m1_test_live_transport_gate',0,1);d.chord(5)
+    assert d.call('m1_live_transport')==0  # cannot abandon a radio host on local idle
+    d.call('m1_test_live_transport_gate',1,1);d.run()
+    assert d.call('m1_live_transport')==6 and not d.call('m1_live_transport_fault')
+    d.samples[45]=3000;d.run();assert d.held(4) and not d.radio_held(4)
+    # Selection can stop/reinitialize the old radio after its release proof;
+    # there is no requirement to keep draining a driver that no longer exists.
+    d=Live(path,True,mode=0,transports=True);d.run()
+    d.call('m1_test_live_transport_gate',1,0);d.chord(2)
+    assert d.call('m1_test_live_selection',1)>0 and d.call('m1_live_transport')==0
+    d.call('m1_wireless_stop');d.start_radio(1);d.run()
+    assert not d.call('m1_live_transport_fault') and d.call('m1_live_transport')==0
+    d.call('m1_test_live_transport_gate',0,1);d.run() # old proof already latched
+    assert d.call('m1_live_transport')==1 and not d.call('m1_live_transport_fault')
+    d.samples[45]=3000;d.run();assert d.radio_held(4)
+    d.samples[45]=3900;d.run();d.call('m1_live_stop',d.time//1000);d.run()
+    d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
+    d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
+    assert not d.call('m1_live_init',INPUT,OUTPUT,1,d.ops) # local neutral is not host proof
+    d.call('m1_test_live_transport_gate',1,1)
+    assert d.call('m1_live_init',INPUT,OUTPUT,1,d.ops)
+    # An adapter claiming success for the wrong/not-ready radio cannot switch.
+    d=Live(path,True,transports=True);d.start_radio(0);d.run()
+    d.call('m1_test_live_transport_gate',1,1);d.chord(2)
+    assert d.call('m1_live_transport')==6
+    # Keep frames fresh across the selection deadline; no fallback host typing.
+    for _ in range(D['M1_TRANSPORT_SWITCH_TIMEOUT_MS']//10+1):d.tick(step=10000)
+    assert d.call('m1_live_transport_fault') and d.call('m1_live_transport')==6
+    d.samples[45]=3000;d.run();assert not d.held(4)
+    d.cpu.mem_write(INPUT,struct.pack('<82H',*([1000]*82)))
+    d.cpu.mem_write(OUTPUT,struct.pack('<82H',*([4096]*82)))
+    assert not d.call('m1_live_init',INPUT,OUTPUT,6,d.ops) # no silent fault clear
+    d=Live(path,True,transports=True);d.call('m1_test_live_transport_gate',1,0);d.chord(1)
+    assert d.call('m1_test_live_selection',1)>0
+    d.sequence+=1;d.tick();assert d.call('m1_live_transport_fault')
+    d.samples[45]=3000;d.run();assert not d.held(4)
+    print('PASS M1 Fn transport integration: explicit host-release gate, actual mode confirmation, neutral routing and terminal ambiguous selection')
 if __name__=='__main__':main()

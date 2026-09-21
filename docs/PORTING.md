@@ -376,6 +376,14 @@ ownership when a peer splits keys between usage slots and a smaller bitmap.
 Bound every peer format independently of the USB descriptor. Queue acceptance,
 DMA completion, a peer mode reply and host delivery are separate facts: do not
 wire a local-idle predicate into a host-drained callback.
+Keep GUI/control sessions independent from active keyboard host ownership when
+a board supports wired configuration alongside wireless typing. A GUI USB reset
+must not release keys on the radio host. Validate a transport adapter's selection
+against actual endpoint/peer readiness, latch its old-host release proof through
+asynchronous reconfiguration, and stop output if an attempted switch becomes
+ambiguous. The M1 foreground binding accepts the initial mode and optional
+transport callbacks explicitly; those callbacks are not replaced with local DMA
+completion or an assumed successful switch.
 Sleep commands need the same ownership discipline. Process activity/cable
 cancellation before submitting a queued power command; after transmission has
 started, require the board's real restoration path rather than just clearing a

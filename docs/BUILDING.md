@@ -118,7 +118,9 @@ requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
 The foreground audit connects scripted scan/battery/LED boundaries to the real
-application, USB class and GUI codec, including discontinuity and release handling.
+application, USB class, radio scheduler/SPI/DMA drivers and GUI codec, including
+discontinuity, release handling and gated Fn transport selection. External
+host-release/selection callbacks and radio replies are scripted.
 The HAL audit also executes the wireless report scheduler through actual
 SPI/DMA drivers with scripted status replies; no radio host is simulated.
 The SDK package selector

@@ -10,6 +10,9 @@ bool m1_wireless_init(m1_transport_t mode,bool previous_host_released,uint32_t n
 void m1_wireless_service(uint32_t now_us);
 void m1_wireless_stop(void);
 bool m1_wireless_healthy(void);
+/* Configured mode of a healthy scheduler, including while awaiting the peer.
+ * This is not confirmation of the received mode or link readiness. */
+bool m1_wireless_mode(m1_transport_t *mode);
 /* True only for a fresh matching mode/state-3 status received by polling. This
  * is the reference's report-eligibility state, NOT proof of host delivery. */
 bool m1_wireless_ready(void);

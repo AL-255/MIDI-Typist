@@ -20,6 +20,13 @@ The foreground coordinator audit connects scripted scan/battery/LED boundaries
 to the actual application, USB class and GUI decoder. It covers remapping,
 MIDI, capture loss, unsupported storage actions, session reset, stale input,
 independent timer/sequence wrap and release draining before explicit restart.
+It also connects the application to the real radio scheduler and SPI/DMA driver
+for all three Bluetooth slots and 2.4 GHz: mapped key press/release, duplicate
+destinations, backpressure, battery metadata, USB-only performance MIDI and GUI
+resets independent of wireless key ownership. Fn transport tests script the
+external host-release/selection callbacks but still require actual local drain
+and matching peer readiness; ambiguous selection fails closed. Those callbacks
+are an explicit evidence gap, not an implementation of physical switching.
 It does not measure real acquisition or foreground execution time.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report

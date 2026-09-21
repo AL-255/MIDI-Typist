@@ -47,6 +47,8 @@ void m1_wireless_stop(void)
     active=false;confirmed=false;pending=false;flight=NONE;
 }
 bool m1_wireless_healthy(void) { return active && !faulted && m1_radio_healthy(); }
+bool m1_wireless_mode(m1_transport_t *mode)
+{ if(!mode || !m1_wireless_healthy())return false;*mode=target;return true; }
 bool m1_wireless_ready(void)
 {
     return m1_wireless_healthy() && !sleep_command && confirmed && have_status && status.state==M1_RADIO_STATE_REPORTS &&
