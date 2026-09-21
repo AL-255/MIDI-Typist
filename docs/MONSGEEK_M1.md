@@ -86,7 +86,10 @@ calibration timeout fail initialization; startup is not hidden inside the HAL.
 
 TMR6 schedules a requested **8 kHz complete-frame cadence**. Each acquisition
 chains six TMR3-triggered rows. DMA completes before selecting the next bank;
-only a complete, correctly ordered frame is published. Raw ADC `0…4095` maps
+each rearm disables ADC DMA requests and drains the old result/status before
+enabling the new destination and reconnecting the producer. Pretrigger DMA
+counts remain available through cold-start diagnostics to detect stale transfers.
+Only a complete, correctly ordered frame is published. Raw ADC `0…4095` maps
 to canonical `1…4096`, decreasing with travel. ADC rails are not per-key travel
 calibration. A short IRQ critical section protects the latest complete-frame
 copy. DMA errors, invalid samples and cadence overruns fail the scanner rather

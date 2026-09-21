@@ -94,6 +94,10 @@
 - Keep the original extraction read-only. Do not consult the broken sibling
   implementation or commit original firmware, disassembly, private device
   dumps, serial-number data or credentials.
+- Cross-check hardware-critical reverse-engineering notes against executable
+  instructions or raw byte order. A test that repeats a reconstructed table is
+  not independent evidence for that table. Optional private-reference audits
+  must read external images without bundling their bytes into the repository.
 - Keep the external MonsGeek M1 firmware-recovery repository read-only too.
   M1 installation requires a verified application-only updater and recovery
   path. The current `m1_development.elf` alone is not a flashing procedure.

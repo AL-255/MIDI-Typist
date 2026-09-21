@@ -285,6 +285,39 @@ def lighting(elf):
     print('PASS M1 linked HAL/SDK: encoding, PA10/SPI2/DMA1 ownership, drain, latch, stop, faults and wraparound')
 
 
+def scanner_pending_adc(elf):
+    """Script a pending ADC DMA request at every row boundary.
+
+    The model checks producer/drain/destination ordering, not analog timing.
+    Device pretrigger counts independently expose premature real transfers.
+    """
+    class PendingADC(M1Arm):
+        def __init__(self):
+            self.pending=False;self.drained=False;self.flushed=0
+            super().__init__(elf,scanner=True)
+            self.cpu.hook_add(UC_HOOK_MEM_READ,self.read_result,begin=ADC+0x4c,end=ADC+0x4f)
+        def read_result(self,cpu,access,address,size,value,user):
+            assert not self.u32(ADC+8)&256, 'ADC result drained with producer enabled'
+            self.drained=True
+        def write(self,cpu,access,address,size,value,user):
+            super().write(cpu,access,address,size,value,user)
+            if self.pending and address==ADC and not value&2:
+                assert self.drained and not self.u32(ADC+8)&256
+                self.pending=False;self.flushed+=1
+            if address==DMA+0x6c and value&1:
+                assert not self.pending, 'Old ADC request consumes a slot before trigger'
+    d=PendingADC();assert d.call('m1_hal_init') and d.call('m1_hal_start')
+    d.pending=True;d.drained=False;d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+    for bank in range(6):
+        assert d.flushed==bank+1
+        assert d.call('m1_hal_pretrigger_counts')>>(5*bank)&31==15
+        d.cpu.mem_write(d.u32(DMA+0x78),struct.pack('<15H',*range(2000,2015)))
+        d.pending=True;d.drained=False;d.put(DMA,3<<20);d.call('m1_hal_dma_irq')
+    assert d.call('m1_hal_frame',RGB,RGB+200)
+    assert struct.unpack('<82H',d.cpu.mem_read(RGB,164))==tuple(2001+r[2] for r in m1_records())
+    print('PASS M1 pending ADC request: producer disabled and result/status drained before every new DMA row')
+
+
 def scanner(elf):
     dev=M1Arm(elf,scanner=True)
     assert dev.call('m1_hal_init')==1
@@ -1708,6 +1741,7 @@ def main():
     timebase(args.elf)
     lighting(args.elf)
     scanner(args.elf)
+    scanner_pending_adc(args.elf)
     scanner_pause(args.elf)
     scanner_capture(args.elf)
     startup(args.elf)

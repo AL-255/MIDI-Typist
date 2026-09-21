@@ -33,6 +33,12 @@ static void arm_row(void)
 {
     tmr_counter_enable(TMR3,FALSE);
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
+    /* A pending ADC request must not consume the preceding row's last result
+     * when DMA is re-enabled. Disarm the producer, drain its result/status,
+     * then reconnect it only after the next destination is ready. */
+    adc_dma_mode_enable(ADC1,FALSE);
+    (void)adc_ordinary_conversion_data_get(ADC1);
+    adc_flag_clear(ADC1,ADC_CCE_FLAG);
     dma_flag_clear(DMA1_GL6_FLAG);
     select_bank(bank);
     dma_data_number_set(DMA1_CHANNEL6,M1_ADC_RANKS);
@@ -40,6 +46,7 @@ static void arm_row(void)
     tmr_counter_value_set(TMR3,0);
     tmr_flag_clear(TMR3,TMR_OVF_FLAG);
     dma_channel_enable(DMA1_CHANNEL6,TRUE);
+    adc_dma_mode_enable(ADC1,TRUE);
     __DSB();
     uint32_t shift=5u*bank;
     pretrigger_counts=(pretrigger_counts&~(31u<<shift)) |
