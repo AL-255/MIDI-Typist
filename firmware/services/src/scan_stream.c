@@ -7,6 +7,7 @@
  * SysEx control cable. Publication copies the entire payload before return. */
 #define RECORDS MIDI_CONTROL_DEVICE_RECORDS
 #define BATCH MIDI_CONTROL_SAMPLE_BATCH
+_Static_assert(BATCH > 0 && BATCH <= RECORDS, "capture batch must fit the record queue");
 _Static_assert(BATCH * SCAN_STREAM_KEY_SIZE <= MT_SYSEX_MAX_PAYLOAD, "capture batch fits SysEx");
 _Static_assert(RECORDS * SCAN_STREAM_KEY_SIZE >= SCAN_STREAM_GUI_SIZE, "shared buffer fits snapshot");
 _Static_assert(SCAN_STREAM_GUI_SIZE <= MT_SYSEX_MAX_PAYLOAD,"snapshot fits SysEx");
@@ -88,6 +89,10 @@ bool scan_stream_service(void)
         key_record(s_records,0,2);s_head=1;s_tail=0;s_count=1;s_fault_sent=true;
     }
     if(!s_count || !midi_control_publish_ready())return false;
+    /* Amortize envelope/endpoint overhead instead of transmitting a new
+     * SysEx for each acquisition whenever USB catches up. Never wait for
+     * more samples after a fault: drain the partial batch and loss marker. */
+    if(s_mode==KEY && !s_fault && s_count<BATCH)return false;
     unsigned count=s_mode==KEY?(s_count<BATCH?s_count:BATCH):1;
     unsigned size=s_mode==KEY?SCAN_STREAM_KEY_SIZE:s_mode==GUI?s_gui_size:128u;
     for(unsigned i=0;i<count;++i)

@@ -14,7 +14,9 @@ to resume them. This does not stop the keyboard's performance output.
 Each capture command carries a new nonce. Inner sequence numbers begin at zero;
 missing, duplicated, invalid or loss-marked records fail the capture. A device
 acquisition discontinuity is a loss even if its transmitted records are consecutive.
-Device buffering is 256 records, published in batches of up to 32.
+Device buffering is 256 records, published in batches of 32 (4 ms of samples
+at the declared rate). A fault flushes a shorter pending batch followed by
+the explicit loss record; it never waits for further acquisition.
 The host uses bounded native/IPC MIDI queues and a 16384-sample buffer.
 Overflow never silently discards waveform data. Reconnect to start a new session
 after a fault; the GUI does not retry uncertain settings changes.

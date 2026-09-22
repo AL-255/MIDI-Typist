@@ -181,6 +181,9 @@ run in main, not in the USB ISR. Buffer/timing defaults live in `defaults.h`.
 Bulk capture preparation first checks transmit-slot readiness; a busy slot
 does not repeatedly copy the same pending batch. Software CRC-32 uses a small
 nibble table, with identical wire bytes and no MCU-specific CRC peripheral.
+Healthy capture waits for `MIDI_CONTROL_SAMPLE_BATCH` records before encoding,
+amortizing envelope and endpoint overhead. Faults flush any partial batch and
+then their loss marker. No samples are decimated and the acquisition rate is unchanged.
 
 ## Channels
 
