@@ -177,6 +177,24 @@ bool m1_live_publish_stats(void)
     }
     return midi_control_publish(MT_DUMP,payload,sizeof(payload));
 }
+static bool power_status(keyboard_power_status_t *out)
+{
+    if(!enabled || !usb_ready())return false;
+    const m1_battery_t *b=m1_battery_hal_status();
+    static const uint8_t chargers[]={MT_CHARGE_UNKNOWN,MT_CHARGE_BATTERY,
+                                   MT_CHARGE_RAW_LOW,MT_CHARGE_RAW_HIGH};
+    if((unsigned)b->charger>=sizeof(chargers))return false;
+    *out=(keyboard_power_status_t){
+        .flags=(b->source_known?MT_POWER_SOURCE_KNOWN:0u) |
+               (b->externally_powered?MT_POWER_EXTERNAL:0u) |
+               (b->valid?MT_POWER_VALID:0u) |
+               (m1_battery_low(b)?MT_POWER_LOW:0u) |
+               (m1_battery_critical(b)?MT_POWER_CRITICAL:0u),
+        .percent=b->valid?b->percent:0u,.charger=chargers[b->charger],
+        .adc=b->valid?b->average:UINT16_MAX,
+        .age_ms=b->sample_clock?(uint32_t)(now-b->sampled_at):UINT32_MAX};
+    return true;
+}
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
@@ -258,7 +276,8 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
                                       .calibration_supported=storage!=NULL};
     epoch=m1_usb_generation();scan_stream_init();
     if(!midi_control_init(&port))return false;
-    midi_control_command_handler(command);initialized=enabled=true;
+    midi_control_command_handler(command);midi_control_power_handler(power_status);
+    initialized=enabled=true;
     last_output_ready=output_ready();return true;
 }
 void m1_live_stop(uint32_t now_ms)

@@ -13,8 +13,8 @@ import tempfile
 import threading
 import time
 import unittest
-from keyboard_gui_model import MAGIC, parse_build, frame_size, HEADER_SIZE, RECORD_SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
-from keyboard_boards import get_board, DEFAULT_TARGET
+from keyboard_gui_model import MAGIC, parse_build, frame_size, HEADER_SIZE, RECORD_SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, decode_power, power_text, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
+from keyboard_boards import get_board, DEFAULT_TARGET, M1_TARGET
 from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
 
 
@@ -71,6 +71,8 @@ class Device(threading.Thread):
         self.key_rate = key_rate       # seconds between HKL1 records (8 ksps default)
         self.key_raw = 3900            # raw value for the pinned sensor
         self.key_cb = None             # optional callable(seq) -> raw override
+        self.power = struct.pack('<4sBBBBHHI',b'MTP1',1,7,87,5,1635,0,12)
+        self.power_queries = 0
 
     def send(self, data): self.inbox.put(data)
     def receive(self, timeout):
@@ -123,7 +125,10 @@ class Device(threading.Thread):
                             elif fields[1] == 'calibrate': self.calibration_state=3
                             elif fields[1] == 'calcancel': self.calibration_state=7
 
-                        if not self.silent: self.emit(sx.ACK, sequence=sequence)
+                        if fields==['power','status']:
+                            self.power_queries+=1
+                            if not self.silent:self.emit(sx.ACK,self.power,sequence)
+                        elif not self.silent: self.emit(sx.ACK, sequence=sequence)
                 if streaming and not self.silent:
                     if self.stream_mode == 'key' and time.monotonic()-last > self.key_rate:
                         session,threshold,sensor = self.key_mode
@@ -155,6 +160,45 @@ def until(predicate,seconds=3):
 
 
 class Tests(unittest.TestCase):
+    def test_power_codec(self):
+        def wire(flags=7,percent=87,charger=5,adc=1635,reserved=0):
+            return struct.pack('<4sBBBBHHI',b'MTP1',1,flags,percent,charger,adc,reserved,12)
+        s=decode_power(wire())
+        self.assertIn('87% (estimate)',power_text(s))
+        self.assertIn('polarity unverified',power_text(s))
+        self.assertNotIn('charging',power_text(s))
+        self.assertIn('unavailable',power_text(decode_power(wire(0,0,0,65535))))
+        self.assertIn('CRITICAL',power_text(decode_power(wire(29,3,1,1100))))
+        for data in (b'',wire()[:-1],b'MTP0'+wire()[4:],wire(32),wire(percent=101),
+                     wire(charger=6),wire(reserved=1),wire(2,0,0,65535),
+                     wire(0),wire(7,20,1),wire(5,20,5),wire(23),wire(15)):
+            with self.assertRaises(ValueError):decode_power(data)
+
+    def test_power_polling_and_capture_exclusion(self):
+        resources=self.transport(board_target=M1_TARGET);_,_,device,connection=resources
+        try:
+            until(lambda:connection.power_snapshot())
+            self.assertEqual(connection.power_snapshot()[1].percent,87)
+            connection.stream_key(3500,81)
+            until(lambda:connection.stream_mode=='key')
+            count=device.power_queries
+            time.sleep(1.1)
+            self.assertEqual(device.power_queries,count)
+            connection.stream_gui()
+            until(lambda:device.power_queries>count)
+            until(lambda:connection.stream_mode=='gui' and connection.power_snapshot())
+            self.assertTrue(connection.is_alive())
+        finally:self.cleanup(*resources)
+
+    def test_bad_power_reply_closes_session(self):
+        resources=self.transport(board_target=M1_TARGET);_,_,device,connection=resources
+        try:
+            until(lambda:connection.power_snapshot())
+            device.power=b'MTP0'
+            until(lambda:not connection.is_alive())
+            self.assertFalse(connection.connected)
+        finally:self.cleanup(*resources)
+
     def test_transport_status(self):
         from keyboard_gui_model import transport_text
         for transport in range(6):

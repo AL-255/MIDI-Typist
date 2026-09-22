@@ -8,7 +8,7 @@ import zlib
 from test_m1_usb_arm import Device, INPUT, OUTPUT, USB
 from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI, factory_memory, FACTORY_UPPER
 import midi_sysex as sx
-from keyboard_gui_model import decode
+from keyboard_gui_model import decode,decode_power
 from keyboard_capture import KeyDecoder, StreamError
 from firmware_defaults import DEFAULTS as D
 
@@ -160,6 +160,12 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3959,)*82
+        power=decode_power(d.command('power status')[3])
+        assert power.flags==0 and power.percent==0 and power.adc==65535
+        d.call('m1_test_live_battery',3,1)
+        power=decode_power(d.command('power status')[3])
+        assert power.flags==29 and power.percent==3
+        d.call('m1_test_live_battery',0,0)
         d.command('runtime stats');diagnostic=d.wait(sx.DUMP)[3]
         assert diagnostic[:8]==b'M1PF\x01\x08\x78\x00' and len(diagnostic)==120
         stamp,sequence,losses,hal_errors=struct.unpack_from('<4I',diagnostic,8)

@@ -5,7 +5,7 @@ import secrets
 import threading
 import time
 from firmware_defaults import DEFAULTS as D
-from keyboard_gui_model import decode, parse_build, MAX_KEYS
+from keyboard_gui_model import decode, decode_power, parse_build, MAX_KEYS
 from keyboard_boards import get_board
 from keyboard_capture import KeyDecoder
 from midi_backend import MidiBackend, find_midi_device
@@ -27,6 +27,7 @@ class Connection(threading.Thread):
         self.events = queue.Queue(maxsize=128)
         self.lock = threading.Lock()
         self.latest = None
+        self.latest_power = None
         self.build = None        # build identity from `version`, e.g. v0.1.0-RZ03-0499
         self.build_target = None # its board target, e.g. RZ03-0499
         self.connected = False
@@ -73,6 +74,13 @@ class Connection(threading.Thread):
 
     def snapshot(self):
         with self.lock: return self.latest
+
+    def power_snapshot(self):
+        with self.lock: return self.latest_power
+
+    def read_power(self):
+        power=decode_power(self.command('power status'))
+        with self.lock: self.latest_power=(time.monotonic(),power)
 
     def stop(self): self.stop_event.set()
 
@@ -188,6 +196,8 @@ class Connection(threading.Thread):
             self.heartbeat = self.last_rx = time.monotonic()
             self.command('stream gui')
             self.command(f'cfg get {self.next_id}', 'get')
+            power_supported=get_board(self.build_target).power_status
+            power_at=0.0
             while not self.stop_event.is_set():
                 if self.stream_requests and (self.stream_mode == 'key' or self.requests.empty()):
                     request = self.stream_requests.popleft()
@@ -213,7 +223,9 @@ class Connection(threading.Thread):
                         self.command('stream gui')
                 elif self.stream_mode == 'gui':
                     try: action, args = self.requests.get_nowait()
-                    except queue.Empty: pass
+                    except queue.Empty:
+                        if power_supported and time.monotonic()-power_at>=D['GUI_POWER_POLL_MS']/1000:
+                            self.read_power();power_at=time.monotonic()
                     else:
                         self.next_id = self.next_id % 0xffffffff+1
                         self.command('cfg '+action+' '+str(self.next_id)+''.join(' '+str(v) for v in args), action, args)

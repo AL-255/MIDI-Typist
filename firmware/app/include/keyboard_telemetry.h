@@ -15,6 +15,20 @@
 enum { MT_TRANSPORT_UNKNOWN,MT_TRANSPORT_USB,MT_TRANSPORT_BT1,
        MT_TRANSPORT_BT2,MT_TRANSPORT_BT3,MT_TRANSPORT_RADIO };
 enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u };
+/* Optional read-only power status, returned in the command ACK, not the
+ * latest-only key stream. Unverified charger polarity has explicit raw states. */
+#define MT_POWER_SIZE 16u
+enum { MT_POWER_SOURCE_KNOWN=1u,MT_POWER_EXTERNAL=2u,MT_POWER_VALID=4u,
+       MT_POWER_LOW=8u,MT_POWER_CRITICAL=16u };
+enum { MT_CHARGE_UNKNOWN,MT_CHARGE_BATTERY,MT_CHARGE_ACTIVE,MT_CHARGE_FULL,
+       MT_CHARGE_RAW_LOW,MT_CHARGE_RAW_HIGH };
+typedef struct {
+    uint8_t flags,percent,charger;
+    uint16_t adc; /* UINT16_MAX when unavailable; board-native, not key travel. */
+    uint32_t age_ms; /* Latest filter input age; UINT32_MAX when unavailable. */
+} keyboard_power_status_t;
+size_t keyboard_power_encode(const keyboard_power_status_t *status,
+                             uint8_t *out,size_t capacity);
 typedef struct {
     uint32_t now,sequence,ack,scan_errors,light_errors;
     uint32_t calibration_generation,storage_error,storage_generation;

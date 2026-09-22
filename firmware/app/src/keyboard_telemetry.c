@@ -5,6 +5,19 @@
 
 static void u16(uint8_t *p,uint16_t v) { p[0]=v; p[1]=v>>8; }
 static void u32(uint8_t *p,uint32_t v) { u16(p,v); u16(p+2,v>>16); }
+size_t keyboard_power_encode(const keyboard_power_status_t *s,uint8_t *out,size_t capacity)
+{
+    if(!s || !out || capacity<MT_POWER_SIZE || s->flags>31u || s->percent>100u ||
+       s->charger>MT_CHARGE_RAW_HIGH ||
+       (!(s->flags&MT_POWER_VALID) && (s->percent || s->adc!=UINT16_MAX)) ||
+       ((s->flags&MT_POWER_EXTERNAL) && !(s->flags&MT_POWER_SOURCE_KNOWN)) ||
+       ((s->flags&MT_POWER_LOW) && ((s->flags&7u)!=(MT_POWER_SOURCE_KNOWN|MT_POWER_VALID))) ||
+       ((s->flags&MT_POWER_CRITICAL) && !(s->flags&MT_POWER_LOW)) ||
+       (s->charger && (!(s->flags&MT_POWER_SOURCE_KNOWN) ||
+        ((s->charger==MT_CHARGE_BATTERY)==((s->flags&MT_POWER_EXTERNAL)!=0)))))return 0;
+    memcpy(out,"MTP1",4);out[4]=1;out[5]=s->flags;out[6]=s->percent;out[7]=s->charger;
+    u16(out+8,s->adc);u16(out+10,0);u32(out+12,s->age_ms);return MT_POWER_SIZE;
+}
 size_t keyboard_telemetry_encode(const keyboard_app_t *app,
     const keyboard_telemetry_status_t *s,uint8_t *out,size_t capacity)
 {

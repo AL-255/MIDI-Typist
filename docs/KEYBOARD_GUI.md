@@ -47,6 +47,14 @@ use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
 
+On M1, the settings panel also shows estimated battery percentage, external or
+battery power, low/critical warnings and the raw charger-pin state. Unknown,
+stale and disconnected readings are explicit. Charger polarity is unverified,
+so raw high/low must not be interpreted as charging/full. Power readback updates
+once per second while configuration is idle and pauses during full-rate capture.
+Boards without this capability display that power telemetry is unavailable.
+See the [power-status contract](TELEMETRY.md#power-status).
+
 Text uses the best family the platform's Tk build can really render: the
 Windows system UI face, the macOS system face, or
 Cantarell/Adwaita/Ubuntu/Noto/DejaVu on a normal Linux desktop, antialiased

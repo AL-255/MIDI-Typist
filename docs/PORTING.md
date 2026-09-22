@@ -430,6 +430,13 @@ ownership before issuing the reference mode command, confirms its status reply,
 and leaves USB control available. Report eligibility is checked separately from
 mode selection so an unpaired slot can still switch back to USB. Telemetry carries
 portable transport/ready/switching fields, not raw radio mode bytes.
+For GUI power readback, register `midi_control_power_handler` with a nonblocking
+cached-state provider and enable `Board.power_status` in the GUI board catalog.
+Populate the portable `keyboard_power_status_t`; the shared service returns its
+versioned [ACK payload](TELEMETRY.md#power-status). Leave the provider absent on
+boards without power telemetry. Do not relabel unverified charger pins as
+charging/full, put hardware sampling inside the command handler, or reset the
+key stream to answer a read-only status query.
 Sleep commands need the same ownership discipline. Process activity/cable
 cancellation before submitting a queued power command; after transmission has
 started, require the board's real restoration path rather than just clearing a

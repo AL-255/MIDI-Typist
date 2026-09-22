@@ -400,6 +400,11 @@ At **5% or below**, the power policy latches a critical condition until external
 power returns. These thresholds and all timing/filter tunables live in
 `defaults.h`.
 
+The GUI reads the same cached battery/source state through the portable
+[`power status` reply](TELEMETRY.md#power-status). Its percentage is an estimate;
+PB10 is labelled raw low/high rather than charging/full until polarity is verified.
+Reading status neither changes power policy nor writes flash.
+
 `m1_power` implements the idle/critical request policy from `0x080178D8`, with
 separate connected-host limits for Bluetooth and 2.4 GHz. Limits count qualified
 periodic service steps, **not scan frames or milliseconds**. Zero disables

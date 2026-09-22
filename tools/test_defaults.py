@@ -81,6 +81,7 @@ class DefaultsTests(unittest.TestCase):
                         {'MIDI_CONTROL_HOST_MESSAGES':0}, {'MIDI_CONTROL_HOST_ERROR_BYTES':1},
                         {'MIDI_CONTROL_HOST_POLL_MS':0}, {'MIDI_CONTROL_HOST_POLL_MS':500},
                         {'MIDI_CONTROL_HOST_CLOSE_MS':0}, {'MIDI_CONTROL_HOST_REAP_MS':3001},
+                        {'GUI_POWER_POLL_MS':0}, {'GUI_POWER_STALE_MS':1000},
                         {'MIDI_WHEEL_RELEASE_RAW':999}, {'CALIBRATION_HOLD_MS':5000},
                         {'M1_LED_LATCH_US':0}, {'M1_LED_TRANSFER_TIMEOUT_US':0},
                         {'M1_MAIN_STACK_BYTES':8191}, {'M1_MAIN_STACK_BYTES':8193},

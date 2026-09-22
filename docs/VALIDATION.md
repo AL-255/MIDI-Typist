@@ -51,6 +51,11 @@ slot, unavailable USB, and release-before-rearm after a host becomes ready.
 Peer responses and transfer completion are scripted; local drain is not proof
 that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.
+The same compiled M1 binding returns portable power-status ACKs during GUI
+streaming, with unknown and critical-battery fixtures. Python/Tk tests cover
+field validation, raw charger labels, capable-board polling, stale status,
+capture-time exclusion and malformed-reply disconnection. These tests do not
+establish electrical charger polarity or battery-percentage accuracy.
 Power-handoff tests also check scan consumption during prolonged output drain,
 never-linked neutral cancellation and a completed critical-sleep control packet
 without an RF host. Restore tests require fresh matching peer state, admit a

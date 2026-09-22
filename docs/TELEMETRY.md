@@ -70,6 +70,36 @@ compact sensor order. Total size is 176 bytes. It is retained after startup
 failure without restarting peripherals. A missing acquisition returns ERROR;
 cold startup times out after `SCAN_STALE_MS` rather than inventing samples.
 
+## Power status
+
+On boards advertising GUI power support, `power status` returns a 16-byte binary
+**ACK payload**, correlated by the ordinary command sequence. It does not use
+the bulk `DUMP` slot or interrupt GUI snapshots. The handler reads cached state;
+it does not sample hardware, change settings or write flash. An absent/unavailable
+provider returns ERROR. M1 supplies this provider; Huntsman does not.
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| 0 | 4 bytes | `MTP1` |
+| 4 | u8 | Version 1 |
+| 5 | u8 flags | Source known=1, external power=2, level valid=4, low=8, critical=16 |
+| 6 | u8 | Estimated battery percent, 0–100; zero when invalid |
+| 7 | u8 | Charger: unknown=0, on battery=1, charging=2, full=3, unverified raw low=4, unverified raw high=5 |
+| 8 | u16 LE | Board-native filtered battery ADC, `0xffff` when unavailable; not key travel or millivolts |
+| 10 | u16 LE | Reserved, zero |
+| 12 | u32 LE | Age in ms of the latest filter input, `0xffffffff` when unavailable |
+
+Unknown source cannot claim external power or a charger state. Low/critical
+require a valid level on battery power; critical also requires low. M1 exposes
+PB10 as raw low/high on external power, never as charging/full: polarity remains
+unverified. Its percentage is an estimate from the board-specific ADC curve.
+
+The GUI polls only capable boards, once per `GUI_POWER_POLL_MS` (1000 ms) when
+configuration requests are idle. It pauses polling during full-rate key capture,
+marks readbacks older than `GUI_POWER_STALE_MS` (3000 ms) unavailable, and discards
+the display on disconnect. Replies must match the current schema; no old-format
+fallback or automatic retry is provided. Key streaming and MTG4 are unchanged.
+
 ## M1 foreground timing
 
 During normal M1 operation, `runtime stats` queues one read-only `DUMP` with

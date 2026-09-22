@@ -202,6 +202,13 @@ def main():
                     raise AssertionError('M1 GUI condition timed out')
                 m1_until(app.usable)
                 assert app.board.target==M1_TARGET and len(app.items)==82
+                m1_until(lambda:'87% (estimate)' in app.power_status.get())
+                assert 'polarity unverified' in app.power_status.get()
+                with app.connection.lock:
+                    power=app.connection.latest_power
+                    app.connection.latest_power=(time.monotonic()-10,power[1])
+                app.update();assert 'stale' in app.power_status.get()
+                with app.connection.lock:app.connection.latest_power=power
                 app.select(81);app.press.set('2500');app.release.set('2800')
                 app.apply_button.invoke()
                 m1_until(lambda:app.snapshot.press[81]==2500 and app.snapshot.release[81]==2800)
@@ -236,6 +243,7 @@ def main():
                 m1_until(lambda:app.snapshot.press==(2500,)*82 and app.snapshot.release==(2800,)*82)
                 app.hold_button.invoke()
                 m1_until(lambda:app.connection.stream_mode=='key' and app.capture.armed)
+                m1_until(lambda:'paused' in app.power_status.get())
                 assert app.connection.key_sensor==81
                 device.key_raw=2000
                 m1_until(lambda:app.capture.done)

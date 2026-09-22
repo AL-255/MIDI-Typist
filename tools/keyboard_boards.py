@@ -34,6 +34,7 @@ class Board:
     profile: int = 1
     hid_bytes: int = 30
     wire_layouts: tuple = ((1,61),(2,62),(3,65))
+    power_status: bool = False
 
     @property
     def count(self): return len(self.keys)
@@ -108,7 +109,7 @@ def boards():
     m1 = tuple(Key(s,label,x/4,y/4,w/4) for s,_,_,_,x,y,w,label in m1_records())
     return {
         DEFAULT_TARGET: Board(DEFAULT_TARGET,'Huntsman V3 Pro Mini',tuple(ansi_geometry()),D['HUNTSMAN_ASSUMED_SCAN_HZ']),
-        M1_TARGET: Board(M1_TARGET,'MonsGeek M1 V5 TMR',m1,D['M1_SCAN_HZ'],hid_bytes=30,wire_layouts=((1,82),)),
+        M1_TARGET: Board(M1_TARGET,'MonsGeek M1 V5 TMR',m1,D['M1_SCAN_HZ'],hid_bytes=30,wire_layouts=((1,82),),power_status=True),
     }
 
 

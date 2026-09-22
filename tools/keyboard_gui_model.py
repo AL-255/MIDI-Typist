@@ -81,6 +81,38 @@ class Snapshot:
     transport_flags: int = 0
 
 
+@dataclass(frozen=True)
+class PowerStatus:
+    flags: int
+    percent: int
+    charger: int
+    adc: int
+    age_ms: int
+
+
+def decode_power(payload):
+    if len(payload)!=16 or payload[:5]!=b'MTP1\x01':
+        raise ValueError('Unsupported power status reply')
+    flags,percent,charger,adc,reserved,age=struct.unpack_from('<BBBHHI',payload,5)
+    if (reserved or flags & ~31 or percent>100 or charger>5 or
+        (not flags & 4 and (percent or adc!=65535)) or
+        (flags & 2 and not flags & 1) or
+        (flags & 8 and flags & 7!=5) or
+        (flags & 16 and not flags & 8) or
+        (charger and (not flags & 1 or ((charger==1)==bool(flags & 2))))):
+        raise ValueError('Invalid power status fields')
+    return PowerStatus(flags,percent,charger,adc,age)
+
+
+def power_text(status):
+    source='External power' if status.flags & 2 else 'Battery power' if status.flags & 1 else 'Power source unknown'
+    level=f'{status.percent}% (estimate)' if status.flags & 4 else 'level unavailable'
+    charge=('charger status unknown','on battery','charging','full',
+            'charger pin low (polarity unverified)','charger pin high (polarity unverified)')[status.charger]
+    warning=' — CRITICAL BATTERY' if status.flags & 16 else ' — LOW BATTERY' if status.flags & 8 else ''
+    return f'{source} | Battery {level} | {charge}{warning}'
+
+
 def transport_text(snapshot):
     names=('Not reported','USB','Bluetooth 1','Bluetooth 2','Bluetooth 3','2.4 GHz')
     if not snapshot.transport:return ''

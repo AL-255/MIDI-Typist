@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
 from keyboard_gui_transport import Connection, find_midi_device
-from keyboard_gui_model import transport_text
+from keyboard_gui_model import transport_text, power_text
 from midi_backend import control_ports
 from keyboard_keycodes import CHOICES, keycode_name, parse_keycode
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
@@ -133,6 +133,9 @@ class App:
         self.panel_area = ScrollArea(lower,width=392)
         self.panel_area.pack(side='left',fill='y',padx=(0,20))
         panel = self.panel_area.body
+        self.power_status = tk.StringVar(value='Power: no device status')
+        self.power_label = ttk.Label(panel,textvariable=self.power_status,wraplength=350)
+        self.power_label.pack(anchor='w',pady=(0,8))
         self._panel_wrap = 0
         panel.bind('<Configure>',self._wrap_panel)
         self.key_title = tk.StringVar(value='A  /  sensor 32')
@@ -216,6 +219,7 @@ class App:
         self._panel_wrap = width
         self.details_label.configure(wraplength=width)
         self.help_label.configure(wraplength=width)
+        self.power_label.configure(wraplength=width)
 
     def draw(self):
         self.canvas.delete('all'); self.items.clear(); self.titles.clear()
@@ -578,6 +582,10 @@ class App:
         except (ValueError,OSError,queue.Full) as error: messagebox.showerror('Load profile',str(error))
 
     def update(self):
+        # Explicit refreshes share the same timer; never accumulate callbacks
+        # that survive closing a window or keep repainting a stale session.
+        if getattr(self,'after_id',None):self.root.after_cancel(self.after_id)
+        self.after_id=None
         stale = True
         if self.demo:
             count=self.board.count
@@ -613,6 +621,20 @@ class App:
         s = self.snapshot
         self.sync_hold_stream()
         self.key_capture = not self.demo and bool(self.connection and self.connection.is_alive() and self.connection.stream_mode == 'key')
+        if not self.board.power_status:
+            self.power_status.set('Power telemetry is not provided by this board.')
+        elif self.demo:
+            self.power_status.set('DEMO — power telemetry is not simulated.')
+        elif self.key_capture:
+            self.power_status.set('Power telemetry paused during full-rate capture.')
+        elif not self.connection or not self.connection.connected:
+            self.power_status.set('Power: disconnected / unavailable')
+        else:
+            reading=self.connection.power_snapshot()
+            if not reading:self.power_status.set('Power: waiting for device status')
+            elif time.monotonic()-reading[0]>D['GUI_POWER_STALE_MS']/1000:
+                self.power_status.set('Power: stale / unavailable')
+            else:self.power_status.set(power_text(reading[1]))
         if s:
             if self.board.accepts(s) and not self.initial_fields:
                 self.select(self.selected); self.initial_fields = True
