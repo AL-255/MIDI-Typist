@@ -82,6 +82,11 @@ and command 3 shutdown, GPIO/PHY ownership, periodic wake scans with continuous
 sequence, key/encoder wake, retained/full radio restoration, external-power and
 activity inhibition, and terminal stage/clock/time failures. This is sequencing
 evidence, not physical radio sleep, battery life or charger validation.
+Unicorn 2.1.4 rejects one legal 16-bit conditional branch of the awake period
+check as an instruction inside an IT block when a preceding conditional store
+shares its translated block. The audit clears that stale emulator IT state
+only for such a branch and reports the count in its verdict, so no firmware
+instruction is skipped and any other invalid encoding still fails the run.
 Awake source-transition tests execute the installed controller with scripted
 HAL completions: all wireless modes, USB-to-last-wireless fallback, debounce
 and time wrap, paused PHY/RTC setup, bounded failures and runtime dispatch.
@@ -198,7 +203,12 @@ restart restoration, failure latching and terminal gate/resume failure at both U
 packet sizes. Parallel calibration tests cover all 82 endpoints, GUI/Fn+C entry,
 deferred completion while keys remain held, whole-profile restore, intentional
 scan gaps, cancellation, timeout, USB/acquisition loss and failed write/gate/resume.
-The GUI widget audit checks capability flags and disables new calibration after
+M1 custom-profile RESET is covered by the same linked foreground owner: a
+confirmed clean erases both custom pages inside one gate pair with no write,
+leaves the factory records intact, returns RAM to defaults with factory
+electrical bounds, survives a restart and refuses a deferred gate or a failed
+erase without reporting success. The GUI widget audit checks capability flags
+and disables new calibration after
 a storage fault. The save-gate audit executes real scanner/time/battery/LED HALs,
 checking low/stale/changing power, local drain, retained rails/links, masked
 pause ownership, elapsed-time limits and fresh resume. Boundary-injection tests

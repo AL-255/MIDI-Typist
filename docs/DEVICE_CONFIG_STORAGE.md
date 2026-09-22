@@ -259,7 +259,9 @@ MTG4 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
 reports the full 32-bit profile generation, and 64/68 calibration generation/error.
 See [telemetry](TELEMETRY.md). Huntsman GUI flashing preserves compatible records
 by default; confirmed Fn+R explicitly clears them. M1 factory-IAP flashing
-always erases both custom slots and M1 profile RESET is disabled. Stock firmware
+always erases both custom slots. Confirmed M1 Fn+R or `cfg clean` erases exactly
+those two pages and returns to defaults with the factory electrical bounds; it
+cannot reach stock settings, stock calibration or the bootloader. Stock firmware
 may reclaim custom application-tail space.
 
 ## Validation

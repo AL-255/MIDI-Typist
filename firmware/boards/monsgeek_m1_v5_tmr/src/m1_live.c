@@ -67,7 +67,10 @@ static void put32(uint8_t *out,uint32_t value)
 { for(unsigned i=0;i<4;++i)out[i]=(uint8_t)(value>>(8*i)); }
 static enum { POWER_AWAKE,POWER_DRAINING,POWER_PARKED,POWER_STOPPED } power_state;
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal);
-static const keyboard_app_ops_t app_ops={.save_calibration=save_calibration};
+static bool clear_profile(void);
+static void reset_sensors(uint8_t profile);
+static const keyboard_app_ops_t app_ops={.save_calibration=save_calibration,
+    .clear_profile=clear_profile,.reset_sensors=reset_sensors};
 
 static uint32_t lock(void) { uint32_t mask=__get_PRIMASK();__disable_irq();return mask; }
 static void unlock(uint32_t mask) { __set_PRIMASK(mask); }
@@ -427,23 +430,66 @@ static uint32_t storage_blocked(void)
     return blocked;
 }
 static bool storage_idle(void) { return storage_blocked()==0; }
+/* An explicit erase still waits for every safety condition, but not for the
+ * autosave pacing delay: the user already confirmed the destructive action. */
+static bool storage_ready_for_reset(void) { return (storage_blocked()&~2u)==0; }
 static void storage_failure(uint32_t error)
 { storage_fault=true;enabled=false;store.fault=true;store.error=error; }
-static keyboard_save_result_t commit_profile(const keyboard_calibration_t *cal)
+static m1_save_result_t storage_open(void)
 {
     last_save_attempt=now;
     ++save_begins;
     m1_save_result_t started=storage_ops->begin(storage_ops->context);
     save_last_result=started;
+    if(started!=M1_SAVE_DEFER)storage_gap=true;
+    return started;
+}
+static bool storage_close(bool committed)
+{
+    bool resumed=storage_ops->end(storage_ops->context);
+    if(!resumed)storage_failure(M1_STORAGE_RESUME);
+    return committed && resumed;
+}
+static keyboard_save_result_t commit_profile(const keyboard_calibration_t *cal)
+{
+    m1_save_result_t started=storage_open();
     if(started==M1_SAVE_DEFER)return KEYBOARD_SAVE_DEFER;
-    storage_gap=true;
     if(started!=M1_SAVE_READY) {
         storage_failure(M1_STORAGE_QUIESCE);return KEYBOARD_SAVE_FAILED;
     }
     bool saved=device_store_update(&store,&app,cal,m1_storage_read,write_profile);
-    bool resumed=storage_ops->end(storage_ops->context);
-    if(!resumed)storage_failure(M1_STORAGE_RESUME);
-    return saved && resumed?KEYBOARD_SAVE_COMPLETE:KEYBOARD_SAVE_FAILED;
+    return storage_close(saved)?KEYBOARD_SAVE_COMPLETE:KEYBOARD_SAVE_FAILED;
+}
+static uint32_t erase_profile(unsigned slot)
+{ return m1_storage_erase(slot,true); }
+/* Fn+R confirmation or `cfg clean`: erase both custom profile pages. The slot
+ * callbacks reach only 0x08027000/0x08027800, and each erase is blank-verified
+ * before this can report success. Factory settings and calibration pages, the
+ * bootloader and the reset path are untouched by this owner. */
+static bool clear_profile(void)
+{
+    if(!enabled || !source_healthy || !seen || !app.frame_valid || store.fault ||
+       !storage_ops || (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS ||
+       app.reset_pending)return false;
+    if(!storage_ready_for_reset())return false;
+    m1_save_result_t started=storage_open();
+    if(started!=M1_SAVE_READY) {
+        if(started!=M1_SAVE_DEFER)storage_failure(M1_STORAGE_QUIESCE);
+        return false;
+    }
+    bool cleared=device_store_clear(&store,m1_storage_read,erase_profile);
+    return storage_close(cleared);
+}
+/* Runs on the neutral frame that applies the reset, after the journal is gone.
+ * Electrical bounds return to the factory records; a missing record leaves the
+ * caller's provisional RAM bounds in place rather than inventing a scale. */
+static void reset_sensors(uint8_t profile)
+{
+    (void)profile;
+    m1_factory_bounds_t bounds;
+    if(m1_factory_load(&bounds)!=M1_FACTORY_OK)return;
+    memcpy(lower,bounds.lower,sizeof(lower));
+    memcpy(upper,bounds.upper,sizeof(upper));
 }
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal)
 {

@@ -183,7 +183,7 @@ def main():
         app.device_build='v0.1.0-MG-M1V5TMR git='+'a'*40+' state=clean'
         assert app.recovery_label.winfo_ismapped() and 'bootloader' in app.recovery_label['text']
         assert 'Normalized travel' in app.coordinate_label['text']
-        assert 'Fn+F1' in app.help_label['text'] and 'unavailable' in app.help_label['text']
+        assert 'Fn+F1' in app.help_label['text'] and 'clears custom state' in app.help_label['text']
         assert 'before unplugging' in app.help_label['text']
         assert 'normal reset does not' in app.help_label['text']
         assert 'hardware qualification' in app.recovery_label['text']

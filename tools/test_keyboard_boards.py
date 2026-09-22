@@ -23,7 +23,7 @@ class Tests(unittest.TestCase):
             self.assertIn(storage_notice(board),calibration_prompt(board))
         self.assertIn('bootloader',m1.recovery_notice)
         self.assertIn('not electrical ADC',m1.input_notice)
-        self.assertIn('Fn+F1',board_help(m1));self.assertIn('unavailable',board_help(m1))
+        self.assertIn('Fn+F1',board_help(m1));self.assertIn('clears custom state',board_help(m1))
         self.assertIn('before unplugging',board_help(m1))
         self.assertIn('normal reset does not',storage_notice(m1))
         self.assertFalse(huntsman.recovery_notice)

@@ -59,7 +59,7 @@ void m1_test_live_battery(uint8_t percent,bool valid)
 static uint8_t pages[2][M1_STORAGE_PAGE_BYTES];
 static unsigned storage_allowed;
 static bool storage_resumes,storage_owned;
-static unsigned storage_begins,storage_ends,storage_writes;
+static unsigned storage_begins,storage_ends,storage_writes,storage_erases;
 static uint32_t storage_error;
 uint32_t m1_test_recovery_result=M1_STORAGE_VERIFY;
 uint32_t __wrap_m1_storage_check_recovery(bool allow_armed)
@@ -71,6 +71,14 @@ uint32_t __wrap_m1_storage_write(unsigned slot,const uint8_t *page,bool safe)
     if(slot>1 || !safe || !storage_owned)return M1_STORAGE_UNSAFE;
     ++storage_writes;if(storage_error)return storage_error;
     memcpy(pages[slot],page,sizeof(pages[0]));return 0;
+}
+/* The real erase verifies the whole page blank; the audit models that outcome
+ * and counts the pages the owner asked for. */
+uint32_t __wrap_m1_storage_erase(unsigned slot,bool safe)
+{
+    if(slot>1 || !safe || !storage_owned)return M1_STORAGE_UNSAFE;
+    ++storage_erases;if(storage_error)return storage_error;
+    memset(pages[slot],255,sizeof(pages[0]));return 0;
 }
 static m1_save_result_t storage_begin(void *context)
 {
@@ -85,7 +93,10 @@ uintptr_t m1_test_live_storage(void)
 void m1_test_live_storage_gate(unsigned allowed,unsigned resumes,uint32_t error)
 { storage_allowed=allowed;storage_resumes=resumes!=0;storage_error=error; }
 unsigned m1_test_live_storage_count(unsigned field)
-{ return field==0?storage_begins:field==1?storage_ends:storage_writes; }
+{
+    return field==0?storage_begins:field==1?storage_ends:
+        field==2?storage_writes:storage_erases;
+}
 uintptr_t m1_test_live_storage_page(unsigned slot)
 { return slot<2?(uintptr_t)pages[slot]:0; }
 __attribute__((used,section(".test_exports")))

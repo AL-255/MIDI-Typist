@@ -2,16 +2,22 @@
 
 Real policy, selector table, wake filter, state machine and SDK GPIO writes.
 Not physical sleep, DMA, radio delivery or oscillator validation.
+One legal conditional branch after a conditional store is repaired when
+Unicorn 2.1.4 rejects it as an instruction inside an IT block; every recovery
+is counted, only 16-bit conditional branches qualify, and no firmware
+instruction is skipped. See `invalid_instruction` below.
 """
 import argparse
 import struct
 from pathlib import Path
-from unicorn import UC_HOOK_CODE
-from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_PC, UC_ARM_REG_LR, UC_ARM_REG_SP
+from unicorn import UC_HOOK_CODE, UC_HOOK_INSN_INVALID
+from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_PC, UC_ARM_REG_LR, UC_ARM_REG_SP, UC_ARM_REG_CPSR
 from test_m1_image_arm import Image, Reset, RAM_END, FLASH
 from firmware_defaults import DEFAULTS as D
 
 RETURN=FLASH+0x3fff0
+# Emulator IT-state recoveries; reported in the final verdict, never expected.
+it_recoveries=0
 PB,PC=0x40020400,0x40020800
 
 
@@ -47,6 +53,29 @@ class Runtime(Reset):
             m1_battery_hal_init m1_hal_start m1_live_power_resume'''.split()
         self.by_address={self.s[n]&~1:n for n in names}
         self.cpu.hook_add(UC_HOOK_CODE,self.intercept)
+        self.cpu.hook_add(UC_HOOK_INSN_INVALID,self.invalid_instruction)
+
+    def invalid_instruction(self,cpu,user):
+        """Recover the emulator's stale Thumb IT state.
+
+        Unicorn 2.1.4 can leave a completed `it` block open when a conditional
+        store and a following conditional branch share one translated block, and
+        then rejects that legal branch as UNPREDICTABLE inside an IT block.
+        Clearing the IT bits and re-translating executes the real instruction
+        with its own condition; no firmware instruction is skipped. Only a 16-bit
+        conditional branch is repaired, and the count is reported, so this cannot
+        hide a genuine encoding fault.
+        """
+        global it_recoveries
+        pc=cpu.reg_read(UC_ARM_REG_PC)
+        cpsr=cpu.reg_read(UC_ARM_REG_CPSR)
+        halfword=int.from_bytes(cpu.mem_read(pc&~1,2),'little')
+        if cpsr&0x0600fc00 and halfword>>12==0xd:
+            it_recoveries+=1
+            cpu.reg_write(UC_ARM_REG_CPSR,cpsr&~0x0600fc00)
+            cpu.ctl_flush_tb()
+            return True
+        return False
 
     def write(self,cpu,access,address,size,value,user):
         super().write(cpu,access,address,size,value,user)
@@ -409,7 +438,7 @@ def main():
     for result,expected in ((7,17),(8,18),(5,16)):
         d=Runtime(image);d.sleep_result=result;d.shorten_idle();d.until(lambda:d.state()>=16)
         assert d.state()==expected
-    print('PASS installed runtime power controller: idle/critical, all wireless modes, ordered ownership/rails, RTC wake filtering, retention escalation, restoration and terminal failures (HAL completions scripted)')
+    print(f'PASS installed runtime power controller: idle/critical, all wireless modes, ordered ownership/rails, RTC wake filtering, retention escalation, restoration and terminal failures (HAL completions scripted; {it_recoveries} emulator IT-state recoveries)')
 
 
 if __name__=='__main__':main()

@@ -648,7 +648,16 @@ are not replaced with ADC rails. Settings save through an explicit
 `m1_live_storage_ops_t` owner gate; pending/saved/fault metadata reaches the GUI.
 Without those callbacks, edits remain pending in RAM and calibration entry is
 disabled. With a healthy storage backend, Fn+C and the GUI run the shared
-parallel calibration routine for all 82 keys. RESET remains disabled.
+parallel calibration routine for all 82 keys, and Fn+R (`cfg clean` from the
+GUI) clears the custom profile. RESET erases both custom pages through the same
+power, output-drain and pause/resume gate as autosave, and the board writer
+blank-verifies each erase before replying. It reaches only
+`0x08027000`/`0x08027800`: the bootloader, factory settings and factory
+calibration pages are untouched, so defaults return with the factory electrical
+bounds instead of an invented scale. The cleared RAM state is applied on the
+confirmed neutral frame, and the following autosave stores a record that
+carries no custom calibration. A denied gate refuses RESET without erasing; a
+failed erase latches the store fault rather than claiming success.
 Calibration completion saves the entire profile through the same power,
 output-drain and pause/resume gate as autosave. Completed physical keys may
 remain held: calibration suppresses their host output. Busy gates retain the
@@ -902,9 +911,9 @@ Main establishes clocks/time and invokes
 `m1_boot`. PC13 external power selects USB; battery selects
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
 not persisted yet. After handoff it polls `m1_runtime_power_service` using independent
-millisecond/microsecond readings. Profile restore, gated autosave and parallel
-calibration saves are linked. Fn+F1–F5 uses the runtime transport owner; RESET
-remains disabled.
+millisecond/microsecond readings. Profile restore, gated autosave, parallel
+calibration saves and custom-profile RESET are linked. Fn+F1–F5 uses the
+runtime transport owner.
 
 The development loop implements battery idle/critical sleep, wake restoration,
 cable transitions and explicit long-hold pairing requests as described here.
@@ -1249,6 +1258,9 @@ actual shared command mailbox, telemetry encoder and SysEx stream with 82 keys.
 Mocked Tk tests verify identity-selected geometry, sensor 81 edits/capture,
 all-key thresholds and calibration status/cancel. These checks do not validate an M1
 custom application, physical scanner timing, lighting waveform, persistence or updater.
+Custom-profile RESET is covered only as linked foreground behaviour with
+scripted erase completion: no physical reset has been performed, and a real
+erase's supply margin and timing on the connected keyboard remain unverified.
 Battery/filter/menu/power-policy tests are native software tests. Clock,
 wired/battery cold-start rail ordering, battery GPIO configuration, fresh-frame acquisition,
 SPI3 radio transfers, USB power-down and RTC initialization/sleep/resume also

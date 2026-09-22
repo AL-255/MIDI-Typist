@@ -11,8 +11,8 @@ bool m1_live_update_requested(void);
  * Init imports validated custom/factory electrical bounds read-only. An
  * explicit real released frame permits provisional startup bounds if factory
  * records are absent/out-of-domain. These are RAM-only and reported unsaved;
- * no scale is guessed for a stock record. Calibration requires storage ops;
- * RESET entry remains disabled.
+ * no scale is guessed for a stock record. Calibration and profile RESET both
+ * require storage ops; without them RESET entry stays disabled.
  * The outer owner initializes the chosen USB/radio transport. Wireless init
  * requires a healthy scheduler configured for that exact mode; link readiness
  * may follow later. Optional transport ops must outlive this owner and prove

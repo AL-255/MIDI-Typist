@@ -116,7 +116,7 @@ def boards():
         DEFAULT_TARGET: Board(DEFAULT_TARGET,'Huntsman V3 Pro Mini',tuple(ansi_geometry()),D['HUNTSMAN_ASSUMED_SCAN_HZ']),
         M1_TARGET: Board(M1_TARGET,'MonsGeek M1 V5 TMR',m1,D['M1_SCAN_HZ'],
             hid_bytes=30,wire_layouts=((1,82),),power_status=True,
-            update_erases_custom=True,profile_reset=False,
+            update_erases_custom=True,profile_reset=True,
             recovery_notice='EXPERIMENTAL M1 — Normal reset retains firmware and settings. Explicit bootloader entry erases custom firmware and saves. Early startup failures may require hardware debugging; power cycling is not forced bootloader recovery. Cold-boot/update transition awaits hardware qualification.',
             input_notice='Normalized travel: 4096 released, 1 fully pressed. Thresholds use this coordinate, not electrical ADC counts.',
             transport_notice=f'Fn+F1–F3: Bluetooth slots; Fn+F4: 2.4 GHz; Fn+F5: USB.\n'

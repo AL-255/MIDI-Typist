@@ -60,7 +60,8 @@ early startup failures can require hardware debugging and the cold-boot/update
 transition awaits physical qualification. Calibration and profile-apply confirmations
 repeat the update-loss contract; **settings saved** confirms a flash write, not a power-cut test.
 Unsaved bounds are labelled **unsaved**, not factory calibration. M1 help lists
-Fn transport/pairing/battery controls and marks custom-profile RESET unavailable.
+Fn transport/pairing/battery controls and states that Fn+R or `cfg clean` clears
+custom state.
 
 On M1, the settings panel also shows estimated battery percentage, external or
 battery power, low/critical warnings and the raw charger-pin state. Unknown,

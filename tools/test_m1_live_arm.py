@@ -315,9 +315,10 @@ def modal_scan_work(path):
     from unicorn import UC_HOOK_CODE
     from keyboard_boards import m1_records
     keys={record[7]:record[0] for record in m1_records()}
-    # M1 deliberately does not expose RESET. Its confirmation owner is tested
-    # by the portable app and Huntsman menu suites, not bypassed here.
-    for selector,choice in (('V','0'),('Tab','5'),('E','Q'),('S','H')):
+    # Fn+R is the reset confirmation. This loop keeps the scripted save gate
+    # deferred, so confirming must be refused without erasing or a scan gap;
+    # the confirmed erase has its own audit below.
+    for selector,choice in (('V','0'),('Tab','5'),('E','Q'),('S','H'),('R','Y')):
         d=Live(path,True,storage=True);d.run(20);d.chord(56);d.run(160)
         d.samples[77]=d.samples[keys[selector]]=3000;d.tick();d.run(16)
         d.samples[keys[selector]]=3900;d.tick() # selector first, Fn still held
@@ -343,6 +344,9 @@ def modal_scan_work(path):
         assert s.flags&2 and s.performance_mode==1 and not s.midi_errors
         if selector=='V':assert s.velocity_start==10
         if selector=='Tab':assert s.press[0]<D['RAW_DEFAULT_PRESS']
+        if selector=='R':
+            assert s.press[81]==D['RAW_DEFAULT_PRESS']
+            assert not d.call('m1_test_live_storage_count',3) # refused, never erased
         assert not d.call('m1_live_scan_losses')
         print(f'PASS M1 Fn+{selector}: held/release entry, stable modal observation ({work[0]//16} instructions/loop), choice, exit/rearm; cadence unmodeled')
 
@@ -385,6 +389,7 @@ def main():
     runtime_pairing(args.elf)
     runtime_reconnect(args.elf)
     persistence(args.elf)
+    reset_profile(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
     source_handoff(args.elf)
@@ -669,7 +674,10 @@ def calibration_persistence(path):
         d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
         assert state(d,lambda s:s.calibration_flags==6).count==82
         d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
-        d.command('cfg clean 3');assert d.snapshot(3).result==2 # RESET still unavailable
+        # A deferred save gate must refuse the now-available RESET without
+        # erasing; the destructive path has its own audit.
+        d.command('cfg clean 3');assert d.snapshot(3).result==2
+        assert not d.call('m1_test_live_storage_count',3)
         if fn:d.chord(61)
         else:
             d.command('cfg calibrate 4');assert d.snapshot(4).result==1
@@ -856,6 +864,100 @@ def persistence(path):
     assert struct.unpack('<82H',d.cpu.mem_read(d.symbols['lower'],164))==tuple(range(1000,1082))
     assert struct.unpack('<82H',d.cpu.mem_read(d.symbols['upper'],164))==tuple(range(4000,3918,-1))
     print('PASS M1 restore: complete custom calibration supersedes invalid factory bounds without modifying factory flash')
+
+
+def reset_profile(path):
+    """Fn+R / cfg clean: both custom pages are erased and verified blank, RAM
+    returns to defaults with factory electrical bounds, and a failed or denied
+    erase never reports success. Factory, calibration and bootloader pages are
+    outside every callback this path can reach."""
+    def advance(d,ms):
+        for _ in range(ms):d.tick(step=1000)
+    def stored(d,predicate):
+        for _ in range(16):
+            s=d.snapshot()
+            if predicate(s):return s
+        raise AssertionError((s.storage_flags,s.calibration_generation,s.calibration_error))
+    def restart(d):
+        d.call('m1_live_stop',d.time//1000)
+        for _ in range(200):d.tick(frame=False)
+        assert d.call('m1_live_init',6,d.ops,d.storage_ops)
+        d.tick();d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY)
+        d.commands=0;d.command('stream gui')
+    def blank(d,slot):
+        page=d.call('m1_test_live_storage_page',slot)
+        return bytes(d.cpu.mem_read(page,2048))==b'\xff'*2048
+    def bounds(d,name):
+        return struct.unpack('<82H',d.cpu.mem_read(d.symbols[name],164))
+    def distinct_bounds(template):
+        # Same independent synthetic fixture as the restore audit: every key
+        # gets its own electrical bound, so the factory fallback is visible.
+        record=bytearray(template);record[5]=1;struct.pack_into('<I',record,10,7)
+        position=19*8
+        for sensor in range(82):
+            position+=23
+            lower,upper=1000+sensor,4000-sensor
+            code=(upper-1)*(upper-2)//2+lower-1
+            for bit in range(23):
+                byte,shift=divmod(position+bit,8)
+                record[byte]=(record[byte]&~(1<<shift))|(((code>>bit)&1)<<shift)
+            position+=23+(0 if sensor==77 else 8 if sensor in (72,73,74,75,76,78) else 15)
+        struct.pack_into('<I',record,2044,zlib.crc32(record[:2044]))
+        return bytes(record)
+    for high in (False,True):
+        d=Live(path,high,storage=True)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        default=d.snapshot()
+        assert not d.call('m1_test_live_storage_count',3)
+        d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
+        d.command('cfg velocity 3 7');d.chord(56);d.chord(51)
+        d.call('m1_test_live_storage_gate',1,1,0);advance(d,400)
+        s=stored(d,lambda s:s.storage_generation==1)
+        assert s.storage_flags==1 and s.storage_slot==0 and s.keyboard_mapping[81]==135
+        assert s.velocity_start==7 and s.performance_mode==1 and s.flags&64
+        writes=d.call('m1_test_live_storage_count',2)
+        ends=d.call('m1_test_live_storage_count',1)
+        assert (writes,ends)==(1,1)
+        template=bytes(d.cpu.mem_read(d.call('m1_test_live_storage_page',0),2048))
+        d.cpu.mem_write(d.call('m1_test_live_storage_page',0),distinct_bounds(template))
+        restart(d)
+        assert bounds(d,'lower')==tuple(range(1000,1082))
+        assert bounds(d,'upper')==tuple(range(4000,3918,-1))
+        # A deferred save gate refuses RESET without erasing or latching a fault.
+        d.call('m1_test_live_storage_gate',0,1,0)
+        d.command('cfg clean 4');assert d.snapshot(4).result==2
+        assert not d.call('m1_test_live_storage_count',3)
+        assert not d.call('m1_live_storage_fault')
+        # The confirmed reset erases both custom pages inside one gate pair,
+        # writes nothing, and leaves the factory records in place.
+        d.call('m1_test_live_storage_gate',1,1,0)
+        d.command('cfg clean 5');assert d.snapshot(5).result==1
+        assert d.call('m1_test_live_storage_count',3)==2
+        assert d.call('m1_test_live_storage_count',2)==writes
+        assert d.call('m1_test_live_storage_count',1)==ends+1
+        assert blank(d,0) and blank(d,1)
+        assert not d.call('m1_live_storage_fault') and d.call('m1_live_factory_result')==0
+        # Defaults and factory bounds are active on the confirmed neutral frame.
+        advance(d,400);s=d.snapshot()
+        assert (s.keyboard_mapping,s.press,s.release)==(default.keyboard_mapping,default.press,default.release)
+        assert s.velocity_start==D['DEFAULT_MIDI_VELOCITY_START']
+        assert s.performance_mode==D['DEFAULT_MIDI_MODE'] and not s.flags&64
+        assert bounds(d,'lower')==(1000,)*82 and bounds(d,'upper')==(4000,)*82
+        # No restart may resurrect the cleared profile.
+        restart(d);s=d.snapshot()
+        assert s.keyboard_mapping[81]!=135 and s.press[81]!=2700 and s.velocity_start!=7
+        assert not s.flags&64 and bounds(d,'lower')==(1000,)*82
+        # A failed erase latches the store fault instead of claiming success,
+        # and no later edit can write the profile again.
+        d.call('m1_test_live_storage_gate',1,1,0x3100b)
+        d.command('cfg clean 6');assert d.snapshot(6).result==2
+        assert d.call('m1_test_live_storage_count',3)==3
+        s=stored(d,lambda s:bool(s.storage_flags&4))
+        assert s.calibration_error==0x3100b
+        written=d.call('m1_test_live_storage_count',2)
+        d.command('cfg velocity 7 9');advance(d,400)
+        assert d.call('m1_test_live_storage_count',2)==written
+        print(f'PASS M1 {"HS" if high else "FS"} profile RESET: confirmed clean erases both custom pages, factory bounds return, defaults survive restart and a failed or denied erase never claims success')
 
 
 def wireless_integration(path):

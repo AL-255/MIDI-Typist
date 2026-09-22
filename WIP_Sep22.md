@@ -7,10 +7,14 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 
 - Last user-confirmed installed firmware: `ab4b048`. The user confirms MIDI
   notes, Jankó and Fn+V now work. This is not a worst-case timing qualification.
-- Latest firmware-code checkpoint: `6bc234a`. It also includes system-menu
-  observation ownership, directional battery filtering, and safe cancellation of
-  an Fn transport selection that has not yet called the hardware adapter.
-  These additions have **not been flashed** to the confirmed working keyboard.
+- Latest firmware-code checkpoint: `9c6db9b` plus the M1 profile-RESET work on
+  top of it. It includes system-menu observation ownership, directional battery
+  filtering, safe cancellation of an Fn transport selection that has not yet
+  called the hardware adapter, a fix for Fn+Tab/Fn+Caps editor entry that the
+  observation-only change had silently broken, and M1 custom-profile RESET.
+  None of it has been flashed to the confirmed working keyboard.
+- The observation-only change also left two audits red and one M1 HAL guard set
+  stale at handoff; both are corrected and the whole offline suite passes again.
 - The incomplete broader cable-bounce experiment was discarded at handoff.
   No experimental changes from it remain in the source.
 - The previously used USB path `3-2.1` was absent at handoff. Rediscover and
@@ -29,10 +33,14 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 - The Fn+V fault involved repeated engine rearm/reset work while a modal menu
   owned input. Menus now observe scans without rearming performance input;
   leaving a menu requires fresh neutral input. The user confirms the fix works.
-- Native M1 tests, complete application build, focused linked-ARM menu and
-  power/source-handoff tests, and strict Sphinx documentation builds pass for
-  the retained changes. Linked-ARM tests model peripheral completions; they do
-  not prove physical timing, radio delivery or electrical behavior.
+- M1 custom-profile RESET (Fn+R, or `cfg clean` from the GUI) erases only the two
+  custom pages, blank-verifies each erase, returns defaults with the factory
+  electrical bounds and refuses a denied gate or failed erase. It is verified
+  offline only; no reset has been performed on hardware.
+- Native M1 tests, complete application builds, the linked-ARM audits and strict
+  Sphinx documentation builds pass for the retained changes: 31/31 offline audit
+  groups. Linked-ARM tests model peripheral completions; they
+  do not prove physical timing, radio delivery or electrical behavior.
 
 ## Remaining work
 
@@ -48,8 +56,8 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 4. Cable edges after a transport hardware callback or during PHY transition
    can still fail closed. Handle these ownership transitions without hiding
    genuine peripheral faults, retrying ambiguous operations or losing RAM state.
-5. M1 profile RESET and GUI knob remapping are not implemented. Transport
-   selection is not persisted. Do not describe the port as feature-complete.
+5. GUI knob remapping and transport-selection persistence are not implemented.
+   Do not describe the port as feature-complete.
 
 ## Safety and continuation
 
