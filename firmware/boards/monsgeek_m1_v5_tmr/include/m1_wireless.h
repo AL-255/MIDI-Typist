@@ -17,6 +17,9 @@ bool m1_wireless_mode(m1_transport_t *mode);
  * is the reference's report-eligibility state, NOT proof of host delivery. */
 bool m1_wireless_ready(void);
 bool m1_wireless_offer(const keyboard_report_t *report);
+/* Consumer usage (zero releases), copied into an independent pending slot.
+ * Readiness/neutrality is enforced together with keyboard report ownership. */
+bool m1_wireless_consumer(uint16_t usage);
 bool m1_wireless_local_idle(void);
 /* Mode selection does not require a connected wireless host. A fresh matching
  * mode reply confirms selection; state 3 separately gates keyboard reports. */

@@ -355,12 +355,15 @@ def scanner(elf):
     assert dev.call('m1_hal_frame',RGB,RGB+200)==0
     begin();begin()  # cadence overtook an incomplete frame: fail-stop
     assert dev.call('m1_hal_healthy')==0 and dev.call('m1_hal_errors')==1
+    assert dev.call('m1_hal_fault_reason')==5
     assert dev.call('m1_hal_battery',RGB+204,RGB+208)==0
     assert dev.call('m1_hal_start')==0
     assert not dev.u32(TMR3)&1 and not dev.u32(TMR6)&1
     assert dev.call('m1_hal_init')==1 and dev.call('m1_hal_start')==1
+    assert dev.call('m1_hal_fault_reason')==0
     begin();dev.put(DMA,8<<20);dev.call('m1_hal_dma_irq')
     assert dev.call('m1_hal_healthy')==0 and dev.call('m1_hal_frame',RGB,RGB+200)==0
+    assert dev.call('m1_hal_fault_reason')==3
     # Bounded calibration failure runs the real polling loop, not a stub.
     dev=M1Arm(elf,scanner=True);dev.calibration_completes=False
     assert dev.call('m1_hal_init',instructions=20000000)==0

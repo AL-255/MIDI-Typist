@@ -12,8 +12,9 @@ active SysEx control session only if the factory IAP flag is armed. It requests
 a reset after stopping local peripherals; disconnect, not an ACK alone, is the
 transition. The factory updater then erases the application and custom saves.
 The M1 control port enumerates at USB high speed and provides live 82-key
-snapshots. Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry
-active; pressed-key performance remains unverified.
+snapshots. Released-key validity is hardware-checked with GUI telemetry active;
+the declared scan rate is 8 kHz. See [validation limits](VALIDATION.md) for what
+is measured; pressed-key performance remains unverified.
 
 ## Cold-start failure reporting
 
@@ -21,6 +22,12 @@ active; pressed-key performance remains unverified.
 that normal application configuration is unavailable. The GUI surfaces the text,
 ends its configuration session and does not accept it as a scan snapshot. This
 contract is board-independent; the text after the prefix is board-specific.
+
+M1 runtime failures include `detail=0x… store=0x… scan=0x…`: the main fault
+bitmask, retained storage error, and first scanner fault respectively. Scanner
+codes are 0 none, 1 ADC calibration, 2 pause-time overrun, 3 DMA error, 4 one-shot
+timeout, 5 periodic overrun, 6 invalid bank/data, and 7 acquisition queue full.
+Stopping acquisition preserves the first reason; reinitialization clears it.
 
 The M1 cold-start owner reports, for example,
 `Boot failed: application factory=0x00000003 dma=0x1ef7bdef`. The named error follows
@@ -110,7 +117,8 @@ applies. It neither consumes queued input events nor resets counters/faults.
 Counters persist across scanner pauses and wrap modulo 2³²; they reset at MCU
 startup. Inactive/faulted sampling does not advance them. Directions describe
 electrical cycles, not physically verified clockwise/counterclockwise motion.
-The diagnostic does not prove consumer/HID delivery; knob reporting is unfinished.
+The diagnostic does not prove consumer/HID delivery. Knob events are mapped by
+the foreground consumer owner; see [M1 input behavior](MONSGEEK_M1.md).
 
 ## SysEx envelope
 

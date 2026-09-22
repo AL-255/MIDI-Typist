@@ -13,6 +13,9 @@ typedef struct {
 void m1_encoder_start(void);
 void m1_encoder_stop(void);
 void m1_encoder_irq(void);
+/* Foreground rebaseline under a bounded IRQ mask; discard queued/partial
+ * input without clearing a latched overflow or restarting the timer. */
+void m1_encoder_discard(void);
 /* Foreground only; each byte is a set of ENCODER_* events in sample order.
  * Overflow discards the queue and latches fault, never wraps into stale events.
  * Explicit start after neutralization is required to clear that fault. */

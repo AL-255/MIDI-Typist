@@ -96,6 +96,18 @@ def check(elf_path, reference):
         observed=(cpu.mem_read(base+0xc2a2,1)[0],cpu.mem_read(base+0xc2a4,1)[0])
         assert observed==expected,(phases,observed)
     print('PASS private reference encoder GPIO pin order and both complete electrical-cycle directions')
+    cpu.mem_map(0x40003000,0x1000)
+    for usage in (0,0xe2,0xe9,0xea,0x123):
+        cpu.mem_write(base,bytes(0x16000))
+        cpu.mem_write(base+0x1c,b'\4');cpu.mem_write(base+0x2c,struct.pack('<H',usage))
+        cpu.mem_write(base+0x6ba,b'\5');cpu.mem_write(base+0xbf5c,struct.pack('<I',20))
+        cpu.mem_write(0x40020c10,struct.pack('<I',4))
+        cpu.reg_write(UC_ARM_REG_SP,base+0x17000);cpu.reg_write(UC_ARM_REG_LR,0x0803f001)
+        cpu.emu_start(0x08017fdd,0x080186a2,count=2000)
+        assert cpu.reg_read(UC_ARM_REG_PC)==0x080186a2
+        payload=bytes((3,usage&255,usage>>8))
+        assert cpu.mem_read(base+0xbeb0,6)==b'\x81\3'+payload+bytes((sum(payload)&255,))
+    print('PASS private reference radio subtype-3 consumer payload and checksum, including neutral release')
 
 
 if __name__ == '__main__':

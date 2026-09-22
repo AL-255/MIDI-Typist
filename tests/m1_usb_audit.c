@@ -41,6 +41,7 @@ uintptr_t m1_test_usb_get(unsigned field)
         case 6:return device.ept_in[0].rem0_len;
         case 7:return device.ept_out[2].total_len;
         case 8:return device.ept0_sts;
+        case 9:return (uintptr_t)device.ept_in[3].trans_buf;
         default:return 0;
     }
 }
@@ -95,7 +96,7 @@ __attribute__((used,section(".test_exports")))
 const void *const m1_test_exports[]={
     m1_test_usb_init,m1_test_usb_setup,m1_test_usb_get,m1_test_usb_in,m1_test_usb_out,
     m1_test_usb_event,m1_test_usb_sof,m1_usb_ready,m1_usb_drained,m1_usb_in_idle,m1_usb_hid_send,
-    m1_usb_midi_send,m1_usb_midi_take,m1_usb_generation,m1_usb_errors,m1_usb_leds,
+    m1_usb_midi_send,m1_usb_midi_take,m1_usb_generation,m1_usb_errors,m1_usb_leds,m1_usb_consumer_send,
     m1_test_usb_control_init,m1_test_usb_service,m1_test_usb_publish,
     m1_usb_hw_start,m1_usb_hw_stop,m1_usb_hw_running,m1_usb_hw_irq,
     m1_usb_power_down,m1_usb_power_ready,m1_power_gpio_prepare,m1_power_gpio_restore

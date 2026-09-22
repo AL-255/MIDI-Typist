@@ -30,6 +30,10 @@
 #define ENCODER_PHASE_STABLE_SAMPLES 2u
 #define ENCODER_BUTTON_DEBOUNCE_MS 5u
 #define ENCODER_EVENT_CAPACITY 32u
+#define AUX_PULSE_MS 20u
+#define DEFAULT_M1_ENCODER_POSITIVE_USAGE 0x00e9u
+#define DEFAULT_M1_ENCODER_NEGATIVE_USAGE 0x00eau
+#define DEFAULT_M1_ENCODER_BUTTON_USAGE 0x00e2u
 
 /* Velocity: triggering sample is included, bottom-out sample normally isn't. */
 #define RAW_BOTTOM_OUT 1500u

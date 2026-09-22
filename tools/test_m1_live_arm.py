@@ -22,6 +22,7 @@ class Live(Device,RadioArm):
         super().__init__(path,high)
         self.samples=[3900]*82;self.sequence=sequence;self.time=time;self.commands=0
         self.messages=[];self.wire=bytearray();self.events=[];self.hid=bytes(30)
+        self.consumer=[];self.radio_consumer=[]
         self.radio_packets=[];self.radio_complete=True;self.peer_mode=mode;self.peer_pending=False;self.peer_state=3
         self.radio_slots=bytes(6);self.radio_bitmap=bytes(15);self.radio_modifiers=0
         self.ops=self.call('m1_transport_ops' if transports=='runtime' else 'm1_test_live_transports') if transports else 0
@@ -42,6 +43,8 @@ class Live(Device,RadioArm):
         self.time=self.radio_init(self.time)
         assert self.call('m1_wireless_init',mode,1,self.time)
     def collect(self):
+        if self.u32(USB+0x960)&(1<<31):
+            self.consumer.append(struct.unpack('<H',self.cpu.mem_read(self.get(9),2))[0]);self.complete(3)
         if self.u32(USB+0x920)&(1<<31):
             self.hid=bytes(self.cpu.mem_read(self.get(0),30));self.complete(1)
         if self.u32(USB+0x940)&(1<<31):
@@ -66,6 +69,7 @@ class Live(Device,RadioArm):
             if packet[0]==0x81 and packet[2]==1:
                 self.radio_modifiers=packet[3];self.radio_slots=packet[4:10]
             if packet[0]==0x81 and packet[2]==2:self.radio_bitmap=packet[3:18]
+            if packet[0]==0x81 and packet[2]==3:self.radio_consumer.append(struct.unpack_from('<H',packet,3)[0])
             if packet[0]==9:
                 payload=bytes((0x10,0,self.peer_state,self.peer_mode))
                 reply=(bytes((0,4))+payload+bytes((sum(payload)&255,))).ljust(n,b'\0')
@@ -114,6 +118,40 @@ class Live(Device,RadioArm):
         self.samples[77]=self.samples[sensor]=3000;self.tick()
         self.samples[77]=self.samples[sensor]=3900;self.tick();self.tick()
         for _ in range(180):self.tick()
+
+
+def knob_integration(path):
+    for high,mode in ((False,6),(True,6),(False,0),(True,5)):
+        d=Live(path,high,mode=mode,transports='runtime');d.run(400)
+        def samples(phase,pressed=False,count=None):
+            d.put(GPIO+0x810,((phase&1)<<10)|((phase>>1)<<12)|(0 if pressed else 0x800))
+            for _ in range(count if count is not None else D['ENCODER_PHASE_STABLE_SAMPLES']):
+                d.call('m1_encoder_irq');d.tick()
+        def turn(positive=True):
+            for phase in ((1,3,2,0) if positive else (2,3,1,0)):samples(phase)
+        output=d.consumer if mode==6 else d.radio_consumer
+        d.put(GPIO+0x810,0x800);d.call('m1_encoder_start');d.run(8);output.clear()
+        turn();d.run(800);assert output==[D['DEFAULT_M1_ENCODER_POSITIVE_USAGE'],0],(mode,output)
+        output.clear();turn(False);d.run(800)
+        assert output==[D['DEFAULT_M1_ENCODER_NEGATIVE_USAGE'],0],(mode,output)
+        output.clear();samples(0,True,80);d.run(800);samples(0,False,80);d.run(100)
+        assert output==[D['DEFAULT_M1_ENCODER_BUTTON_USAGE'],0],(mode,output)
+        # Fn/menu interaction never drains old motion into the next host action.
+        output.clear();d.samples[77]=3000;d.tick();turn();d.run(100)
+        d.samples[77]=3900;d.run(100)
+        assert all(v==0 for v in output),output
+        output.clear();turn();d.run(800)
+        assert output==[D['DEFAULT_M1_ENCODER_POSITIVE_USAGE'],0]
+        # An acquisition failure cancels an accepted pulse and all staged motion.
+        output.clear();turn();d.run(8);d.sequence+=2;d.tick();d.run(800)
+        assert not output or output[-1]==0
+        output.clear();d.run(800);assert all(v==0 for v in output)
+        output.clear();turn();d.run(8)
+        next_output=d.radio_consumer if mode==6 else d.consumer;next_output.clear()
+        d.chord(1 if mode==6 else 5);d.run(1200)
+        assert d.call('m1_live_transport')==(0 if mode==6 else 6)
+        assert output[-1]==0 and all(v==0 for v in next_output),(output,next_output)
+    print('PASS knob-to-host integration: real GPIO decoder, USB/radio volume/mute pulses, Fn/loss cleanup and neutral transport handoff')
 
 
 def integration(path):
@@ -216,6 +254,7 @@ def integration(path):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     integration(args.elf)
+    knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)
     persistence(args.elf)

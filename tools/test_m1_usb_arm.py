@@ -177,7 +177,7 @@ class Device(M1Arm):
     def usb_read(self,cpu,access,address,size,value,user):
         if address==USB+0x10:
             self.put(address,self.u32(address)&~(0x31&~self.stuck_flush)) # flush/reset done
-        if self.disable_completes and address in (USB+0x900,USB+0x920,USB+0x940) and self.u32(address)&(1<<30):
+        if self.disable_completes and address in (USB+0x900,USB+0x920,USB+0x940,USB+0x960) and self.u32(address)&(1<<30):
             self.put(address,self.u32(address)&~(3<<30)) # endpoint disable done
     def get(self,field):return self.call('m1_test_usb_get',field)
     def complete(self,endpoint):
@@ -202,16 +202,16 @@ def descriptors(path):
         assert d.setup(0x80,6,0x600,length=10)==bytes((10,6,0,2,0xef,2,1,64,1,0))
         for other in (False,True):
             data=d.setup(0x80,6,0x700 if other else 0x200,length=65535)
-            assert len(data)==166 and data[:5]==bytes((9,7 if other else 2,166,0,3))
+            assert len(data)==191 and data[:5]==bytes((9,7 if other else 2,191,0,4))
             records=[];i=0
             while i<len(data):
                 n=data[i];assert n>=2 and i+n<=len(data)
                 records.append(data[i:i+n]);i+=n
-            assert [r[2] for r in records if r[1]==4]==[0,1,2]
+            assert [r[2] for r in records if r[1]==4]==[0,1,2,3]
             endpoints=[r for r in records if r[1]==5]
-            assert [r[2] for r in endpoints]==[0x81,2,0x82]
+            assert [r[2] for r in endpoints]==[0x81,2,0x82,0x83]
             packet=512 if high!=other else 64
-            assert [struct.unpack_from('<H',r,4)[0] for r in endpoints]==[30,packet,packet]
+            assert [struct.unpack_from('<H',r,4)[0] for r in endpoints]==[30,packet,packet,2]
             assert [r[3:] for r in records if r[1]==0x25]==[bytes((2,1,5)),bytes((2,3,7))]
         for index in (0,1,2,4,5):
             string=d.setup(0x80,6,0x300+index,length=255)
@@ -227,11 +227,14 @@ def descriptors(path):
         assert b'\x19\x04\x29\xdf' in report and report[-1]==0xc0
         hid=d.setup(0x81,6,0x2100,length=9)
         assert len(hid)==9 and hid[7]==len(report)
-        for interface in range(3):
+        consumer=d.setup(0x81,6,0x2200,index=3,length=65535)
+        assert consumer[:6]==bytes((5,12,9,1,0xa1,1)) and consumer[-7:]==bytes((0x75,16,0x95,1,0x81,0,0xc0))
+        assert d.setup(0x81,6,0x2100,index=3,length=9)[7]==len(consumer)
+        for interface in range(4):
             assert d.setup(0x81,10,index=interface,length=1)==b'\0'
             d.setup(1,11,index=interface)
             d.setup(1,11,1,index=interface,stall=True)
-        for kind,req,val,idx,n in ((0x81,6,0x2200,1,64),(0x81,10,0,3,1),
+        for kind,req,val,idx,n in ((0x81,6,0x2200,1,64),(0x81,10,0,4,1),
             (0x21,9,0x200,0,64),(0x21,9,0x201,0,1),(0x21,9,0x100,0,1),
             (0x21,11,0,0,0),(0xa1,3,0,0,1),(0x21,10,1,0,0),(0,9,2,0,0),
             (0,3,2,0,0),(0x40,0x7f,0,0,0),(0x80,6,0x303,0,32),(2,3,0,0,0)):
@@ -239,10 +242,45 @@ def descriptors(path):
         # Every invalid low-byte endpoint, plus high-byte contamination, must
         # stall before the vendor code can index an out-of-range record.
         for endpoint in range(256):
-            valid=endpoint in (0,0x80,0x81,0x82,2)
+            valid=endpoint in (0,0x80,0x81,0x82,0x83,2)
             d.setup(0x82,0,index=endpoint,length=2,stall=not valid)
             d.setup(0x82,0,index=endpoint+256,length=2,stall=True)
     print('PASS M1 FS/HS descriptors, dual-speed requests, two MIDI cables, bounded controls and endpoint-index rejection')
+
+def consumer(path):
+    for high in (False,True):
+        d=Device(path,high)
+        assert not d.call('m1_usb_consumer_send',1024)
+        assert d.call('m1_usb_consumer_send',0xe9)
+        assert not d.call('m1_usb_consumer_send',0) and not d.call('m1_usb_drained')
+        assert d.cpu.mem_read(d.get(9),2)==b'\xe9\0'
+        assert d.setup(0xa1,1,0x100,3,65535)==b'\xe9\0'
+        d.complete(1);assert not d.call('m1_usb_drained')
+        d.complete(3);assert d.call('m1_usb_drained')
+        assert d.call('m1_usb_consumer_send',0xe9) and d.call('m1_usb_drained')
+        d.setup(0x21,10,0x200,3);assert d.setup(0xa1,2,index=3,length=1)==b'\2'
+        assert d.setup(0xa1,2,index=0,length=1)==b'\0' # independent keyboard idle
+        unit=4*(8 if high else 1)
+        d.call('m1_test_usb_sof',unit+1);d.setup(0x21,10,0x300,3)
+        d.call('m1_test_usb_sof',unit-1);assert not d.call('m1_usb_drained')
+        d.complete(3)
+        assert d.setup(0xa1,2,index=3,length=1)==b'\3'
+        d.setup(0x21,10,0,3)
+        for kind,request,value,length in ((0x21,9,0x200,1),(0xa1,1,0x101,2),(0x21,11,0,0)):
+            d.setup(kind,request,value,3,length,stall=True)
+        assert d.call('m1_usb_consumer_send',0)
+        d.setup(2,3,index=0x83);assert not d.call('m1_usb_consumer_send',0xe2)
+        d.setup(2,1,index=0x83);assert d.call('m1_usb_consumer_send',0)
+        assert d.cpu.mem_read(d.get(9),2)==bytes(2);d.complete(3)
+        for mask in (0,1):
+            d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+            assert d.call('m1_usb_consumer_send',0xea if mask else 0xe2)
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask;d.complete(3)
+        d.cpu.reg_write(UC_ARM_REG_PRIMASK,0)
+        d.setup(0,9,0);assert not d.call('m1_usb_consumer_send',0)
+        d.setup(0,9,1);assert d.setup(0xa1,1,0x100,3,2)==bytes(2)
+    print('PASS consumer HID: private buffer, backpressure, GET_REPORT, independent idle, endpoint halt, IRQ masks and reset neutral')
+
 
 def transfers(path):
     for high in (False,True):
@@ -397,5 +435,5 @@ def control(path):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
-    descriptors(args.elf);transfers(args.elf);control(args.elf);hardware(args.elf)
+    descriptors(args.elf);consumer(args.elf);transfers(args.elf);control(args.elf);hardware(args.elf)
 if __name__=='__main__':main()

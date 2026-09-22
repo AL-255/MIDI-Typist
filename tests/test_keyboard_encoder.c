@@ -1,4 +1,5 @@
 #include "keyboard_encoder.h"
+#include "keyboard_aux.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -15,8 +16,40 @@ static uint8_t cycle(keyboard_encoder_t *s,bool positive,bool button)
                                          ENCODER_PHASE_STABLE_SAMPLES);
     return events;
 }
+static uint16_t sent[32];
+static unsigned sent_count;
+static bool accept;
+static bool send_consumer(uint16_t usage)
+{ if(!accept)return false;assert(sent_count<32);sent[sent_count++]=usage;return true; }
+static void auxiliary(void)
+{
+    keyboard_aux_t s;const uint16_t mapping[]={0xe9,0xea,0xe2};
+    keyboard_aux_init(&s,mapping);accept=false;
+    assert(!keyboard_aux_offer(&s,1) && !keyboard_aux_idle(&s));
+    keyboard_aux_service(&s,true,0,send_consumer);assert(!keyboard_aux_idle(&s));
+    accept=true;keyboard_aux_service(&s,true,0,send_consumer);
+    assert(keyboard_aux_idle(&s) && sent_count==1 && !sent[0]);
+    assert(keyboard_aux_offer(&s,5)); /* rotation and button share a sample */
+    keyboard_aux_service(&s,true,UINT32_MAX-5,send_consumer);
+    assert(sent[1]==0xe9 && !keyboard_aux_offer(&s,2));
+    accept=false;keyboard_aux_service(&s,true,AUX_PULSE_MS,send_consumer);
+    assert(sent_count==2 && s.usage==0xe9);
+    accept=true;keyboard_aux_service(&s,true,AUX_PULSE_MS,send_consumer);
+    assert(sent[2]==0 && !keyboard_aux_idle(&s));
+    keyboard_aux_service(&s,true,AUX_PULSE_MS+1,send_consumer);assert(sent[3]==0xe2);
+    keyboard_aux_cancel(&s);assert(!keyboard_aux_idle(&s));
+    keyboard_aux_service(&s,false,AUX_PULSE_MS+2,send_consumer);
+    assert(sent[4]==0 && keyboard_aux_idle(&s) && !keyboard_aux_offer(&s,1));
+    keyboard_aux_service(&s,true,100,send_consumer);assert(keyboard_aux_offer(&s,2));
+    keyboard_aux_service(&s,false,101,send_consumer);assert(sent_count==6 && !sent[5]);
+    keyboard_aux_service(&s,true,102,send_consumer);
+    assert(keyboard_aux_offer(&s,8)); /* release does not toggle mute twice */
+    keyboard_aux_service(&s,true,103,send_consumer);assert(sent_count==6);
+    assert(keyboard_aux_idle(&s) && !keyboard_aux_offer(&s,16));
+}
 int main(void)
 {
+    auxiliary();
     keyboard_encoder_t s;
     assert(!keyboard_encoder_init(NULL,0,false,8000));
     assert(!keyboard_encoder_init(&s,4,false,8000));

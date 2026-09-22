@@ -12,6 +12,7 @@
 #include "m1_image.h"
 #include "m1_transport.h"
 #include "m1_encoder.h"
+#include "keyboard_aux.h"
 #include "at32f402_405_conf.h"
 #include <string.h>
 
@@ -33,6 +34,13 @@ static const m1_live_storage_ops_t *storage_ops;
 static bool storage_fault,storage_gap;
 static bool update_requested;
 static bool last_output_ready;
+static keyboard_aux_t auxiliary;
+static bool auxiliary_allowed;
+static const uint16_t auxiliary_mapping[3]={
+#define AUXMAP(index,usage) [index]=usage,
+#include "../config/auxmap.def"
+#undef AUXMAP
+};
 bool m1_live_update_requested(void) { return update_requested; }
 static uint32_t last_save_attempt;
 /* Foreground wall-time, including interrupt preemption. Read the already owned
@@ -81,11 +89,34 @@ static bool send_keyboard(const keyboard_report_t *report)
 }
 static bool send_midi(uint8_t a,uint8_t b,uint8_t c,uint8_t d)
 { uint8_t event[4]={a,b,c,d};return controls.current==M1_TRANSPORT_USB && send_events(event,sizeof(event)); }
+static bool send_consumer(uint16_t usage)
+{
+    if(controls.current!=M1_TRANSPORT_USB)
+        return radio_mode(controls.current) && m1_wireless_consumer(usage);
+    return usb_ready() && m1_usb_consumer_send(usage);
+}
+static void service_auxiliary(bool allowed)
+{
+    m1_encoder_status_t input;
+    if(!m1_encoder_status(&input))return;
+    allowed=allowed && input.active && !input.fault;
+    if(!allowed || !auxiliary_allowed) {
+        /* Never replay offline/menu movement or a partial turn to a new host. */
+        if(auxiliary_allowed || allowed || input.queued)m1_encoder_discard();
+    }
+    auxiliary_allowed=allowed;
+    keyboard_aux_service(&auxiliary,allowed,now,send_consumer);
+    if(allowed && keyboard_aux_idle(&auxiliary)) {
+        uint8_t events;
+        if(m1_encoder_take(&events))(void)keyboard_aux_offer(&auxiliary,events);
+    }
+}
 static void cancel_input(void)
 {
     if(selection_attempted) { transport_fault=true;enabled=false; }
     keyboard_app_invalidate(&app,now);
     keyboard_midi_abort(&midi);
+    keyboard_aux_cancel(&auxiliary);auxiliary_allowed=false;m1_encoder_discard();
     controls.pending=controls.held=0;controls.switching=controls.battery_show=false;
     controls.neutral_required=true;keyboard_text_stop(&controls.text);
     light_sent=false;
@@ -105,6 +136,7 @@ static bool drained(void *context)
     /* The release proof belongs to this switch. Once selection begins the
      * old driver may legitimately be stopped; never ask it to drain again. */
     if(selection_attempted)return true;
+    if(!keyboard_aux_idle(&auxiliary))return false;
     bool idle=controls.current==M1_TRANSPORT_USB?usb_ready() && m1_usb_drained():
         radio_mode(controls.current) && m1_wireless_switch_ready();
     return idle && transport_ops->drained(transport_ops->context);
@@ -184,7 +216,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     bool old_drained=!initialized || (controls.current==M1_TRANSPORT_USB?
         usb_ready() && m1_usb_drained() && !midi.panic && !midi.count:
         transport_ops && drained(NULL));
-    if((initialized && (enabled || power_state!=POWER_AWAKE || transport_fault || storage_fault || !old_drained || !app.sent_valid ||
+    if((initialized && (enabled || power_state!=POWER_AWAKE || transport_fault || storage_fault || !old_drained || !keyboard_aux_idle(&auxiliary) || !app.sent_valid ||
         memcmp(&app.sent,&neutral,sizeof(neutral)))) || !m1_transport_valid(current) ||
        (current!=M1_TRANSPORT_USB && !radio_mode(current)) ||
        (transports && (!transports->drained || !transports->select)) ||
@@ -199,6 +231,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
     static const m1_transport_ops_t transport_port={drained,select_transport,NULL,transport_available};
     keyboard_app_init(&app,&raw,&midi,&menu,&calibration,storage?&app_ops:NULL);
+    keyboard_aux_init(&auxiliary,auxiliary_mapping);auxiliary_allowed=false;
     /* Bind layout/roles without treating a fabricated sample as acquisition.
      * Restore every setting before any real frame or output can be processed. */
     memset(samples,0,sizeof(samples));
@@ -250,7 +283,7 @@ bool m1_live_power_park(void)
 {
     if(!initialized || transport_fault || storage_fault)return false;
     if(power_state==POWER_PARKED)return true;
-    if(power_state!=POWER_DRAINING || !neutral_sent() ||
+    if(power_state!=POWER_DRAINING || !neutral_sent() || !keyboard_aux_idle(&auxiliary) ||
        !m1_lighting_healthy() || !m1_lighting_ready())return false;
     uint32_t mask=lock();
     bool ready=m1_usb_in_idle() && (controls.current==M1_TRANSPORT_USB?
@@ -282,6 +315,7 @@ m1_factory_result_t m1_live_factory_result(void) { return factory_result; }
 m1_transport_t m1_live_transport(void) { return controls.current; }
 bool m1_live_transport_fault(void) { return transport_fault; }
 bool m1_live_storage_fault(void) { return storage_fault; }
+uint32_t m1_live_storage_error(void) { return store.error; }
 static uint32_t write_profile(unsigned slot,const uint8_t *page)
 { return m1_storage_write(slot,page,true); }
 static bool storage_idle(void)
@@ -290,6 +324,8 @@ static bool storage_idle(void)
        (uint32_t)(now-last_save_attempt)<SETTINGS_CHECK_PERIOD_MS ||
        controls.switching || controls.pending || selection_attempted || !app.sent_valid ||
        !m1_lighting_ready())return false;
+    m1_encoder_status_t input;
+    if(!keyboard_aux_idle(&auxiliary) || !m1_encoder_status(&input) || input.queued || input.pressed)return false;
     const keyboard_report_t neutral={0};
     if(memcmp(&app.sent,&neutral,sizeof(neutral)))return false;
     if(controls.current==M1_TRANSPORT_USB) {
@@ -376,6 +412,7 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
          * transaction may compete with the neutral-output handoff. */
         keyboard_app_service(&app,now,false,neutral_sent()?NULL:send_keyboard,
                              controls.current==M1_TRANSPORT_USB?send_midi:NULL);
+        service_auxiliary(false);
         uint8_t events[M1_USB_HS_PACKET];
         (void)m1_usb_midi_take(events,sizeof(events)); /* discard, never dispatch */
         midi_control_service();return;
@@ -416,11 +453,16 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
      * control chunks are bounded and never overwrite an in-flight report. */
     keyboard_app_service(&app,now,fresh,send_keyboard,
                          controls.current==M1_TRANSPORT_USB?send_midi:NULL);
+    service_auxiliary(fresh && output_ready() && raw.enabled && raw.armed &&
+        !raw.down[M1_FN_SENSOR] && !controls.switching && !controls.pending &&
+        !calibration_active(&calibration) && !raw.engine.config.mode &&
+        !menu.pending && !menu.music_page && !menu.velocity_page && !menu.press_page && !menu.reset_confirmation);
     mark=timing_step(TIMING_OUTPUT,mark);
     bool switching=controls.switching;
     m1_transport_t old=controls.current;
     m1_controls_service(&controls,&app,now);
     if(switching && !controls.switching) {
+        keyboard_aux_cancel(&auxiliary);auxiliary_allowed=false;m1_encoder_discard();
         if(selection_attempted && old==controls.current) {
             /* A timed-out/cancelled physical selection may have changed the
              * hardware already. Do not silently resume on the old host. */

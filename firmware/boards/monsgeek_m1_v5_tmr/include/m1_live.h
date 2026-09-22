@@ -78,4 +78,5 @@ m1_transport_t m1_live_transport(void);
  * terminal for this owner; explicit init cannot silently reset the fault. */
 bool m1_live_transport_fault(void);
 bool m1_live_storage_fault(void);
+uint32_t m1_live_storage_error(void);
 #endif

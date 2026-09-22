@@ -300,8 +300,12 @@ regular sampling, ISR-to-foreground queue ownership and explicit overflow
 reporting. Rebaseline after sampling gaps; do not replay movement across a
 transport change or turn a held-at-start button into a new press. Keep event-to-
 action mapping separate from this decoder and from USB packet construction.
-M1 has this capture HAL, but its host-report consumer and GUI knob configuration
-remain unfinished; it is not an example of complete auxiliary output routing.
+`keyboard_aux` maps digital events into ordered consumer pulses using board-
+supplied usages. Its send callback has copy-on-acceptance semantics; a busy
+transport must return false. Cancellation requires a neutral report, not merely
+clearing a software queue. Include consumer transfers in USB/radio drain, fault,
+save and power handoffs. M1 demonstrates routing over its selected transport;
+GUI knob remapping and saved auxiliary mappings remain unfinished.
 
 ## 4. Connect the common lifecycle
 

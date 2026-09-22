@@ -206,12 +206,13 @@ def diagnostics(path):
     """Real diagnostic/SysEx code; abstract port readiness and USB transfers."""
     import midi_sysex as sx
     from test_m1_hal_arm import M1Arm,RGB
-    d=M1Arm(path);wire=bytearray();messages=[];cleanup=[];neutral=[]
+    d=M1Arm(path);wire=bytearray();messages=[];cleanup=[];neutral=[];consumer=[]
     pages=factory_memory(d,distinct=True)
     d.cpu.mem_map(0x08004000,0x1000)
     responses={'m1_usb_hw_running':1,'m1_usb_ready':1,'m1_usb_generation':1,
                'm1_usb_midi_take':0,'m1_boot_state':FAILED,'m1_boot_error':9,
-               'm1_live_factory_result':3,'m1_usb_midi_send':1,'m1_boot_scan':1,'m1_usb_hid_send':1}
+               'm1_live_factory_result':3,'m1_usb_midi_send':1,'m1_boot_scan':1,'m1_usb_hid_send':1,
+               'm1_usb_consumer_send':1}
     names={d.symbols[name]&~1:name for name in responses}
     def port(cpu,address,size,user):
         name=names.get(address)
@@ -229,6 +230,7 @@ def diagnostics(path):
                 count=3 if cin==4 else cin-4;wire.extend(events[at+1:at+1+count])
                 if cin!=4:messages.append(sx.decode(wire));wire.clear()
         if name=='m1_usb_hid_send':neutral.append(bytes(cpu.mem_read(cpu.reg_read(UC_ARM_REG_R0),30)))
+        if name=='m1_usb_consumer_send':consumer.append(cpu.reg_read(UC_ARM_REG_R0))
         cpu.reg_write(UC_ARM_REG_R0,responses[name]);cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
     d.cpu.hook_add(UC_HOOK_CODE,port)
     def service():
@@ -267,10 +269,10 @@ def diagnostics(path):
     responses['m1_boot_state']=READY
     count=len(messages);assert not service() and len(messages)==count
     d.call('m1_diagnostics_runtime_fault',5)
-    service();service();assert neutral==[bytes(30)] and len(cleanup)==48
+    service();service();assert neutral==[bytes(30)] and consumer==[0] and len(cleanup)==48
     assert cleanup==[bytes((0x0b,0xb0+ch,cc,0)) for ch in range(16) for cc in (64,120,123)]
     send(sx.HELLO)
-    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Runtime failed: detail=0x00000005'
+    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Runtime failed: detail=0x00000005 store=0x00000000 scan=0x00000000'
     assert not send(sx.COMMAND,1,b'cfg set 7 1 2500 2800') and messages[-1][0]==sx.ERROR
     assert send(sx.COMMAND,2,b'bootloader') and messages[-1][0]==sx.ACK
     print('PASS M1 cold-start control: build handshake, failure text, mutation rejection, guarded reset request, USB epoch and live-owner handoff')

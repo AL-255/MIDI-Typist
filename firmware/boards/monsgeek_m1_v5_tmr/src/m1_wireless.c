@@ -2,7 +2,7 @@
 #include "defaults.h"
 #include <string.h>
 
-enum { NONE, MODE, QUERY, POLL, KEYS, BITMAP, BATTERY, SLEEP };
+enum { NONE, MODE, QUERY, POLL, KEYS, BITMAP, BATTERY, SLEEP, CONSUMER };
 static bool active,faulted,confirmed,have_status,pending,mode_sent,query_sent,poll_sent,linked;
 static unsigned flight,part;
 static m1_transport_t target;
@@ -12,6 +12,9 @@ static uint32_t now,started,last_mode,last_query,last_poll,last_report,status_at
 static uint8_t battery_value,battery_flight,battery_last,sleep_command,previous_sleep;
 static bool battery_known,battery_sent,sleep_complete;
 static uint32_t sleep_at;
+static uint16_t consumer_committed,consumer_staged;
+static bool consumer_pending,consumer_seen;
+static uint32_t consumer_at;
 
 static bool battery_pending(void)
 { return battery_known && (!battery_sent || battery_value!=battery_last); }
@@ -40,12 +43,14 @@ bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
     committed=(m1_radio_keyboard_t){0};staged=committed;
     status=(m1_radio_status_t){0};flight=NONE;part=KEYS;
     pending=true; /* mandatory neutral baseline before accepting presses */
+    consumer_committed=consumer_staged=0;consumer_pending=consumer_seen=false;consumer_at=tick;
     active=true;return true;
 }
 void m1_wireless_stop(void)
 {
     if(active)m1_radio_stop();
     active=false;confirmed=false;pending=false;flight=NONE;
+    consumer_pending=false;
 }
 bool m1_wireless_healthy(void) { return active && !faulted && m1_radio_healthy(); }
 bool m1_wireless_mode(m1_transport_t *mode)
@@ -60,7 +65,8 @@ bool m1_wireless_selected(m1_transport_t mode)
     (uint32_t)(now-status_at)<M1_RADIO_STATUS_TIMEOUT_US; }
 bool m1_wireless_switch_ready(void)
 { return m1_wireless_healthy() && !sleep_command && flight==NONE && m1_radio_ready() &&
-    neutral(&committed) && (!pending || neutral(&staged)); }
+    neutral(&committed) && (!pending || neutral(&staged)) &&
+    !consumer_committed && (!consumer_pending || !consumer_staged); }
 bool m1_wireless_select(m1_transport_t mode,uint32_t tick)
 {
     if(!m1_transport_valid(mode) || !m1_wireless_switch_ready())return false;
@@ -70,10 +76,11 @@ bool m1_wireless_select(m1_transport_t mode,uint32_t tick)
     battery_known=battery_sent=false;
     reports=0;pending=mode!=M1_TRANSPORT_USB;part=KEYS;
     committed=(m1_radio_keyboard_t){0};staged=committed;
+    consumer_committed=consumer_staged=0;consumer_pending=consumer_seen=false;consumer_at=tick;
     return true;
 }
 bool m1_wireless_local_idle(void)
-{ return m1_wireless_healthy() && !pending && !battery_pending() &&
+{ return m1_wireless_healthy() && !pending && !consumer_pending && !battery_pending() &&
     (!sleep_command || sleep_complete) && flight==NONE && m1_radio_ready(); }
 uint32_t m1_wireless_reports_sent(void) { return reports; }
 uint32_t m1_wireless_errors(void) { return errors; }
@@ -106,6 +113,15 @@ bool m1_wireless_battery(const m1_battery_t *battery)
     }
     battery_value=battery->percent;battery_known=true;return true;
 }
+bool m1_wireless_consumer(uint16_t usage)
+{
+    if(!m1_wireless_healthy() || target==M1_TRANSPORT_USB || sleep_command || consumer_pending)return false;
+    /* No key action can be queued offline. Coalesce only the neutral baseline;
+     * the live owner's readiness edge requests it again when a host appears. */
+    if(!m1_wireless_ready())return !usage && !consumer_committed;
+    if(consumer_seen && consumer_committed==usage)return true;
+    consumer_staged=usage;consumer_pending=true;return true;
+}
 bool m1_wireless_battery_sent(uint8_t *percent)
 {
     if(!percent || !m1_wireless_healthy() || !battery_known || !battery_sent)return false;
@@ -115,7 +131,7 @@ bool m1_wireless_request_sleep(uint8_t command,bool host_released)
 {
     bool deepen=sleep_command==M1_RADIO_BT_RETAIN && sleep_complete && command==M1_RADIO_SLEEP;
     if(!host_released || !m1_wireless_healthy() || (sleep_command && !deepen) || flight ||
-       !m1_radio_ready() || !neutral(&committed) ||
+       !m1_radio_ready() || !neutral(&committed) || consumer_committed || consumer_pending ||
        (pending && (reports || !neutral(&staged))) ||
        (command!=M1_RADIO_SLEEP && command!=M1_RADIO_BT_RETAIN))return false;
     if(command==M1_RADIO_BT_RETAIN && (target==M1_TRANSPORT_RADIO || !m1_wireless_ready()))return false;
@@ -171,6 +187,9 @@ void m1_wireless_service(uint32_t tick)
         else if(done==KEYS)part=BITMAP;
         else if(done==BITMAP) { committed=staged;pending=false;++reports;last_report=now; }
         else if(done==BATTERY) { battery_last=battery_flight;battery_sent=battery_known; }
+        else if(done==CONSUMER) {
+            consumer_committed=consumer_staged;consumer_pending=false;consumer_seen=true;consumer_at=now;
+        }
         else if(done==SLEEP)sleep_complete=true;
     }
     if(faulted)return;
@@ -212,7 +231,7 @@ void m1_wireless_service(uint32_t tick)
     uint32_t interval=target==M1_TRANSPORT_RADIO?M1_RADIO_RF_REPORT_US:M1_RADIO_BT_REPORT_US;
     /* Battery is latest-only metadata. Never interrupt an accepted keyboard
      * pair, and never starve releases with repeated percentage changes. */
-    if(!pending && battery_pending() && m1_wireless_ready()) {
+    if(!pending && !consumer_pending && battery_pending() && m1_wireless_ready()) {
         (void)m1_radio_encode(&packet,M1_RADIO_BATTERY,&battery_value,1);
         if(send(BATTERY,&packet))battery_flight=battery_value;
         return;
@@ -221,5 +240,12 @@ void m1_wireless_service(uint32_t tick)
        (!reports || part==BITMAP || (uint32_t)(now-last_report)>=interval)) {
         (void)m1_radio_keyboard_packet(&staged,part==KEYS?M1_RADIO_KEY_LIST:M1_RADIO_KEY_BITMAP,&packet);
         (void)send(part,&packet);
+        return;
+    }
+    if(consumer_pending && m1_wireless_ready() && (!pending || part==KEYS) &&
+       (!consumer_seen || (uint32_t)(now-consumer_at)>=interval)) {
+        uint8_t payload[3]={3,(uint8_t)consumer_staged,(uint8_t)(consumer_staged>>8)};
+        (void)m1_radio_encode(&packet,M1_RADIO_REPORT,payload,sizeof(payload));
+        (void)send(CONSUMER,&packet);
     }
 }

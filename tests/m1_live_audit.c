@@ -2,6 +2,7 @@
  * lights and battery completion are explicit scripted ports, not physical IO. */
 #include "m1_live.h"
 #include "m1_hal.h"
+#include "m1_encoder.h"
 #include "m1_lighting.h"
 #include "m1_battery_hal.h"
 #include "m1_wireless.h"
@@ -86,6 +87,7 @@ uintptr_t m1_test_live_storage_page(unsigned slot)
 { return slot<2?(uintptr_t)pages[slot]:0; }
 __attribute__((used,section(".test_exports")))
 const void *const m1_live_test_exports[]={
+    m1_encoder_start,m1_encoder_irq,m1_encoder_status,m1_encoder_discard,
     m1_live_init,m1_live_service,m1_live_stop,m1_live_scan_losses,m1_live_transport,m1_live_transport_fault,
     m1_live_power_suspend,m1_live_power_park,m1_live_power_resume,
     m1_live_factory_result,

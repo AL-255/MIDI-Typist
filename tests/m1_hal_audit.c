@@ -61,11 +61,11 @@ void m1_test_wireless_power_critical(void)
 }
 __attribute__((used,section(".test_exports")))
 const void *const m1_test_exports[]={
-    m1_encoder_start,m1_encoder_stop,m1_encoder_irq,m1_encoder_take,m1_encoder_status,
+    m1_encoder_start,m1_encoder_stop,m1_encoder_irq,m1_encoder_take,m1_encoder_status,m1_encoder_discard,
     m1_lighting_init,m1_lighting_stop,m1_lighting_offer,m1_lighting_service,
     m1_lighting_ready,m1_lighting_healthy,m1_lighting_errors,
     m1_hal_init,m1_hal_start,m1_hal_stop,m1_hal_timer_irq,m1_hal_dma_irq,
-    m1_hal_frame,m1_hal_battery,m1_hal_healthy,m1_hal_periodic_active,m1_hal_errors,m1_hal_pretrigger_counts,
+    m1_hal_frame,m1_hal_battery,m1_hal_healthy,m1_hal_periodic_active,m1_hal_errors,m1_hal_pretrigger_counts,m1_hal_fault_reason,
     m1_hal_capture_start,m1_hal_capture_busy,m1_hal_service,
     m1_hal_pause,m1_hal_resume,
     m1_time_start,m1_time_now,m1_time_suspend,m1_time_resume,m1_time_stop,m1_time_healthy,
@@ -77,7 +77,7 @@ const void *const m1_test_exports[]={
     m1_radio_init,m1_radio_service,m1_radio_ready,m1_radio_healthy,m1_radio_errors,
     m1_radio_data_pending,m1_radio_exchange,m1_radio_take,m1_radio_stop,m1_radio_quiesce,
     m1_wireless_init,m1_wireless_service,m1_wireless_stop,m1_wireless_healthy,
-    m1_wireless_ready,m1_wireless_offer,m1_wireless_local_idle,
+    m1_wireless_ready,m1_wireless_offer,m1_wireless_local_idle,m1_wireless_consumer,
     m1_wireless_reports_sent,m1_wireless_errors,m1_wireless_status,
     m1_wireless_selected,m1_wireless_switch_ready,m1_wireless_select,
     m1_wireless_battery,m1_wireless_battery_sent,m1_wireless_request_sleep,

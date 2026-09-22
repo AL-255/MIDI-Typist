@@ -21,6 +21,12 @@ invalidation, held-button restart suppression and IRQ-mask preservation. The
 private reference audit executes the original sampler to check PC10/PC12 order
 and both legal electrical cycles. These tests do not establish physical detent
 orientation, switch bounce characteristics or host consumer-report delivery.
+The knob integration test runs actual GPIO reads, the decoder, pulse owner and
+USB/radio output paths with scripted samples. It covers volume/mute press/release,
+simultaneous event ordering, backpressure, Fn suppression, scan-loss cancellation
+and transport neutrality. USB tests cover the independent consumer descriptor,
+GET_REPORT, SET_IDLE, endpoint halt and reset. Radio subtype-3 payload order and
+checksum are checked against executed private-reference instructions.
 Timebase tests execute SDK TMR2 setup with scripted counter progression through
 masked intervals, counter/millisecond wrap and suspend/resume gaps. Clock and
 sleep transitions reject a running timebase. Tests verify fractional carry,
@@ -160,8 +166,13 @@ Power-cycle and software-requested recovery return to the factory bootloader.
 Read-only factory diagnostics return valid markers but resting values outside
 the 12-bit import domain. The complete 518-byte calibration-field readback remains
 unchanged after flashing and automatic settings-only initialization. The live
-journal reports slot 0/generation 1 with no storage error, while calibration
-remains correctly marked unsaved. This is not a physical power-loss durability test.
+journal verifies settings-only saves without marking provisional calibration
+as saved. A GUI threshold edit and restoration each advanced the journal
+generation after ACK/readback; the original threshold was restored. This is not
+a physical power-loss durability test. Scan/storage transition stability remains
+under investigation; retained diagnostics distinguish storage errors and first
+scanner fault causes. A combined fault is not evidence of an enumeration failure
+or permission to retry flash writes automatically.
 All 82 released-key readings in the first complete
 scan are midrange, without near-zero positions, and all six DMA banks retain
 15 slots before triggering. The selector is independently checked against
@@ -169,10 +180,10 @@ executed private reference instructions. The original startup RAM fallback is
 also instruction-checked. Provisional travel normalization permits neutral
 arming; no stock calibration scale conversion is inferred. The matching GUI
 connection receives MTG4 telemetry and reports USB ready. With all keys released,
-a six-second check received 182 fresh snapshots with normalized readings from
-3938 to 4096; all 82 keys stayed up and input stayed valid and armed. The scan-gap
-counter remained at one after initial settings-save completion, with no light
-errors. The intentional save pause is included in that counter; this GUI check
+a live check received periodic fresh snapshots with released-key readings near
+the top of the normalized range; all 82 keys stayed up. Input rearmed after each
+intentional settings-save pause, with no light errors. Intentional save pauses
+are included in the scan-gap counter; this GUI check
 does not independently measure the declared 8 kHz acquisition rate. Queue order/wrap/overflow,
 pause invalidation, and released-key fast-path velocity semantics have offline
 tests. The per-key pending-strike bitmap is checked against every occupied slot
@@ -183,8 +194,10 @@ calibration, LED appearance and wireless behavior still require hardware checks.
 The live encoder diagnostic reports phase 3 (both phases high), button released,
 and zero movement, invalid transitions or queue overflows with the knob untouched.
 Its sampling counter advances alongside periodic acquisition. Rotation/button
-presses have not been physically exercised, and the host-report consumer is not
-connected yet.
+presses have not been physically exercised. The installed USB configuration has
+four interfaces; Linux binds interface 3 as a consumer input with mute and both
+volume capabilities. This establishes descriptor recognition, not physical
+knob-to-volume delivery or wireless host behavior.
 See [experimental flashing](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 Velocity uses each board's declared scan rate, not USB delivery timestamps.

@@ -21,6 +21,18 @@ void m1_encoder_start(void)
     status.phase=phase;status.pressed=pressed;
 }
 void m1_encoder_stop(void) { status.active=false;status.queued=read_at=0; }
+void m1_encoder_discard(void)
+{
+    if(__get_IPSR())return;
+    uint32_t mask=__get_PRIMASK();__disable_irq();
+    if(status.active && !status.fault) {
+        bool pressed;uint8_t phase=pins(&pressed);
+        (void)keyboard_encoder_init(&decoder,phase,pressed,M1_SCAN_HZ);
+        status.phase=phase;status.pressed=pressed;
+    }
+    status.queued=read_at=0;
+    __set_PRIMASK(mask);
+}
 void m1_encoder_irq(void)
 {
     if(!status.active || status.fault)return;

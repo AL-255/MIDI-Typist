@@ -1,0 +1,5 @@
+/* Electrical directions; physical clockwise orientation requires validation.
+ * Keep logical digital actions out of analog keymap/calibration indices. */
+AUXMAP(0, DEFAULT_M1_ENCODER_POSITIVE_USAGE)
+AUXMAP(1, DEFAULT_M1_ENCODER_NEGATIVE_USAGE)
+AUXMAP(2, DEFAULT_M1_ENCODER_BUTTON_USAGE)

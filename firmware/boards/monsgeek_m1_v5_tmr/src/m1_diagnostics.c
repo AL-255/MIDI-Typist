@@ -10,7 +10,7 @@
 #include <string.h>
 
 static bool initialized,reported,update_requested;
-static bool runtime_fault,neutral_sent;
+static bool runtime_fault,neutral_sent,consumer_neutral;
 static uint32_t runtime_detail;
 static unsigned cleanup_event;
 static uint32_t now,epoch;
@@ -56,6 +56,11 @@ static size_t failure_text(char *text)
     if(runtime_fault) {
         strcpy(text,"Runtime failed: detail=0x");size_t length=strlen(text);
         for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(runtime_detail>>(28u-4u*i))&15u];
+        text[length]=0;strcat(text," store=0x");length=strlen(text);
+        uint32_t value=m1_live_storage_error();
+        for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(value>>(28u-4u*i))&15u];
+        text[length]=0;strcat(text," scan=0x");length=strlen(text);value=m1_hal_fault_reason();
+        for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(value>>(28u-4u*i))&15u];
         text[length]=0;return length;
     }
     static const char *const errors[]={"none","timebase","startup","power-source",
@@ -73,7 +78,7 @@ static size_t failure_text(char *text)
 void m1_diagnostics_runtime_fault(uint32_t detail)
 {
     runtime_fault=true;runtime_detail=detail;
-    initialized=reported=update_requested=neutral_sent=false;cleanup_event=0;
+    initialized=reported=update_requested=neutral_sent=consumer_neutral=false;cleanup_event=0;
 }
 bool m1_diagnostics_service(uint32_t now_ms)
 {
@@ -89,7 +94,7 @@ bool m1_diagnostics_service(uint32_t now_ms)
     uint8_t events[M1_USB_HS_PACKET];uint32_t mask=lock();
     if(epoch!=m1_usb_generation()) {
         epoch=m1_usb_generation();midi_control_usb_reset();reported=false;update_requested=false;
-        neutral_sent=false;cleanup_event=0;
+        neutral_sent=consumer_neutral=false;cleanup_event=0;
     }
     unsigned size=m1_usb_midi_take(events,sizeof(events));
     if(size && ready())midi_control_receive_usb(events,size);
@@ -106,6 +111,7 @@ bool m1_diagnostics_service(uint32_t now_ms)
             if(send(event,sizeof(event)))++cleanup_event;
         }
     }
+    if(runtime_fault && ready() && !consumer_neutral)consumer_neutral=m1_usb_consumer_send(0);
     midi_control_service();
     if(!midi_control_ready())reported=false;
     if((m1_boot_state()==M1_BOOT_FAILED || runtime_fault) && !reported) {

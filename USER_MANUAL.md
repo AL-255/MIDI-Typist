@@ -2,6 +2,10 @@
 
 For the Huntsman V3 Pro Mini with the complete `huntsman` firmware.
 The keyboard works without the GUI. It sends keyboard/MIDI data, not audio.
+For the experimental MonsGeek M1 V5 TMR, use the
+[M1 board guide](docs/MONSGEEK_M1.md) for its 75% layout, transport controls,
+volume/mute knob and current limitations. Huntsman-specific shortcuts and
+power-cycle persistence below must not be assumed for that backend.
 
 ## Contents
 

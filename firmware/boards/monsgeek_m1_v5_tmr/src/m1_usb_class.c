@@ -9,6 +9,10 @@ static struct {
     volatile uint8_t idle,next_idle,leds;
     volatile uint16_t received;
     volatile uint32_t generation,errors,idle_ticks;
+    volatile bool consumer_busy,consumer_seen,consumer_deferred;
+    volatile uint8_t consumer_idle,consumer_next;
+    volatile uint32_t consumer_ticks;
+    _Alignas(4) uint8_t consumer[4];
     _Alignas(4) uint8_t hid[32],midi[M1_USB_HS_PACKET],rx[M1_USB_HS_PACKET],control[64];
 } s;
 static unsigned packet_size(void)
@@ -19,6 +23,9 @@ static void invalidated(void)
     s.receive_pending=s.led_pending=false;s.received=0;s.idle=0;s.leds=0;
     s.hid_seen=s.idle_deferred=false;s.next_idle=0;
     s.idle_ticks=0;memset(s.hid,0,sizeof(s.hid));++s.generation;
+    s.consumer_busy=s.consumer_seen=s.consumer_deferred=false;
+    s.consumer_idle=s.consumer_next=0;s.consumer_ticks=0;
+    memset(s.consumer,0,sizeof(s.consumer));
 }
 void m1_usb_bind(usbd_core_type *device) { invalidated();s.dev=device;s.errors=0; }
 bool m1_usb_ready(void)
@@ -26,7 +33,7 @@ bool m1_usb_ready(void)
 uint32_t m1_usb_generation(void) { return s.generation; }
 uint32_t m1_usb_errors(void) { return s.errors; }
 uint8_t m1_usb_leds(void) { return s.leds; }
-bool m1_usb_in_idle(void) { return !s.hid_busy && !s.midi_busy; }
+bool m1_usb_in_idle(void) { return !s.hid_busy && !s.midi_busy && !s.consumer_busy; }
 bool m1_usb_drained(void) { return m1_usb_ready() && m1_usb_in_idle(); }
 static void fault(void) { ++s.errors;s.fault=true;++s.generation; }
 static usb_sts_type unsupported(usbd_core_type *dev)
@@ -50,12 +57,13 @@ static usb_sts_type init(void *device)
 {
     usbd_core_type *dev=device;
     if(dev!=s.dev || dev->dma_en)return USB_FAIL;
-    bool hid_stopped=stop_in(dev,1),midi_stopped=stop_in(dev,2);
-    if(!hid_stopped || !midi_stopped) { s.configured=false;fault();return USB_FAIL; }
+    bool hid_stopped=stop_in(dev,1),midi_stopped=stop_in(dev,2),consumer_stopped=stop_in(dev,3);
+    if(!hid_stopped || !midi_stopped || !consumer_stopped) { s.configured=false;fault();return USB_FAIL; }
     invalidated();s.configured=true;
     usbd_ept_open(dev,M1_USB_HID_IN,EPT_INT_TYPE,KEYBOARD_NKRO_REPORT_BYTES);
     usbd_ept_open(dev,M1_USB_MIDI_IN,EPT_BULK_TYPE,packet_size());
     usbd_ept_open(dev,M1_USB_MIDI_OUT,EPT_BULK_TYPE,packet_size());
+    usbd_ept_open(dev,M1_USB_CONSUMER_IN,EPT_INT_TYPE,2);
     usbd_ept_recv(dev,M1_USB_MIDI_OUT,s.rx,packet_size());
     return USB_OK;
 }
@@ -63,13 +71,14 @@ static usb_sts_type clear(void *device)
 {
     usbd_core_type *dev=device;
     if(dev!=s.dev)return USB_FAIL;
-    bool hid_stopped=stop_in(dev,1),midi_stopped=stop_in(dev,2);
+    bool hid_stopped=stop_in(dev,1),midi_stopped=stop_in(dev,2),consumer_stopped=stop_in(dev,3);
     usbd_ept_close(dev,M1_USB_HID_IN);usbd_ept_close(dev,M1_USB_MIDI_IN);
     usbd_ept_close(dev,M1_USB_MIDI_OUT);
+    usbd_ept_close(dev,M1_USB_CONSUMER_IN);
     usb_flush_rx_fifo(dev->usb_reg);
     bool rx_flushed=!dev->usb_reg->grstctl_bit.rxfflsh;
     invalidated();
-    if(!hid_stopped || !midi_stopped || !rx_flushed) { fault();return USB_FAIL; }
+    if(!hid_stopped || !midi_stopped || !consumer_stopped || !rx_flushed) { fault();return USB_FAIL; }
     return USB_OK;
 }
 static usb_sts_type setup(void *device,usb_setup_type *q)
@@ -81,16 +90,24 @@ static usb_sts_type setup(void *device,usb_setup_type *q)
      * reset its MIDI session, not to count the aborted transfer as delivered. */
     if(q->bmRequestType==2 && (q->bRequest==1 || q->bRequest==3) &&
        !q->wValue && !q->wLength &&
-       (q->wIndex==M1_USB_HID_IN || q->wIndex==M1_USB_MIDI_IN || q->wIndex==M1_USB_MIDI_OUT)) {
+       (q->wIndex==M1_USB_HID_IN || q->wIndex==M1_USB_MIDI_IN || q->wIndex==M1_USB_MIDI_OUT || q->wIndex==M1_USB_CONSUMER_IN)) {
         ++s.generation;
         unsigned ep=q->wIndex&127u;
         if(q->wIndex&128u) {
             if(!stop_in(dev,ep)) { fault();return USB_FAIL; }
-            if(ep==1) { s.hid_busy=false;s.hid_seen=false; } else s.midi_busy=false;
+            if(ep==1) { s.hid_busy=false;s.hid_seen=false; }
+            else if(ep==3) { s.consumer_busy=false;s.consumer_seen=false; }
+            else s.midi_busy=false;
         }
         return USB_OK;
     }
     if(q->wIndex>=M1_USB_INTERFACES)return unsupported(dev);
+    if(q->bmRequestType==0x81 && q->bRequest==6 && q->wIndex==M1_USB_CONSUMER_INTERFACE) {
+        usbd_desc_t *d=q->wValue==0x2200?m1_usb_consumer_report_descriptor():
+                       q->wValue==0x2100?m1_usb_consumer_hid_descriptor():NULL;
+        if(!d || !q->wLength)return unsupported(dev);
+        send_control(dev,d,q->wLength);return USB_OK;
+    }
     if(q->bmRequestType==0x81 && q->bRequest==6 && !q->wIndex && !(q->wValue&255)) {
         usbd_desc_t *d=q->wValue==0x2200?m1_usb_report_descriptor():
                        q->wValue==0x2100?m1_usb_hid_descriptor():NULL;
@@ -103,6 +120,23 @@ static usb_sts_type setup(void *device,usb_setup_type *q)
     if(q->bmRequestType==1 && q->bRequest==11 && !q->wValue && !q->wLength)return USB_OK;
     if(q->bmRequestType==0x81 && q->bRequest==0 && !q->wValue && q->wLength==2) {
         s.control[0]=s.control[1]=0;usbd_ctrl_send(dev,s.control,2);return USB_OK;
+    }
+    if(q->wIndex==M1_USB_CONSUMER_INTERFACE && s.configured) {
+        if(q->bmRequestType==0xa1 && q->bRequest==1 && q->wValue==0x100 && q->wLength) {
+            memcpy(s.control,s.consumer,2);usbd_ctrl_send(dev,s.control,q->wLength<2?q->wLength:2);return USB_OK;
+        }
+        if(q->bmRequestType==0xa1 && q->bRequest==2 && !q->wValue && q->wLength==1) {
+            s.control[0]=s.consumer_deferred?s.consumer_next:s.consumer_idle;
+            usbd_ctrl_send(dev,s.control,1);return USB_OK;
+        }
+        if(q->bmRequestType==0x21 && q->bRequest==10 && !(q->wValue&255) && !q->wLength) {
+            unsigned unit=4u*(dev->speed==USB_HIGH_SPEED?8u:1u),period=s.consumer_idle*unit;
+            if(s.consumer_idle && s.consumer_ticks<period && period-s.consumer_ticks<unit) {
+                s.consumer_next=q->wValue>>8;s.consumer_deferred=true;
+            } else { s.consumer_idle=q->wValue>>8;s.consumer_deferred=false; }
+            return USB_OK;
+        }
+        return unsupported(dev);
     }
     if(q->wIndex || !s.configured)return unsupported(dev);
     if(q->bmRequestType==0xa1 && q->bRequest==1 && q->wLength &&
@@ -147,6 +181,10 @@ static usb_sts_type in(void *device,uint8_t endpoint)
         if(s.idle_deferred) { s.idle=s.next_idle;s.idle_deferred=false; }
     }
     if(endpoint==2)s.midi_busy=false;
+    if(endpoint==3) {
+        s.consumer_busy=false;s.consumer_ticks=0;
+        if(s.consumer_deferred) { s.consumer_idle=s.consumer_next;s.consumer_deferred=false; }
+    }
     return USB_OK;
 }
 static usb_sts_type out(void *device,uint8_t endpoint)
@@ -160,6 +198,14 @@ static usb_sts_type out(void *device,uint8_t endpoint)
 }
 static usb_sts_type sof(void *device)
 {
+    if(device==s.dev && m1_usb_ready() && !s.consumer_busy) {
+        unsigned interval=s.consumer_idle*4u*(s.dev->speed==USB_HIGH_SPEED?8u:1u);
+        if(s.consumer_ticks<UINT32_MAX)++s.consumer_ticks;
+        if(s.consumer_idle && s.consumer_ticks>=interval && !s.dev->ept_in[3].stall) {
+            s.consumer_busy=s.consumer_seen=true;
+            usbd_ept_send(s.dev,M1_USB_CONSUMER_IN,s.consumer,2);
+        }
+    }
     if(device==s.dev && m1_usb_ready() && !s.hid_busy) {
         unsigned interval=s.idle*4u*(s.dev->speed==USB_HIGH_SPEED?8u:1u);
         if(s.idle_ticks<UINT32_MAX)++s.idle_ticks;
@@ -199,6 +245,18 @@ bool m1_usb_midi_send(const uint8_t *events,uint32_t size)
     if(ok) { memcpy(s.midi,events,size);s.midi_busy=true;usbd_ept_send(s.dev,M1_USB_MIDI_IN,s.midi,size); }
     __set_PRIMASK(mask);return ok;
 }
+bool m1_usb_consumer_send(uint16_t usage)
+{
+    if(usage>M1_USB_CONSUMER_USAGE_MAX || __get_IPSR())return false;
+    uint32_t mask=__get_PRIMASK();__disable_irq();
+    bool ok=m1_usb_ready() && !s.consumer_busy && !s.dev->ept_in[3].stall;
+    uint8_t data[2]={(uint8_t)usage,(uint8_t)(usage>>8)};
+    if(ok && (!s.consumer_seen || memcmp(s.consumer,data,2))) {
+        memcpy(s.consumer,data,2);s.consumer_busy=s.consumer_seen=true;
+        usbd_ept_send(s.dev,M1_USB_CONSUMER_IN,s.consumer,2);
+    }
+    __set_PRIMASK(mask);return ok;
+}
 unsigned m1_usb_midi_take(uint8_t *events,unsigned capacity)
 {
     if(!events || __get_IPSR())return 0;
@@ -217,7 +275,7 @@ usb_sts_type __wrap_usbd_endpoint_request(usbd_core_type *dev)
 {
     const usb_setup_type *q=&dev->setup;s.led_pending=false;
     bool endpoint=q->wIndex==0 || q->wIndex==0x80 || q->wIndex==M1_USB_HID_IN ||
-                  q->wIndex==M1_USB_MIDI_IN || q->wIndex==M1_USB_MIDI_OUT;
+                  q->wIndex==M1_USB_MIDI_IN || q->wIndex==M1_USB_MIDI_OUT || q->wIndex==M1_USB_CONSUMER_IN;
     bool request=(q->bmRequestType==0x82 && q->bRequest==0 && !q->wValue && q->wLength==2) ||
         (q->bmRequestType==2 && (q->bRequest==1 || q->bRequest==3) &&
          (q->wIndex&127u) && !q->wValue && !q->wLength);

@@ -7,7 +7,7 @@
 #define USB_VBUS_IGNORE /* board PC13, not PB13 (sensor supply), detects cable */
 #define USBD_SUPPORT_WINUSB 0
 /* Word counts. OTG2 has 1024 words: RX 256, EP0 64, HID 32,
- * MIDI 256, five unused FIFOs 16 each = 688 words. No USB DMA. */
+ * MIDI 256, consumer HID 16, four unused FIFOs 16 each = 688 words. No USB DMA. */
 #define USBD2_RX_SIZE 256
 #define USBD2_EP0_TX_SIZE 64
 #define USBD2_EP1_TX_SIZE 32

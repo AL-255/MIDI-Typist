@@ -65,8 +65,11 @@ halfword-formatted hex dumps are not substitutes for that instruction check.
 
 The rotary encoder is a separate digital input (PC10/PC12, button PC11), not
 an 83rd analog sensor. Its HAL samples at the periodic scanner's cadence and
-publishes bounded digital events; host reports and GUI knob controls are not
-connected yet. The read-only `runtime encoder` diagnostic is documented in
+publishes bounded digital events. The foreground maps positive/negative cycles
+to volume up/down and button presses to mute, sending consumer-control pulses
+over the selected USB or wireless transport. The electrical direction has not
+been confirmed as physically clockwise/counterclockwise. GUI knob remapping is
+not implemented yet. The read-only `runtime encoder` diagnostic is documented in
 [Telemetry](TELEMETRY.md#m1-digital-encoder).
 
 The shared SDK-free `keyboard_encoder` decoder accepts consecutive stable
@@ -81,11 +84,16 @@ Knob events do not participate in analog calibration or velocity calculation.
 
 The ISR-to-foreground queue never wraps over unread events: overflow discards
 the queue and latches an auxiliary fault until explicit reinitialization.
-That fault does not stop analog acquisition. A foreground report consumer is
-still required; until it is connected, the diagnostic queue fills after
-`ENCODER_EVENT_CAPACITY` event-producing samples. Pausing/stopping acquisition
-also discards queued knob events. Debounce and capacity are defined in
-`defaults.h`, not hidden in the driver.
+That fault releases the current consumer action without stopping analog acquisition.
+The portable `keyboard_aux` owner serializes press/release pulses under endpoint
+backpressure, including simultaneous turn/button events. Pulse duration is
+`AUX_PULSE_MS`; the button emits once per press, not repeatedly while held.
+Fn menus, calibration, invalid input, offline hosts and transport changes discard
+queued/partial movement and require a new released-button baseline. Releases
+must be locally drained before switching hosts, saving or parking peripherals.
+Pausing/stopping acquisition also discards queued knob events. Debounce, capacity
+and default usages are defined in `defaults.h`; the board's
+`config/auxmap.def` binds them separately from analog-key mappings.
 
 Preview the board without opening hardware:
 
@@ -540,18 +548,23 @@ battery voltage, charging behavior, current draw or radio peer is simulated.
 `m1_usb_class` uses the pinned Artery device core, standard-request handler,
 interrupt routines and USB peripheral driver, without modifying SDK sources.
 The board-owned descriptors expose a report-only 30-byte NKRO keyboard and
-two-cable USB-MIDI 1.0. Cable 0 is performance, cable 1 GUI SysEx; bulk endpoints
-are 02/82, with 64-byte full-speed and 512-byte high-speed packets. HID IN is 81.
+two-cable USB-MIDI 1.0, and an independent Consumer Control HID. Cable 0 is
+performance, cable 1 GUI SysEx; bulk endpoints are 02/82, with 64-byte full-speed
+and 512-byte high-speed packets. Keyboard HID IN is 81. Interface 3 uses IN 83
+for a two-byte little-endian consumer usage (zero releases, maximum `03ff`).
+The four-interface configuration is 191 bytes. Both HID interfaces have their
+own SET_IDLE state and immutable in-flight buffers.
 The short product string preserves the complete control-jack name in the GUI's
-ALSA discovery path. There is no CDC, factory vendor command, boot-entry handler,
-fabricated serial, remote wake advertisement or installable USB image.
+ALSA discovery path. There is no CDC, factory vendor command, class-level
+boot-entry handler, fabricated serial or remote wake advertisement. Armed IAP
+entry is handled separately by the application's SysEx service.
 
 Bind the stopped core with `m1_usb_bind` before SDK initialization. Foreground
 send calls copy accepted buffers and preserve interrupt masking. A pending IN
 buffer cannot be overwritten. Unread MIDI OUT data retains its buffer and NAKs
 further traffic until foreground `m1_usb_midi_take` consumes and rearms it;
 undersized destinations never truncate packets. Malformed packet lengths latch
-a fault. HID supports one-byte LED output and host-requested idle repeats;
+a fault. Keyboard HID supports one-byte LED output; both HID interfaces support host-requested idle repeats;
 unchanged application heartbeats do not bypass SET_IDLE. Its four-millisecond
 units and rate-change timing follow [HID 1.11 §7.2.4](https://www.usb.org/sites/default/files/documents/hid1_11.pdf).
 
@@ -822,14 +835,14 @@ erase metadata or clear this flag during the trial. It establishes clocks/time a
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
 not persisted yet. After handoff it polls `m1_live_service` using independent
 millisecond/microsecond readings. Profile restore, gated autosave and parallel
-calibration saves are linked; RESET and physical Fn transport switching remain
-disabled.
+calibration saves are linked. Fn+F1–F5 uses the runtime transport owner; RESET
+remains disabled.
 
 The development loop does **not** implement battery idle/critical shutdown,
-pairing, encoder reports, cable recovery or wake restoration. A cable change
+pairing, cable recovery or wake restoration. A cable change
 or device fault stops acquisition/radio/lighting, retains rails, and latches a
 terminal diagnostic. If USB and the timebase remain usable, it sends neutral
-HID and MIDI sustain-off/all-sound-off/all-notes-off, retains the SysEx recovery
+keyboard/consumer HID and MIDI sustain-off/all-sound-off/all-notes-off, retains the SysEx recovery
 service and reports `Runtime failed: detail=0x…`. It does not restart the failed
 peripherals or prove release at a wireless host.
 Clock/time faults trap without guessing a safe peripheral recovery sequence.

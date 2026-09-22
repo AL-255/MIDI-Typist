@@ -15,6 +15,8 @@ static uint32_t capture_since;
 static volatile uint32_t pretrigger_counts;
 uint32_t m1_hal_pretrigger_counts(void) { return pretrigger_counts; }
 static uint8_t bank;
+static volatile uint32_t fault_reason;
+uint32_t m1_hal_fault_reason(void) { return fault_reason; }
 _Static_assert(M1_CORE_HZ%M1_SCAN_HZ==0,"M1 scan cadence must divide timer clock");
 _Static_assert(M1_CORE_HZ/M1_SCAN_HZ<=65536u,"M1 timer period exceeds 16 bits");
 _Static_assert(M1_WAKE_SCAN_TIMEOUT_US>
@@ -54,8 +56,9 @@ static void arm_row(void)
         ((dma_data_number_get(DMA1_CHANNEL6)&31u)<<shift);
     tmr_counter_enable(TMR3,TRUE);
 }
-static void fail(void)
+static void fail(uint32_t reason)
 {
+    if(!fault_reason)fault_reason=reason;
     m1_encoder_stop();
     healthy=false; busy=false; running=false; paused=false;
     tmr_counter_enable(TMR6,FALSE);
@@ -69,6 +72,7 @@ bool m1_hal_init(void)
 {
     if(initialized) m1_hal_stop();
     initialized=healthy=paused=false;
+    fault_reason=M1_SCAN_FAULT_NONE;
     m1_scan_init(&scan);
     pretrigger_counts=0;
     crm_clocks_freq_type clocks;
@@ -143,10 +147,10 @@ bool m1_hal_init(void)
     adc_calibration_init(ADC1);
     unsigned waits=M1_ADC_CALIBRATION_WAIT_LOOPS;
     while(adc_calibration_init_status_get(ADC1)!=RESET)
-        if(!waits--) { fail(); return false; }
+        if(!waits--) { fail(M1_SCAN_FAULT_ADC_CALIBRATION); return false; }
     adc_calibration_start(ADC1); waits=M1_ADC_CALIBRATION_WAIT_LOOPS;
     while(adc_calibration_status_get(ADC1)!=RESET)
-        if(!waits--) { fail(); return false; }
+        if(!waits--) { fail(M1_SCAN_FAULT_ADC_CALIBRATION); return false; }
     initialized=healthy=true;
     return true;
 }
@@ -184,7 +188,8 @@ bool m1_hal_pause(void)
     /* Do not disguise an already-latched acquisition failure as a save gap. */
     if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET ||
        (busy && tmr_flag_get(TMR6,TMR_OVF_FLAG)!=RESET)) {
-        fail(); __set_PRIMASK(mask); return false;
+        fail(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET?M1_SCAN_FAULT_DMA:M1_SCAN_FAULT_PAUSE_OVERRUN);
+        __set_PRIMASK(mask); return false;
     }
     NVIC_DisableIRQ(DMA1_Channel6_IRQn); NVIC_DisableIRQ(TMR6_GLOBAL_IRQn);
     tmr_counter_enable(TMR6,FALSE); tmr_counter_enable(TMR3,FALSE);
@@ -192,7 +197,7 @@ bool m1_hal_pause(void)
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
     __DSB();
     if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET) {
-        fail(); __set_PRIMASK(mask); return false;
+        fail(M1_SCAN_FAULT_DMA); __set_PRIMASK(mask); return false;
     }
     dma_flag_clear(DMA1_GL6_FLAG);
     tmr_flag_clear(TMR3,TMR_OVF_FLAG); tmr_flag_clear(TMR6,TMR_OVF_FLAG);
@@ -253,7 +258,7 @@ void m1_hal_service(uint32_t now_us)
 {
     uint32_t mask=__get_PRIMASK(); __disable_irq();
     if(single && running && healthy && (uint32_t)(now_us-capture_since)>=M1_WAKE_SCAN_TIMEOUT_US)
-        fail();
+        fail(M1_SCAN_FAULT_CAPTURE_TIMEOUT);
     __set_PRIMASK(mask);
 }
 void m1_hal_stop(void)
@@ -271,20 +276,21 @@ void m1_hal_timer_irq(void)
     if(tmr_flag_get(TMR6,TMR_OVF_FLAG)==RESET) return;
     tmr_flag_clear(TMR6,TMR_OVF_FLAG);
     if(!running || !healthy || single) return;
-    if(busy) { fail(); return; } /* Never silently change velocity's timebase. */
+    if(busy) { fail(M1_SCAN_FAULT_PERIOD_OVERRUN); return; } /* Never silently change velocity's timebase. */
     bank=0; busy=true; arm_row();
     m1_encoder_irq();
 }
 void m1_hal_dma_irq(void)
 {
     if(paused) { dma_flag_clear(DMA1_GL6_FLAG); return; }
-    if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET) { fail(); return; }
+    if(dma_interrupt_flag_get(DMA1_DTERR6_FLAG)!=RESET) { fail(M1_SCAN_FAULT_DMA); return; }
     if(dma_interrupt_flag_get(DMA1_FDT6_FLAG)==RESET) return;
     tmr_counter_enable(TMR3,FALSE);
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
     dma_flag_clear(DMA1_GL6_FLAG); __DMB();
     if(!running || !busy || !healthy) return;
-    if(!m1_scan_bank(&scan,bank,row)) { fail(); return; }
+    bool full=scan.pending==M1_SCAN_QUEUE_FRAMES;
+    if(!m1_scan_bank(&scan,bank,row)) { fail(full?M1_SCAN_FAULT_QUEUE:M1_SCAN_FAULT_BANK); return; }
     if(++bank==M1_BANK_COUNT) {
         busy=false;
         if(single) {
