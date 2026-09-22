@@ -9,6 +9,7 @@ from test_scan_stream_arm import drain, key_push
 from keyboard_capture import press_velocity, KeyDecoder
 from keyboard_labels import sensor_labels
 from lighting_reference_tables import recover
+from firmware_defaults import DEFAULTS as D
 
 
 def keyboard_mapping_tests(args):
@@ -722,9 +723,14 @@ def main():
         push(100); dev.call('debug_service'); dev.call('debug_service')
         address,length = dev.packet(5); pending = bytes(dev.cpu.mem_read(address,length))
         dev.call('scan_stream_last_key',3600,77,5)
-        key_push(dev,[3500]*61)
+        # Capture records are published as full batches, never one acquisition
+        # at a time; the GUI's in-flight snapshot must not be disturbed.
+        for value in range(3500,3500+D['MIDI_CONTROL_SAMPLE_BATCH']):
+            raw = [3900]*61; raw[5] = value
+            key_push(dev,raw)
         assert bytes(dev.cpu.mem_read(address,length)) == pending
-        assert list(KeyDecoder(3600,77,65).feed(drain(dev, 6))) == [3500]
+        assert list(KeyDecoder(3600,77,65).feed(drain(dev, 6))) == \
+            list(range(3500,3500+D['MIDI_CONTROL_SAMPLE_BATCH']))
         key_push(dev,[3400]*61); dev.call('debug_service'); dev.call('debug_service')
         dev.call('scan_stream_gui'); push(101)
         assert [v.sequence for v in Decoder().feed(drain(dev, 5))] == [101]

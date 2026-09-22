@@ -412,6 +412,30 @@ static void held_preview_observation(void)
     samples[SYN_FN]=samples[SYN_ENTER]=3900;frame();frame();
     assert(midi.mode==1 && raw.armed && !menu.pending);
 }
+static void editor_entry_observation(void)
+{
+    /* Fn+Tab selects a configuration editor. The menu commits it while the
+     * frame is still observation-only, so observation ending in that same
+     * frame must not discard the mode it just committed. */
+    init();
+    samples[SYN_FN]=samples[SYN_TAB]=3000;frame();
+    assert(menu.pending==MENU_TRIGGER && !raw.armed);
+    assert(raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_FN]=samples[SYN_TAB]=3900;frame();
+    assert(!menu.pending && !raw.armed && !midi.mode);
+    assert(raw.engine.config.mode==KEY_CONFIG_ACTUATION);
+    /* The committed configuration survives ordinary rearming and stays in the
+     * editor until Escape commits it. */
+    frame();assert(raw.armed && raw.engine.config.mode==KEY_CONFIG_ACTUATION);
+    samples[SYN_ESC]=3000;frame();
+    assert(raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_ESC]=3900;frame();
+    /* Fn+Caps selects the rapid-trigger editor the same way. */
+    samples[SYN_FN]=samples[SYN_CAPS]=3000;frame();
+    assert(menu.pending==MENU_RAPID && raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_FN]=samples[SYN_CAPS]=3900;frame();
+    assert(!menu.pending && raw.engine.config.mode==KEY_CONFIG_RAPID);
+}
 static void modal_observation(void)
 {
     for(unsigned page=0;page<5;++page) {
@@ -454,6 +478,7 @@ int main(void)
 {
     modal_observation();
     held_preview_observation();
+    editor_entry_observation();
     calibration_observation();
     sensor_readback();
     normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();

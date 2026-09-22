@@ -142,8 +142,14 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         }
         if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }
-    if((active || observing) && !calibration_active(s->cal) &&
-       !input_owned(s)) keyboard_raw_invalidate(raw);
+    if((active || observing) && !calibration_active(s->cal) && !input_owned(s)) {
+        /* Observation ending in this frame disarms performance input, but it
+         * must not discard a configuration the menu committed while releasing
+         * it (production 0x200134fc keeps the newly selected editor). */
+        const keyboard_config_t committed=raw->engine.config;
+        keyboard_raw_invalidate(raw);
+        raw->engine.config=committed;
+    }
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
     if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,input_lo,input_hi,now);
 }

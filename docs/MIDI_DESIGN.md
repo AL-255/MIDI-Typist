@@ -48,8 +48,10 @@ Held previews and modal pages own input through the shared application's
 observation path. They validate/read samples without rearming HID/MIDI or
 rebuilding velocity state on each neutral scan. Page selection readiness uses
 observed neutrality; leaving the owner invalidates once and requires a fresh
-neutral performance frame. The same rule covers velocity, trigger, root/scale
-pages and reset confirmation.
+neutral performance frame. That invalidation preserves the configuration the
+release committed, so Fn+Tab/Fn+Caps enter the actuation or rapid-trigger
+editor instead of losing the selected mode in the same frame. The same rule
+covers velocity, trigger, root/scale pages and reset confirmation.
 Other boards select their sensor, light-frame and HID capacities at build time.
 The board has separate 24 KiB SRAMX, 16 KiB USB SRAM and 8 KiB stack budgets;
 the linker reports current usage. Calibration and persistence state use

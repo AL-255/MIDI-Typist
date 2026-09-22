@@ -266,10 +266,13 @@ and per-frame edge lists avoid repeated idle-key state processing without
 dropping scan samples; physical controller indices are cached per layout.
 A compiled instruction-count regression covers idle, strikes, held keys and
 chords. Modal tests execute Fn+V/Tab/E/S hold, release, choice and exit paths,
-and reject repeated engine reset/rearm calls on idle menu frames. The portable
-app also checks observation-only velocity/trigger/music/reset pages and fresh
-rearming. M1 system-menu tests cover Fn+F1–F5/Space ownership and prolonged
-neutral host-drain waits without per-scan engine reset/rearm.
+and reject repeated engine reset/rearm calls on idle menu frames. They also
+require the actuation/rapid-trigger editor Fn+Tab and Fn+Caps commit to survive
+the observation exit that follows the same release. The portable
+app checks observation-only velocity/trigger/music/reset pages, committed
+editor entry and fresh rearming. M1 system-menu tests cover Fn+F1–F5/Space
+ownership and prolonged neutral host-drain waits without per-scan engine
+reset/rearm.
 These do not model elapsed time or interrupt load. Acceptance requires a physical Fn+Enter
 transition followed by sustained idle, note/chord, wheel and sustain operation,
 with advancing scan sequences, no new scan/lighting faults and measured runtime

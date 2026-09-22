@@ -249,7 +249,9 @@ bool keyboard_live_command(const char *line)
      * calibration. GUI snapshots and read-only dump commands above still work. */
     if (calibration_active(&s_cal)) { debug_write("ERR calibration active; cfg calcancel ID to cancel\r\n"); return true; }
     if (!strcmp(line,"menu status")) {
-        value("MENU fn=",s_menu.fn<s_raw.count && s_raw.down[s_menu.fn]);
+        /* While a menu owns input the engine stays disarmed, so down[] is not
+         * a live Fn indicator; report the same raw-sample test the menu uses. */
+        value("MENU fn=",s_menu.fn<s_raw.count && s_raw.raw[s_menu.fn]<=s_raw.release[s_menu.fn]);
         value(" mode=",s_raw.engine.config.mode);
         value(" level=",s_raw.engine.config.actuation); value(" saved=",s_raw.engine.config.saved_actuation);
         value(" brightness=",s_menu.brightness); value("/19 pwm=",keyboard_menu_brightness(&s_menu));

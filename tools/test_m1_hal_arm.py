@@ -1017,9 +1017,11 @@ class RadioArm(M1Arm):
 
     def check_guards(self):
         # Pins outside these explicit ownership sets must retain their values.
+        # GPIOC 10/11/12 are the encoder phase/button inputs that m1_hal_init
+        # configures and the sleep-GPIO restore re-establishes.
         ports=((GPIO,{15,10}|(set(range(8)) if self.scanner else set()),0),
             (GPIO+0x400,{3,4,5}|({0,7,8,9} if self.scanner else set()),0xa5a5a5a5),
-            (GPIO+0x800,set(range(6)) if self.scanner else set(),0xa5a5a5a5),
+            (GPIO+0x800,{10,11,12}|(set(range(6)) if self.scanner else set()),0xa5a5a5a5),
             (GPIO+0xc00,{2},0xa5a5a5a5))
         for port,owned,initial in ports:
             for pin in set(range(16))-owned:
