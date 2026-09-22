@@ -176,9 +176,13 @@ the control port returns the embedded Git identity and live 82-key GUI snapshots
 The process-isolated GUI transport has completed repeated live connect/stream/
 disconnect cycles without retaining native workers. The GUI flasher's read-only
 USB-bound identity handshake also completes and releases its MIDI owner.
-Full-rate M1 capture is not yet qualified: capture load can fill the acquisition
-FIFO and stop runtime with scan fault 7. Diagnostic USB and guarded recovery
-remain available; a short capture is not evidence of sustained operation.
+Released-key M1 capture delivered approximately 80,000 consecutive samples over
+ten seconds without sequence gaps or new scan errors, then returned to fresh GUI
+snapshots. A further five-second GUI check received 152 snapshots, with all 82
+keys released, control readings 3961–4096, and no light errors. This is a bounded
+idle-input check, not qualification of pressed-key/polyphonic load, worst-case
+latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
+and guarded recovery remain available after a runtime scan fault.
 Power-cycle and software-requested recovery return to the factory bootloader.
 Read-only factory diagnostics return valid markers but resting values outside
 the 12-bit import domain. The complete 518-byte calibration-field readback remains

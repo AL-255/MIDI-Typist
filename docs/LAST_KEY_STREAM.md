@@ -23,6 +23,7 @@ after a fault; the GUI does not retry uncertain settings changes.
 
 Velocity reproduction uses [the firmware's window and filter](KEY_VELOCITY.md).
 Its declared timebase is 8000 Hz, not a claim of measured acquisition speed.
-Sustained M1 capture under live load is not yet qualified.
+M1 released-key capture has a ten-second physical continuity check; pressed-key
+and polyphonic capture load are not yet qualified.
 See [telemetry](TELEMETRY.md#per-key-stream-stream-key) for fields and
 [validation](VALIDATION.md) for evidence limits.
