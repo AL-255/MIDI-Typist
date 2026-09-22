@@ -199,6 +199,14 @@ charged battery. Unknown, stale, low or changing supplies defer the save.
 This is a custom conservative policy, not a stock flash threshold or a
 physical brownout guarantee.
 
+Clock and whole-bus qualification run before the gate masks interrupts, so scan
+IRQs can run between the timebase's short read locks. The gate then rechecks
+power and transport readiness under PRIMASK before pausing. A transfer/source
+change during preflight defers without discarding frames or a completed
+calibration candidate. Once paused, the gate rechecks stopped peripherals,
+all DMA channels, power-pin ownership and the retained source before granting
+write ownership; an unexpected change at this stage is terminal.
+
 The gate holds PRIMASK across the transaction and pauses only the scanner,
 discarding partial/unread frames and battery samples. The
 [TMR2 timebase](MONSGEEK_M1.md#foreground-timebase) continues counting. End

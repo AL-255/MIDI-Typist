@@ -143,8 +143,12 @@ scan gaps, cancellation, timeout, USB/acquisition loss and failed write/gate/res
 The GUI widget audit checks capability flags and disables new calibration after
 a storage fault. The save-gate audit executes real scanner/time/battery/LED HALs,
 checking low/stale/changing power, local drain, retained rails/links, masked
-pause ownership, elapsed-time limits and fresh resume; transport readiness and
-electrical values are scripted. Physical pause/drain scheduling, flash timing, power qualification
+pause ownership, elapsed-time limits and fresh resume. Boundary-injection tests
+change USB readiness, supply/rail state, clocks and DMA after preflight; they
+check unchanged deferral/retry or terminal rejection, and retain existing
+overrun detection. Clock preflight is checked to enter without an outer IRQ
+mask. Instruction traces are not physical latency measurements; transport
+readiness and electrical values are scripted. Physical pause/drain scheduling, flash timing, power qualification
 and hardware persistence remain unverified.
 
 ## Physical checks

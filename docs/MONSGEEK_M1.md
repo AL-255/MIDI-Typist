@@ -7,8 +7,9 @@ transport-menu and power-policy components, an experimental application image,
 and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Flashing, recovery and live 82-key high-speed USB telemetry are hardware-checked.
-Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry active;
-pressed-key performance is not yet established. This is not a daily-use build.
+Released-key acquisition is hardware-checked with GUI telemetry active and an
+8 kHz timer configuration; the physical cadence and pressed-key performance are
+not yet established. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet available.

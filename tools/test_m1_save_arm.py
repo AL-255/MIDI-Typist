@@ -5,6 +5,7 @@ operation runs here; the independent storage audit executes that SDK backend.
 """
 import argparse
 import struct
+from unicorn import UC_HOOK_CODE
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
     UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
 from test_m1_hal_arm import M1Arm, RGB, GPIO, DMA, ADC, TMR2, TMR3, TMR6, CRM, SPI
@@ -130,7 +131,67 @@ def run(elf):
         d=Save(elf);d.cpu.reg_write(reg,value)
         assert d.call('m1_test_save_begin')==2 and not d.writes
         assert d.call('m1_save_fault')
+    qualification_races(elf)
     print('PASS M1 save owner: actual scanner/time/battery/LED HALs, retained links/rails, power/drain deferrals, masked pause, measured resume and terminal faults')
+
+
+def qualification_races(elf):
+    # Real linked code, scripted asynchronous changes at the boundary between
+    # preflight and ownership. Instruction counts are not MCU cycle timings.
+    d=Save(elf)
+    stretches=[];run=0;readiness_masks=[];clock_masks=[]
+    def trace(cpu,address,size,user):
+        nonlocal run
+        mask=cpu.reg_read(UC_ARM_REG_PRIMASK)
+        if address==(d.symbols['m1_time_now']&~1):clock_masks.append(mask)
+        if address==(d.symbols['__wrap_m1_usb_ready']&~1):readiness_masks.append(mask)
+        if mask and d.u32(TMR6)&1:run+=1
+        elif run:stretches.append(run);run=0
+    hook=d.cpu.hook_add(UC_HOOK_CODE,trace)
+    assert d.call('m1_test_save_begin')==1
+    d.cpu.hook_del(hook)
+    assert clock_masks==[0,0] and readiness_masks==[0,0,1,1]
+    assert d.call('m1_test_save_end')
+    print(f'PASS save preflight: clock checks entered unmasked; masked/scanning instruction stretches {stretches} (not cycle estimates)')
+
+    for failure in ('usb','source','rail','dma','clock'):
+        d=Save(elf);clock_calls=0;injected=False
+        previous={a:d.u32(a) for a in (d.symbols['flags'],GPIO+0x810,GPIO+0x414)}
+        def race(cpu,address,size,user):
+            nonlocal clock_calls,injected
+            if address!=(d.symbols['m1_time_now']&~1):return
+            clock_calls+=1
+            if clock_calls!=2:return
+            assert not cpu.reg_read(UC_ARM_REG_PRIMASK) and d.u32(TMR6)&1
+            injected=True
+            if failure=='usb':d.put(d.symbols['flags'],1) # configured, IN now busy
+            elif failure=='source':d.put(GPIO+0x810,1<<13)
+            elif failure=='rail':d.put(GPIO+0x414,0)
+            elif failure=='dma':d.put(DMA+8,1)
+            else:d.put(TMR2+0x28,214)
+        hook=d.cpu.hook_add(UC_HOOK_CODE,race)
+        result=d.call('m1_test_save_begin');d.cpu.hook_del(hook)
+        assert injected and d.cpu.reg_read(UC_ARM_REG_PRIMASK)==0
+        if failure in ('usb','source','rail'):
+            assert result==0 and not d.writes and not d.call('m1_save_fault')
+            assert d.call('m1_hal_periodic_active')
+            # No pause means no sample loss or invalidated battery/candidate.
+            assert d.call('m1_hal_frame',RGB,RGB+200)
+            assert d.call('m1_hal_battery',RGB+204,RGB+208)
+            for address,value in previous.items():d.put(address,value)
+            assert d.call('m1_test_save_begin')==1 and d.call('m1_test_save_end')
+        else:
+            assert result==2 and d.call('m1_save_fault')
+            if failure=='dma':assert not d.call('m1_hal_periodic_active')
+            else:assert not d.writes
+        d.unchanged_links()
+    # Shorter qualification must not conceal a cadence violation that already
+    # exists before the save attempt (an active row plus the next frame tick).
+    d=Save(elf);d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+    d.put(TMR6+0x10,1)
+    assert d.call('m1_test_save_begin')==2 and d.call('m1_save_fault')
+    assert not d.call('m1_hal_healthy') and not d.call('m1_hal_periodic_active')
+    print('PASS save qualification races: USB/source/rail changes defer without pausing; late DMA/clock faults never grant write ownership')
 
 
 if __name__=='__main__':

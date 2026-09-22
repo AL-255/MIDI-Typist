@@ -66,13 +66,24 @@ static m1_save_result_t begin(void *unused)
 {
     (void)unused;
     if(faulted || owned || !context()) { faulted=true;return M1_SAVE_FAULT; }
-    uint32_t mask=__get_PRIMASK();__disable_irq();
     m1_time_point_t time;
     if(!m1_time_now(&time) || !m1_hal_healthy() || !m1_lighting_healthy()) {
+        faulted=true;return M1_SAVE_FAULT;
+    }
+    if(!m1_hal_periodic_active() || !m1_lighting_ready() ||
+       !supply(time.ms) || !transports() || !idle_bus(true))return M1_SAVE_DEFER;
+    /* Clock validation and whole-bus inspection are read-only preflight.
+     * Do not hold off scan/DMA IRQs across those SDK/register walks. Refresh
+     * the time after preflight, then recheck interrupt-sensitive readiness
+     * before taking ownership. A USB transfer racing preflight must still
+     * defer without stopping acquisition or discarding a calibration. */
+    if(!m1_time_now(&time)) { faulted=true;return M1_SAVE_FAULT; }
+    uint32_t mask=__get_PRIMASK();__disable_irq();
+    if(!m1_hal_healthy() || !m1_lighting_healthy()) {
         faulted=true;__set_PRIMASK(mask);return M1_SAVE_FAULT;
     }
     if(!m1_hal_periodic_active() || !m1_lighting_ready() ||
-       !supply(time.ms) || !transports() || !idle_bus(true)) {
+       !supply(time.ms) || !transports()) {
         __set_PRIMASK(mask);return M1_SAVE_DEFER;
     }
     external=source();
@@ -80,7 +91,7 @@ static m1_save_result_t begin(void *unused)
         faulted=true;__set_PRIMASK(mask);return M1_SAVE_FAULT;
     }
     if(!idle_bus(false) || ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) ||
-       (TMR6->ctrl1&1u) || source()!=external) {
+       (TMR6->ctrl1&1u) || !power_pins() || source()!=external) {
         /* The scanner is already stopped; never describe this as unchanged
          * deferral or retry an ambiguous peripheral/power transition. */
         faulted=true;__set_PRIMASK(mask);return M1_SAVE_FAULT;
