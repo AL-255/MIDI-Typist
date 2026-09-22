@@ -102,7 +102,8 @@ class DefaultsTests(unittest.TestCase):
                         {'M1_RUNTIME_HANDOFF_MS':0}, {'M1_RUNTIME_SLEEP_SETTLE_MS':3000},
                         {'M1_RUNTIME_SLEEP_TICKS':65537}, {'M1_RUNTIME_SCAN_SETTLE_US':0},
                         {'M1_RUNTIME_BT_RETAIN_MS':0}, {'M1_RUNTIME_RESTORE_STAGE_MS':3000},
-                        {'M1_RUNTIME_RESTORE_SETTLE_MS':0}):
+                        {'M1_RUNTIME_RESTORE_SETTLE_MS':0}, {'M1_SOURCE_DEBOUNCE_MS':0},
+                        {'M1_SOURCE_DEBOUNCE_MS':5000}, {'M1_SOURCE_TRANSITION_MS':0x80000000}):
             with self.subTest(changes=changes):
                 self.compile(changes, run=False)
 

@@ -77,6 +77,15 @@ void m1_live_stop(uint32_t now_ms);
 bool m1_live_power_suspend(uint32_t now_ms);
 bool m1_live_power_park(void);
 bool m1_live_power_resume(uint32_t now_ms,bool platform_restored);
+/* Awake cable handoff only. usb_disconnected requires the outer owner to
+ * have physically stopped USB and relinquished every IN buffer. Lost USB
+ * output is abandoned, NOT counted as delivered neutral reports. Wireless
+ * output still drains normally. Resume preserves RAM settings/bounds and may
+ * retarget a disconnected USB keyboard to a restored wireless transport.
+ * Same-mode USB may resume before host enumeration after physical restoration;
+ * ordinary readiness edges still require release before typing. */
+bool m1_live_source_suspend(uint32_t now_ms,bool usb_disconnected);
+bool m1_live_source_resume(uint32_t now_ms,m1_transport_t target,bool platform_restored);
 /* Awake policy observation. Activity is sticky between observations, including
  * short presses/encoder actions; false means ownership/input is not eligible.
  * No flash/peripheral writes. Called only by the serialized power owner. */

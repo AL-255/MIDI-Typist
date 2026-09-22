@@ -22,6 +22,7 @@ class Runtime(Reset):
         self.activity=False;self.eligible=True;self.park_allowed=True
         self.periodic=True;self.scan_healthy=True;self.led_healthy=True;self.led_ticks=0
         self.radio_healthy=True;self.radio_ready=True;self.prepared=False;self.usb_reduced=False
+        self.external=False
         self.request=self.sent=self.peer_ticks=self.captures=self.sequence=self.scan_inits=0
         self.sleeps=0;self.wake_after=D['M1_WAKE_ACQUIRE_FRAMES']+1
         self.capture_ticks=0;self.switches=7;self.sleep_result=0;self.sleep_gap=50000
@@ -101,7 +102,7 @@ class Runtime(Reset):
         elif name=='m1_radio_quiesce':assert self.sent==3 and a[0]==1;self.radio_ready=False
         elif name=='m1_wireless_stop':self.radio_healthy=False
         elif name=='m1_hal_stop':self.scan_healthy=False;self.periodic=False
-        elif name=='m1_usb_hw_running':result=0
+        elif name=='m1_usb_hw_running':result=self.external
         elif name=='m1_usb_power_down':
             assert not self.periodic and not self.led_healthy and a[0]==1
             self.usb_reduced=True;result=0
@@ -146,8 +147,8 @@ class Runtime(Reset):
         if self.failure and self.failure[0]==name and self.calls[name]==self.failure[1]:result=self.failure[2]
         cpu.reg_write(UC_ARM_REG_R0,int(result));cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
 
-    def shorten_idle(self):
-        self.tick()
+    def shorten_idle(self,external=False):
+        self.external=external;self.tick(external=external)
         # Only the policy's test idle limits change, not runtime state/timing.
         # The native policy suite separately tests full counter boundaries.
         at=self.s['policy']+4
@@ -161,9 +162,137 @@ class Runtime(Reset):
         raise AssertionError(('no expected transition',self.state(),self.trace[-8:]))
 
 
+class Source(Runtime):
+    """Real source controller/runtime dispatcher with explicit HAL boundaries."""
+    def __init__(self,image,mode=6,external=True,radio=False):
+        super().__init__(image,mode)
+        self.external=external;self.usb_running=external
+        self.radio_healthy=radio or mode!=6;self.scheduler_mode=mode
+        self.bridge_ready=not external;self.bridge_ticks=0
+        self.selected=[];self.suspended=False
+        names='''m1_live_source_suspend m1_live_source_resume m1_usb_hw_stop
+            m1_usb_hw_start m1_sleep_init m1_sleep_time_begin m1_sleep_time_service
+            m1_sleep_time_fault m1_hal_resume m1_wireless_mode
+            m1_wireless_switch_ready m1_wireless_select m1_wireless_errors'''.split()
+        self.by_address.update({self.s[n]&~1:n for n in names})
+
+    def intercept(self,cpu,address,size,user):
+        name=self.by_address.get(address)
+        overrides='''m1_live_source_suspend m1_live_source_resume m1_usb_hw_stop
+            m1_usb_hw_start m1_usb_hw_running m1_sleep_init m1_sleep_time_begin
+            m1_sleep_time_service m1_sleep_time_fault m1_sleep_time_ready
+            m1_hal_resume m1_wireless_mode m1_wireless_switch_ready m1_wireless_select
+            m1_wireless_selected m1_wireless_errors m1_radio_init m1_wireless_init'''.split()
+        if name not in overrides:return super().intercept(cpu,address,size,user)
+        a=tuple(cpu.reg_read(r) for r in (UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_R2,UC_ARM_REG_R3))
+        self.trace.append((name,a,self.ms));self.calls[name]=self.calls.get(name,0)+1
+        result=1
+        if name=='m1_live_source_suspend':
+            assert not a[1] or not self.usb_running
+            self.suspended=True
+        elif name=='m1_usb_hw_stop':self.usb_running=False;result=0
+        elif name=='m1_usb_hw_running':result=self.usb_running
+        elif name=='m1_usb_hw_start':
+            assert self.parked and not self.periodic and not self.led_healthy and a[0]==1
+            assert not self.radio_healthy or self.radio_ready
+            self.usb_running=True;result=0
+        elif name=='m1_sleep_init':assert self.usb_reduced and not self.periodic
+        elif name=='m1_sleep_time_begin':
+            assert not self.bridge_ready and not self.periodic;self.bridge_ticks=2
+        elif name=='m1_sleep_time_service':
+            self.bridge_ticks=max(0,self.bridge_ticks-1)
+            if not self.bridge_ticks:self.bridge_ready=True
+        elif name=='m1_sleep_time_ready':result=self.bridge_ready
+        elif name=='m1_sleep_time_fault':result=0
+        elif name=='m1_hal_resume':assert self.parked and not self.periodic;self.periodic=True
+        elif name=='m1_live_source_resume':
+            assert self.suspended and self.parked and self.periodic and self.led_healthy and a[2]==1
+            assert (a[1]==6 and self.usb_running) or (a[1]==self.scheduler_mode and self.confirmed)
+            self.mode=a[1];self.parked=False;self.resumed=True
+        elif name=='m1_wireless_mode':cpu.mem_write(a[0],struct.pack('<I',self.scheduler_mode))
+        elif name=='m1_wireless_switch_ready':result=self.radio_ready
+        elif name=='m1_wireless_select':
+            self.scheduler_mode=a[0];self.selected.append(a[0]);self.confirmed=False;self.link_ticks=3
+        elif name=='m1_wireless_selected':result=self.confirmed and a[0]==self.scheduler_mode
+        elif name=='m1_wireless_errors':result=0
+        elif name=='m1_radio_init':assert not self.periodic and not self.radio_healthy;self.radio_ready=False
+        elif name=='m1_wireless_init':
+            assert self.radio_ready and a[1]==1
+            self.radio_healthy=True;self.scheduler_mode=a[0];self.confirmed=False;self.link_ticks=3
+        if self.failure and self.failure[0]==name and self.calls[name]==self.failure[1]:result=self.failure[2]
+        cpu.reg_write(UC_ARM_REG_R0,int(result));cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
+
+    def transition(self,external,fallback=0):
+        self.resumed=False
+        assert self.call('m1_source_begin',self.ms,external,fallback)
+        return self.finish_source(external)
+
+    def finish_source(self,external):
+        for _ in range(D['M1_SOURCE_TRANSITION_MS']+10):
+            self.ms=(self.ms+1)&0xffffffff;self.us=(self.us+1000)&0xffffffff
+            result=self.call('m1_source_service',self.ms,self.us,external)
+            if result:return result
+        raise AssertionError('unbounded source transition')
+
+
+def source_transitions(image):
+    for mode in (0,1,2,5):
+        d=Source(image,mode,external=False)
+        assert d.transition(True)==1 and d.mode==mode and d.usb_running
+        assert not d.call('m1_source_error') and d.call('m1_source_external')
+        assert d.transition(False)==1 and d.mode==mode and not d.usb_running
+        assert not d.call('m1_source_external')
+        assert not d.calls.get('m1_radio_init') and not d.calls.get('m1_live_power_resume')
+    for fallback,radio in ((0,False),(1,False),(2,True),(5,True)):
+        d=Source(image,radio=radio)
+        assert d.transition(False,fallback)==1 and d.mode==fallback
+        names=[n for n,_,_ in d.trace]
+        assert names.index('m1_usb_hw_stop')<names.index('m1_live_source_suspend')<names.index('m1_hal_pause')
+        assert names.index('m1_lighting_stop')<names.index('m1_usb_power_down')<names.index('m1_sleep_time_begin')
+        assert names.index('m1_hal_resume')<names.index('m1_live_source_resume')
+        assert d.calls.get('m1_radio_init',0)==int(not radio)
+        assert d.selected==([fallback] if radio else [])
+        assert not d.calls.get('m1_sleep_timed_wait') and not d.calls.get('m1_power_gpio_prepare')
+    # Cable debounce is bounded and wrap-safe. USB is aborted immediately;
+    # an arrival before PHY mutation retains USB, with no radio/RTC startup.
+    d=Source(image);d.ms=0xfffffff0;d.us=0xfffffff0
+    assert d.call('m1_source_begin',d.ms,False,0)
+    assert d.call('m1_source_service',d.ms,d.us,False)==0
+    assert d.finish_source(True)==1 and d.mode==6
+    assert not d.calls.get('m1_radio_init') and not d.calls.get('m1_sleep_time_begin')
+    for name,result in (('m1_hal_pause',0),('m1_usb_power_down',5),('m1_sleep_init',0),
+                        ('m1_sleep_time_begin',0),('m1_sleep_time_fault',1),
+                        ('m1_lighting_init',0),('m1_radio_init',0),('m1_wireless_init',0),
+                        ('m1_hal_resume',0),('m1_live_source_resume',0)):
+        d=Source(image);d.failure=(name,1,result)
+        assert d.transition(False)==2 and d.call('m1_source_error'),name
+        before=len(d.trace)
+        assert d.call('m1_source_service',d.ms,d.us,False)==2 and len(d.trace)==before
+        assert not d.call('m1_source_begin',d.ms,True,0)
+    d=Source(image);d.park_allowed=False;d.ms=0xffffff00
+    assert d.transition(False)==2 and d.periodic
+    # Source changes after the stable decision cannot silently retry a PHY.
+    d=Source(image);assert d.call('m1_source_begin',0,False,0)
+    assert d.call('m1_source_service',0,0,False)==0
+    assert d.call('m1_source_service',D['M1_SOURCE_DEBOUNCE_MS'],20000,False)==0
+    assert d.call('m1_source_service',21,21000,True)==2
+    # Exercise the installed runtime owner, including last-used RAM fallback.
+    d=Source(image,mode=5);d.tick(external=True)
+    d.mode=d.scheduler_mode=6;d.tick(external=True)
+    d.tick(external=False);assert d.state()==19
+    for _ in range(200):
+        d.tick(external=False)
+        if d.resumed:break
+    assert d.state()==0 and d.mode==5 and not d.call('m1_runtime_power_error')
+    # First-call cable edges are detected from completed boot USB ownership.
+    d=Source(image);d.tick(external=False);assert d.state()==19
+    print('PASS awake source transitions: all transports, preserved wireless selection, USB abort/fallback, debounce/wrap, paused PHY/RTC setup, neutral restore contract and terminal failures (HAL completions scripted)')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('elf',type=Path)
     image=Image(parser.parse_args().elf.read_bytes())
+    source_transitions(image)
     for mode,critical,peer in ((0,False,3),(1,False,3),(2,False,3),(5,False,3),(0,True,1),(5,True,1)):
         d=Runtime(image,mode,critical,peer);d.shorten_idle();d.until(lambda:d.resumed)
         assert d.state()==0 and not d.call('m1_runtime_power_error')
@@ -179,7 +308,7 @@ def main():
     d.switches=6;d.until(lambda:d.resumed)
     assert not d.calls.get('m1_wireless_resume_retained')
     for mode,external,activity in ((6,False,False),(0,True,False),(0,False,True)):
-        d=Runtime(image,mode,critical=external);d.activity=activity;d.shorten_idle()
+        d=Runtime(image,mode,critical=external);d.activity=activity;d.shorten_idle(external)
         for _ in range(600):d.tick(10000,external)
         assert d.state()==0 and not d.calls.get('m1_live_power_suspend')
     # Held input never bypasses critical protection.

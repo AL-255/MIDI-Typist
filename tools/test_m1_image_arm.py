@@ -184,7 +184,7 @@ def main_loop(image):
     # Test actual foreground control flow, not its already-audited callees.
     for external,failure,expected in ((True,None,3),(False,None,3),(True,'geometry',4),
         (True,'clock',5),(True,'time_start',6),(True,'boot_begin',7),(True,'boot_service',7),
-        (True,'time_now',6),(True,'source',8),(False,'source',8),(True,'device',9),
+        (True,'time_now',6),(True,'source',3),(False,'source',3),(True,'device',9),
         (True,'lighting',9),(True,'transport',9),(True,'storage',9),(False,'radio',9),
         (True,'recovery',11),(True,'boot_diagnostics',7),(True,'power',9),
         (False,'power_clock',5),(False,'power_time',6),(False,'sleeping',3)):
@@ -225,7 +225,7 @@ def main_loop(image):
                 result=failure!='time_now'
                 if failure=='source':d.put(GPIOC+0x10,(1<<13) if external else 0)
             if name=='m1_runtime_power_service':
-                assert args[2]==external
+                assert args[2]==(not external if failure=='source' else external)
                 times.append(args[:2]);live+=1
                 if live==2:cpu.emu_stop();return
             cpu.reg_write(UC_ARM_REG_R0,int(result));cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))

@@ -1,4 +1,5 @@
 #include "m1_runtime_power.h"
+#include "m1_source.h"
 #include "m1_live.h"
 #include "m1_power.h"
 #include "m1_power_gpio.h"
@@ -16,15 +17,17 @@
 static m1_runtime_power_state_t state;
 static m1_power_t policy;
 static m1_wake_t wake;
-static bool initialized,retained,scan_initialized;
+static bool initialized,retained,scan_initialized,source_external;
 static uint32_t last_tick,since,scan_stamp,retained_at,error;
 static uint8_t switches;
 static m1_transport_t transport;
+static m1_transport_t last_wireless=M1_DEFAULT_WIRELESS_TRANSPORT;
 static const uint8_t black[M1_LED_BYTES]={0};
 
 m1_runtime_power_state_t m1_runtime_power_state(void) { return state; }
 uint32_t m1_runtime_power_error(void) { return error; }
 static void fail(void) { error=(uint32_t)state+1u;state=M1_RUNTIME_FAILED; }
+static void source_failed(void) { fail();error|=m1_source_error()<<8u; }
 static void enter(m1_runtime_power_state_t next,uint32_t now)
 { state=next;since=now; }
 static void rails_off(void)
@@ -55,20 +58,41 @@ static void restore(uint32_t now)
 }
 void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
 {
-    if(state>=M1_RUNTIME_FAILED)return;
+    if(state==M1_RUNTIME_FAILED || state==M1_RUNTIME_CLOCK_FATAL || state==M1_RUNTIME_TIME_FATAL)return;
     if(!initialized) {
         m1_power_init(&policy,M1_RUNTIME_BT_IDLE_STEPS,M1_RUNTIME_RADIO_IDLE_STEPS);
         initialized=true;last_tick=ms;
+        /* Boot owns USB exactly when it completed an externally powered
+         * startup. Do not miss a cable edge just before this first service. */
+        source_external=m1_usb_hw_running();
+    }
+    if(state==M1_RUNTIME_SOURCE) {
+        m1_source_result_t result=m1_source_service(ms,us,external);
+        if(result==M1_SOURCE_FAILED) { source_failed();return; }
+        if(result==M1_SOURCE_READY) {
+            source_external=m1_source_external();
+            m1_power_woke(&policy);last_tick=ms;enter(M1_RUNTIME_AWAKE,ms);
+        }
+        return;
+    }
+    if(external!=source_external) {
+        if(state!=M1_RUNTIME_AWAKE) { fail();return; }
+        transport=m1_live_transport();
+        if(transport!=M1_TRANSPORT_USB)last_wireless=transport;
+        enter(M1_RUNTIME_SOURCE,ms);
+        if(!m1_source_begin(ms,external,last_wireless))source_failed();
+        return;
     }
     if(state==M1_RUNTIME_AWAKE) {
         m1_live_service(ms,us);
+        transport=m1_live_transport();
+        if(transport!=M1_TRANSPORT_USB)last_wireless=transport;
         if((uint32_t)(ms-last_tick)<M1_RUNTIME_POWER_PERIOD_MS)return;
         /* One observation per elapsed slot, not a burst of synthetic ticks
          * after a flash pause or a late foreground service. */
         last_tick=ms;
         bool activity=false;
         bool eligible=m1_live_power_activity(&activity);
-        transport=m1_live_transport();
         m1_radio_status_t peer;
         uint8_t selection=m1_wireless_status(&peer)?selector(transport,peer.state):0;
         m1_power_input_t input={.transport=transport,.selector=selection,
@@ -79,8 +103,7 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         if(!m1_sleep_time_ready() || !m1_live_power_suspend(ms)) { fail();return; }
         enter(M1_RUNTIME_DRAIN,ms);return;
     }
-    /* Cable changes belong to the caller's source-transition owner. Never
-     * continue a battery-only pin/PHY sequence with external power present. */
+    /* Never continue a battery-only pin/PHY sequence on external power. */
     if(external) { fail();return; }
     if(state!=M1_RUNTIME_SLEEP && state!=M1_RUNTIME_CAPTURE &&
        (uint32_t)(ms-since)>=M1_RUNTIME_HANDOFF_MS) { fail();return; }

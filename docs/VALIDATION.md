@@ -67,6 +67,13 @@ and command 3 shutdown, GPIO/PHY ownership, periodic wake scans with continuous
 sequence, key/encoder wake, retained/full radio restoration, external-power and
 activity inhibition, and terminal stage/clock/time failures. This is sequencing
 evidence, not physical radio sleep, battery life or charger validation.
+Awake source-transition tests execute the installed controller with scripted
+HAL completions: all wireless modes, USB-to-last-wireless fallback, debounce
+and time wrap, paused PHY/RTC setup, bounded failures and runtime dispatch.
+The linked live/USB test separately checks explicit endpoint abandonment,
+wireless neutral drain, restoration before USB enumeration, preserved unsaved
+settings and no held-key replay. Physical cable transitions remain unverified;
+source changes during sleep/restoration remain unsupported.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests

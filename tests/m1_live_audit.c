@@ -90,6 +90,7 @@ const void *const m1_live_test_exports[]={
     m1_encoder_start,m1_encoder_irq,m1_encoder_status,m1_encoder_discard,
     m1_live_init,m1_live_service,m1_live_stop,m1_live_scan_losses,m1_live_transport,m1_live_transport_fault,
     m1_live_power_suspend,m1_live_power_park,m1_live_power_resume,
+    m1_live_source_suspend,m1_live_source_resume,
     m1_live_power_activity,m1_wireless_resume_retained,
     m1_live_factory_result,
     m1_live_storage_fault,m1_test_live_storage,m1_test_live_storage_gate,

@@ -479,7 +479,11 @@ parks the application before taking sole peripheral ownership. It preserves RAM
 settings through sleep, uses fresh post-WFI timestamps, and requires fresh radio
 mode confirmation and neutral input before rearming. A new board must provide
 its own verified rail/GPIO and source-change sequence; do not transplant M1 pin
-writes or treat its terminal cable-change guard as general hot-plug support.
+writes. Its [awake source owner](MONSGEEK_M1.md#awake-usb-power-source-transitions)
+distinguishes an aborted USB endpoint from a delivered neutral report, retains
+wireless selection on power arrival, pauses all bus masters before PHY setup,
+and preserves application RAM through re-enumeration. Changes during M1 sleep
+remain unsupported; do not present awake-only checks as full hot-plug support.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

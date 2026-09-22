@@ -88,10 +88,7 @@ void m1_main(void)
     for(;;) {
         m1_time_point_t now;
         if(!m1_time_now(&now))halted(M1_MAIN_TIME_FAULT,0);
-        /* Cable changes are terminal in the development runtime, not an
-         * implicit cold reboot or an unverified physical transport change. */
-        if(wired()!=external)stop_live(M1_MAIN_SOURCE_FAULT,external,now.ms);
-        m1_runtime_power_service(now.ms,now.us,external);
+        m1_runtime_power_service(now.ms,now.us,wired());
         m1_runtime_power_state_t power=m1_runtime_power_state();
         if(power==M1_RUNTIME_CLOCK_FATAL)halted(M1_MAIN_CLOCK_FAULT,m1_runtime_power_error());
         if(power==M1_RUNTIME_TIME_FATAL)halted(M1_MAIN_TIME_FAULT,m1_runtime_power_error());

@@ -266,6 +266,7 @@ def main():
     persistence(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
+    source_handoff(args.elf)
 
 
 def power_handoff(path):
@@ -421,6 +422,65 @@ def power_handoff(path):
         assert d.call('m1_wireless_selected',mode)
         assert d.call('m1_live_power_resume',d.time//1000,1)
     print('PASS retained BT resume: no GPIO reset pulse, explicit restoration, fresh mode handshake and neutral rearm')
+
+
+def source_handoff(path):
+    def detach(d):
+        # Mirror the hardware owner's endpoint abort at the class boundary.
+        # Physical reset/PHY behavior belongs to the separate HAL audit.
+        d.call('m1_usb_bind',0)
+        for at in (0x920,0x940,0x960):d.put(USB+at,0)
+        assert not d.call('m1_usb_ready') and d.call('m1_usb_in_idle')
+    def park(d):
+        for _ in range(1200):
+            d.tick()
+            if d.call('m1_live_power_park'):return
+        raise AssertionError('Source handoff failed to park')
+    for high,target in ((False,0),(True,6),(True,5)):
+        d=Live(path,high,storage=True);d.run(10)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100');d.snapshot(2)
+        d.samples[81]=2500;d.run(10);assert d.held(135)
+        if target==5:
+            d.samples[81]=3900;d.run(10);d.chord(56)
+            for i in range(D['RAW_VELOCITY_WINDOW']):d.samples[29]=3499-i*100;d.tick()
+            d.run(10);assert any(e[1]==0x90 and e[3] for e in d.events)
+        assert not d.call('m1_live_source_suspend',d.time//1000,1) # host still owns endpoints
+        detach(d)
+        assert d.call('m1_live_source_suspend',d.time//1000,1)
+        park(d)
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        assert not d.call('m1_live_source_resume',d.time//1000,target,0)
+        if target!=6:
+            assert not d.call('m1_live_source_resume',d.time//1000,target,1)
+            d.start_radio(target)
+            for _ in range(400):
+                d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+                if d.call('m1_wireless_selected',target):break
+            assert d.call('m1_wireless_selected',target)
+        # Source resume may restore USB before host enumeration. Ordinary
+        # battery wake is intentionally stricter; this exception is explicit.
+        assert d.call('m1_live_source_resume',d.time//1000,target,1)
+        d.run(10)
+        d.call('m1_test_usb_init',int(high));d.hid=bytes(30)
+        d.messages.clear();d.commands=0;d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        s=d.snapshot()
+        assert s.keyboard_mapping[81]==135 and s.press[81]==2700 and s.release[81]==3100
+        assert s.storage_flags==2 and not d.call('m1_test_live_storage_count',2)
+        assert s.performance_mode==0 # USB MIDI is cancelled by wireless fallback
+        assert not s.flags&2 and not d.held(135) and not d.radio_held(135)
+        d.samples=[3900]*82;d.run(200);d.samples[81]=2500;d.run(200)
+        assert (d.held(135) if target==6 else d.radio_held(135))
+        assert not d.call('m1_live_transport_fault') and d.call('m1_live_scan_losses')==1
+    for mode in (0,1,2,5):
+        d=Live(path,True,mode=mode);d.run(400)
+        d.samples[81]=3000;d.run(200);assert d.radio_held(0x4f)
+        detach(d);assert d.call('m1_live_source_suspend',d.time//1000,1)
+        assert not d.call('m1_live_power_park') # USB loss is NOT a wireless release
+        park(d);assert not any(d.radio_slots) and not any(d.radio_bitmap)
+        assert d.call('m1_live_source_resume',d.time//1000,mode,1)
+        d.run(200);assert not d.radio_held(0x4f)
+    print('PASS source handoff: explicit USB abandonment, radio drain, offline USB restore, unsaved settings, fresh control lease and no held-key replay')
 
 
 def calibration_persistence(path):

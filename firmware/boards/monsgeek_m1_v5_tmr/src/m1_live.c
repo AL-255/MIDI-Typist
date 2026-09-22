@@ -37,6 +37,7 @@ static bool last_output_ready;
 static keyboard_aux_t auxiliary;
 static bool auxiliary_allowed;
 static bool power_activity;
+static bool usb_abandoned;
 static const uint16_t auxiliary_mapping[3]={
 #define AUXMAP(index,usage) [index]=usage,
 #include "../config/auxmap.def"
@@ -269,7 +270,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
     memset(timing,0,sizeof(timing));
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
-    update_requested=power_activity=false;
+    update_requested=power_activity=usb_abandoned=false;
     power_state=POWER_AWAKE;
     status=(keyboard_telemetry_status_t){.storage_slot=255,
                                       .calibration_saved=store.saved || factory_result==M1_FACTORY_OK,
@@ -307,11 +308,12 @@ bool m1_live_power_park(void)
 {
     if(!initialized || transport_fault || storage_fault)return false;
     if(power_state==POWER_PARKED)return true;
-    if(power_state!=POWER_DRAINING || !neutral_sent() || !keyboard_aux_idle(&auxiliary) ||
+    bool detached=usb_abandoned && controls.current==M1_TRANSPORT_USB;
+    if(power_state!=POWER_DRAINING || (!detached && (!neutral_sent() || !keyboard_aux_idle(&auxiliary))) ||
        !m1_lighting_healthy() || !m1_lighting_ready())return false;
     uint32_t mask=lock();
     bool ready=m1_usb_in_idle() && (controls.current==M1_TRANSPORT_USB?
-        usb_ready() && !midi.panic && !midi.count:
+        detached || (usb_ready() && !midi.panic && !midi.count):
         radio_mode(controls.current) && m1_wireless_switch_ready());
     if(ready)power_state=POWER_PARKED;
     unlock(mask);return ready;
@@ -325,17 +327,35 @@ bool m1_live_power_activity(bool *activity)
     *activity=power_activity || !raw.neutral_idle;
     power_activity=false;return true;
 }
-bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
+bool m1_live_source_suspend(uint32_t now_ms,bool usb_disconnected)
+{
+    if(usb_disconnected && (m1_usb_ready() || !m1_usb_in_idle()))return false;
+    if(!m1_live_power_suspend(now_ms))return false;
+    if(usb_disconnected && controls.current==M1_TRANSPORT_USB) {
+        usb_abandoned=true;
+        /* The endpoint owner aborted the old consumer transaction. Preserve
+         * its map, not pending pulses for a host that is no longer present. */
+        uint16_t mapping[3];memcpy(mapping,auxiliary.mapping,sizeof(mapping));
+        keyboard_aux_init(&auxiliary,mapping);
+    }
+    return true;
+}
+static bool power_resume(uint32_t now_ms,m1_transport_t target,bool platform_restored,bool source_change)
 {
     if(!initialized || power_state!=POWER_PARKED || !platform_restored ||
        transport_fault || storage_fault || !m1_hal_periodic_active() ||
-       !m1_lighting_healthy())return false;
+       !m1_lighting_healthy() || !m1_transport_valid(target) ||
+       (target!=controls.current && (!source_change || !usb_abandoned ||
+        controls.current!=M1_TRANSPORT_USB || target==M1_TRANSPORT_USB)))return false;
+    if(target==M1_TRANSPORT_USB?!source_change && !usb_ready():
+       !radio_mode(target) || !m1_wireless_selected(target))return false;
+    controls.current=controls.target=target;
+    menu.midi_blocked=target!=M1_TRANSPORT_USB;
+    if(menu.midi_blocked && midi.mode)keyboard_midi_toggle(&midi,&raw,now_ms);
     now=now_ms;check_epoch();
     /* A searching wireless peer is a valid restored transport. Require a
      * fresh matching mode, not a connected host; the ordinary readiness edge
      * still cancels offline input before any newly connected host can type. */
-    if(controls.current==M1_TRANSPORT_USB?!usb_ready():
-       !m1_wireless_selected(controls.current))return false;
     uint32_t discarded;
     (void)m1_hal_frame(samples,&discarded);
     uint8_t events[M1_USB_HS_PACKET];
@@ -345,8 +365,12 @@ bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
      * A changed USB epoch may legitimately have queued fresh cleanup. */
     keyboard_app_invalidate(&app,now);seen=source_healthy=light_sent=false;
     controls.neutral_required=true;
-    power_state=POWER_AWAKE;enabled=true;return true;
+    power_state=POWER_AWAKE;enabled=true;usb_abandoned=false;return true;
 }
+bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
+{ return power_resume(now_ms,controls.current,platform_restored,false); }
+bool m1_live_source_resume(uint32_t now_ms,m1_transport_t target,bool platform_restored)
+{ return power_resume(now_ms,target,platform_restored,true); }
 uint32_t m1_live_scan_losses(void) { return losses; }
 m1_factory_result_t m1_live_factory_result(void) { return factory_result; }
 m1_transport_t m1_live_transport(void) { return controls.current; }
@@ -453,8 +477,8 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
          * The suspend boundary has already invalidated those consumers. */
         uint32_t discarded;
         (void)m1_hal_frame(samples,&discarded);
-        keyboard_app_service(&app,now,false,neutral_sent()?NULL:send_keyboard,
-                             controls.current==M1_TRANSPORT_USB?send_midi:NULL);
+        keyboard_app_service(&app,now,false,usb_abandoned || neutral_sent()?NULL:send_keyboard,
+                             controls.current==M1_TRANSPORT_USB && !usb_abandoned?send_midi:NULL);
         service_auxiliary(false);
         uint8_t events[M1_USB_HS_PACKET];
         (void)m1_usb_midi_take(events,sizeof(events)); /* discard, never dispatch */

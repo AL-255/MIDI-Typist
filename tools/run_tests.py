@@ -36,6 +36,7 @@ def manifest(elf, library, reference, jobs):
     add('test_m1_save_arm','m1',ROOT/'build-m1-hal/m1_save_audit.elf')
     add('test_m1_boot_arm','m1',ROOT/'build-m1-hal/m1_boot_audit.elf')
     add('test_m1_image_arm','m1',ROOT/'build-m1-hal/m1_development.elf')
+    add('test_m1_runtime_power_arm','m1',ROOT/'build-m1-hal/m1_development.elf')
     add('test_monsgeek_identity','m1')
     add('test_midi_usb_binding','m1')
     add('test_monsgeek_iap','m1')
