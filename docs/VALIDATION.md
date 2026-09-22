@@ -166,6 +166,12 @@ applies only before collection finishes; completed candidates survive deferred
 flash access beyond that deadline without publishing uncommitted bounds.
 MIDI cleanup tests distinguish keyboard-only invalidation from port-accepted
 performance state, including a blocked endpoint and subsequent mode changes.
+A wired M1 cold-start check completed its initial settings save before any MIDI
+reader was opened. Subsequent read-only diagnostics confirmed one successful
+save at 706 ms, a valid stored generation, no pending MIDI cleanup, and no
+hardware save blockers. This verifies that keyboard-only startup persistence
+does not require a GUI/MIDI reader; it is not a complete physical calibration
+or power-cut durability test.
 
 Storage tests cover all supported layouts, settings/calibration preservation,
 keyboard mappings including disabled/international/modifier destinations,
