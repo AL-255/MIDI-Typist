@@ -5,8 +5,9 @@
 /* Sole foreground owner after boot. Calls live service while awake/draining;
  * after park, owns scan/LED/radio and the RTC sleep/wake sequence. The caller
  * must refresh both clocks and the physical power-source input after every
- * call (sleep can advance time), and trap on clock/time failure. Awake cable
- * changes have a separate parked owner; changes during sleep fail closed.
+ * call (sleep can advance time), and trap on clock/time failure. Cable arrival
+ * cancels uncommitted sleep or restores a sleeping peer before the ordinary
+ * parked source handoff. It never reinitializes application state.
  * No flash writes, cold reinitialization of application state or automatic
  * recovery from an ambiguous peripheral failure. */
 typedef enum {

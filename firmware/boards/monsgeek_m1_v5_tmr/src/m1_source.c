@@ -30,6 +30,14 @@ bool m1_source_begin(uint32_t ms,bool external,m1_transport_t fallback)
     if(!(external?m1_live_source_suspend(ms,false):detach(ms))) { fail();return false; }
     return true;
 }
+bool m1_source_begin_parked(uint32_t ms,bool external,m1_transport_t fallback)
+{
+    if(!m1_hal_healthy() || m1_hal_periodic_active() || m1_hal_capture_busy() ||
+       m1_lighting_healthy() || !m1_wireless_healthy() || m1_wireless_sleep_sent() ||
+       !m1_live_power_park())return false;
+    if(!m1_source_begin(ms,external,fallback))return false;
+    state=STABLE;return true;
+}
 m1_source_result_t m1_source_service(uint32_t ms,uint32_t us,bool external)
 {
     if(state==FAILED || state==OFF)return M1_SOURCE_FAILED;

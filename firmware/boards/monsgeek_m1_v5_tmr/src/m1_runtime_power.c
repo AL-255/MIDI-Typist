@@ -56,6 +56,16 @@ static void restore(uint32_t now)
     gpio_bits_set(GPIOB,GPIO_PINS_6);
     enter(M1_RUNTIME_RESTORE_GPIO,now);
 }
+static bool external_now(void)
+{ return gpio_input_data_bit_read(GPIOC,GPIO_PINS_13)==RESET; }
+static void cancel_sleep(uint32_t ms)
+{
+    /* No peer sleep transaction was started, so do not reset the peer or
+     * cycle sensor rails. Acquisition is still paused, with RAM intact. */
+    m1_lighting_stop();gpio_bits_set(GPIOB,GPIO_PINS_13);
+    enter(M1_RUNTIME_SOURCE,ms);
+    if(!m1_source_begin_parked(ms,true,last_wireless))source_failed();
+}
 void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
 {
     if(state==M1_RUNTIME_FAILED || state==M1_RUNTIME_CLOCK_FATAL || state==M1_RUNTIME_TIME_FATAL)return;
@@ -76,12 +86,26 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         return;
     }
     if(external!=source_external) {
-        if(state!=M1_RUNTIME_AWAKE) { fail();return; }
-        transport=m1_live_transport();
-        if(transport!=M1_TRANSPORT_USB)last_wireless=transport;
-        enter(M1_RUNTIME_SOURCE,ms);
-        if(!m1_source_begin(ms,external,last_wireless))source_failed();
-        return;
+        if(state==M1_RUNTIME_AWAKE || state==M1_RUNTIME_DRAIN) {
+            transport=m1_live_transport();
+            if(transport!=M1_TRANSPORT_USB)last_wireless=transport;
+            enter(M1_RUNTIME_SOURCE,ms);
+            if(!m1_source_begin(ms,external,last_wireless))source_failed();
+            return;
+        }
+        /* Sleep is battery-only. A cable arrival is a wake reason, not a
+         * reason to reinitialize live or resume an unconfirmed radio peer.
+         * BLANK/PEER/DEEPEN finish or cancel their specific transaction below;
+         * restoration itself finishes with USB still stopped. The following
+         * awake turn then gives the source owner its ordinary paused handoff. */
+        if(!external) { fail();return; }
+        if(state==M1_RUNTIME_SETTLE || state==M1_RUNTIME_SLEEP ||
+           state==M1_RUNTIME_SCAN_STAMP || state==M1_RUNTIME_SCAN_SETTLE ||
+           state==M1_RUNTIME_CAPTURE) {
+            if((state==M1_RUNTIME_CAPTURE || state==M1_RUNTIME_SCAN_SETTLE) &&
+               !m1_hal_healthy()) { fail();return; }
+            restore(ms);return;
+        }
     }
     if(state==M1_RUNTIME_AWAKE) {
         m1_live_service(ms,us);
@@ -103,8 +127,6 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         if(!m1_sleep_time_ready() || !m1_live_power_suspend(ms)) { fail();return; }
         enter(M1_RUNTIME_DRAIN,ms);return;
     }
-    /* Never continue a battery-only pin/PHY sequence on external power. */
-    if(external) { fail();return; }
     if(state!=M1_RUNTIME_SLEEP && state!=M1_RUNTIME_CAPTURE &&
        (uint32_t)(ms-since)>=M1_RUNTIME_HANDOFF_MS) { fail();return; }
     switch(state) {
@@ -120,19 +142,33 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         m1_lighting_service(us);m1_wireless_service(us);
         if(!m1_lighting_healthy() || !m1_wireless_healthy()) { fail();break; }
         if(!m1_lighting_ready())break;
+        if(external) { cancel_sleep(ms);break; }
         if(!m1_wireless_request_sleep(policy.radio_command,true))break;
         m1_lighting_stop();gpio_bits_reset(GPIOB,GPIO_PINS_13);
         enter(M1_RUNTIME_PEER,ms);break;
     case M1_RUNTIME_PEER:
+        /* Cancel before service can submit a queued sleep packet. False
+         * means it may already be in flight: finish that exact packet. */
+        if(external && m1_wireless_cancel_sleep()) { cancel_sleep(ms);break; }
         m1_wireless_service(us);
         if(!m1_wireless_healthy()) { fail();break; }
         if(m1_wireless_sleep_sent()!=policy.radio_command)break;
         if(!m1_power_radio_committed(&policy,policy.radio_command)) { fail();break; }
         retained=policy.radio_command==M1_RADIO_BT_RETAIN;retained_at=ms;
         if(!retained && !quiesce_peer()) { fail();break; }
+        if(external) { restore(ms);break; }
         m1_hal_stop();scan_initialized=false;rails_off();
-        if(m1_usb_hw_running() || m1_usb_power_down(true)!=M1_USB_POWER_OK ||
-           !m1_power_gpio_prepare(true) || !m1_power_gpio_switches(&switches)) { fail();break; }
+        if(m1_usb_hw_running()) { fail();break; }
+        m1_usb_power_result_t reduced=m1_usb_power_down(true);
+        if(reduced==M1_USB_POWER_EXTERNAL) { restore(ms);break; }
+        if(reduced!=M1_USB_POWER_OK) { fail();break; }
+        if(!m1_power_gpio_prepare(true)) {
+            /* PC13 may change inside the HAL's guarded power check. Other
+             * failures remain terminal; no blind retry of GPIO/PHY setup. */
+            if(external_now())restore(ms);else fail();
+            break;
+        }
+        if(!m1_power_gpio_switches(&switches)) { fail();break; }
         m1_wake_init(&wake,NULL);enter(M1_RUNTIME_SETTLE,ms);break;
     case M1_RUNTIME_SETTLE:
         if((uint32_t)(ms-since)>=M1_RUNTIME_SLEEP_SETTLE_MS)enter(M1_RUNTIME_SLEEP,ms);
@@ -153,6 +189,7 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
             error=(uint32_t)state+1u;
             state=result==M1_SLEEP_CLOCK_FATAL?M1_RUNTIME_CLOCK_FATAL:M1_RUNTIME_TIME_FATAL;break;
         }
+        if(result==M1_SLEEP_BUSY && !safe && external_now()) { restore(ms);break; }
         if(result!=M1_SLEEP_TIMER && result!=M1_SLEEP_OTHER_WAKE) { fail();break; }
         /* No time-sensitive work with timestamps sampled before WFI. */
         state=M1_RUNTIME_SCAN_STAMP;break;
@@ -184,11 +221,13 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         break;
     }
     case M1_RUNTIME_DEEPEN:
+        if(external && m1_wireless_cancel_sleep()) { restore(ms);break; }
         m1_wireless_service(us);
         if(!m1_wireless_healthy()) { fail();break; }
         if(m1_wireless_sleep_sent()!=M1_RADIO_SLEEP)break;
         if(!m1_power_radio_committed(&policy,M1_RADIO_SLEEP) || !quiesce_peer()) { fail();break; }
-        enter(M1_RUNTIME_SLEEP,ms);break;
+        if(external)restore(ms);else enter(M1_RUNTIME_SLEEP,ms);
+        break;
     case M1_RUNTIME_RESTORE_GPIO: {
         if((uint32_t)(ms-since)<M1_RUNTIME_RESTORE_STAGE_MS)break;
         uint8_t phase;

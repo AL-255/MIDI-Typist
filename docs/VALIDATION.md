@@ -74,8 +74,12 @@ HAL completions: all wireless modes, USB-to-last-wireless fallback, debounce
 and time wrap, paused PHY/RTC setup, bounded failures and runtime dispatch.
 The linked live/USB test separately checks explicit endpoint abandonment,
 wireless neutral drain, restoration before USB enumeration, preserved unsaved
-settings and no held-key replay. Physical cable transitions remain unverified;
-source changes during sleep/restoration remain unsupported.
+settings and no held-key replay. Sleep-source tests inject arrival at every
+drain/blank/peer/wake-scan/restoration stage, including retention escalation,
+queued-versus-in-flight cancellation, a transient arrival and races inside
+PHY/GPIO/sleep guards. They check restoration before USB attachment and no extra
+WFI after an observed arrival. Physical cable transitions remain unverified;
+edges during PHY mutation or an Fn transport switch still fail closed.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests

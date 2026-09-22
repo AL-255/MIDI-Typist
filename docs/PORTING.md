@@ -220,7 +220,7 @@ and tests a separate 2048-byte M1 format; neither permits borrowing factory
 pages. M1 reserves two application-tail slots and audits its SDK/SRAM writer,
 and gates foreground autosave through outer-owner safety callbacks. Its
 experimental application has verified flashing, recovery and live GUI telemetry;
-cable recovery, pairing and physical wireless/power qualification remain incomplete. Follow the
+pairing and physical wireless/cable/power qualification remain incomplete. Follow the
 [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
@@ -482,8 +482,12 @@ its own verified rail/GPIO and source-change sequence; do not transplant M1 pin
 writes. Its [awake source owner](MONSGEEK_M1.md#awake-usb-power-source-transitions)
 distinguishes an aborted USB endpoint from a delivered neutral report, retains
 wireless selection on power arrival, pauses all bus masters before PHY setup,
-and preserves application RAM through re-enumeration. Changes during M1 sleep
-remain unsupported; do not present awake-only checks as full hot-plug support.
+and preserves application RAM through re-enumeration. Cable arrival during sleep
+must cancel a not-yet-submitted radio command or finish its actual completion and
+restore the peer before USB attachment. Abort wake-scan DMA before cycling rails;
+never reinterpret an in-flight transaction as cancelled. M1 models these paths,
+but physical cable/sleep operation and overlapping Fn transport changes are not
+qualified. Do not present state-machine checks as physical hot-plug validation.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

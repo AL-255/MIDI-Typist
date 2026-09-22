@@ -13,8 +13,8 @@ not yet established. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet qualified for use.
-Automatic battery sleep/wake and awake cable transitions are linked; cable
-changes during sleep and pairing remain unfinished.
+Automatic battery sleep/wake and cable-arrival restoration are linked;
+pairing and physical wireless/power qualification remain unfinished.
 
 ## Identify a keyboard
 
@@ -330,8 +330,8 @@ Any invalid sample or endpoint invalidates the whole frame.
 The experimental image binds the Fn transport owner to the radio HAL/scheduler.
 Switching and routing have offline integration tests; **physical wireless delivery
 is not yet verified**. The [runtime battery controller](#runtime-battery-sleepwake)
-coordinates automatic sleep/wake and awake cable changes; cable arrival during
-sleep remains unsupported.
+coordinates automatic sleep/wake and cable changes, including restoration when
+USB power arrives during battery sleep.
 `m1_controls_bind` attaches board-specific input/lighting hooks to the shared
 application. Its table defines these Fn controls; bare F1–F5 remain normal keys:
 
@@ -688,7 +688,7 @@ the flash driver has its own controller-model audit. Transport tests exercise
 both scripted callbacks and the runtime selection owner. Radio status and DMA
 completion remain scripted, not proof of host delivery, physical scans or
 measured 8 kHz operation.
-Cable recovery during sleep, verified radio delivery and
+Verified radio delivery, physical cable/sleep qualification and
 power-cycle persistence remain unfinished in the installable experimental application. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
@@ -815,8 +815,8 @@ A fatal clock-restoration failure
 does no further peripheral cleanup and keeps interrupts masked. There is no
 automatic retry, profile erase or factory-data write. Offline tests execute
 the composed HAL/application chain; profile I/O and hardware effects are modeled.
-Failures before USB startup remain debugger-only diagnostics. Cable transitions
-during sleep, pairing and physical sleep/wake
+Failures before USB startup remain debugger-only diagnostics. Pairing and physical
+cable/sleep/wake
 validation remain required.
 
 ### Development ELF and reset entry
@@ -858,8 +858,8 @@ calibration saves are linked. Fn+F1–F5 uses the runtime transport owner; RESET
 remains disabled.
 
 The development loop implements battery idle/critical sleep, wake restoration
-and awake cable transitions as described below. It does **not** implement pairing
-or cable recovery during sleep. An unsupported source change or device fault
+and cable transitions as described below. It does **not** implement pairing.
+An unsupported source change or device fault
 stops acquisition/radio/lighting, retains rails, and latches a
 terminal diagnostic. If USB and the timebase remain usable, it sends neutral
 keyboard/consumer HID and MIDI sustain-off/all-sound-off/all-notes-off, retains the SysEx recovery
@@ -873,7 +873,7 @@ Power faults set device bit 32, with the runtime stage-plus-one in detail bits
 
 ### Awake USB power-source transitions
 
-`m1_source` owns cable changes only while the runtime controller is awake.
+`m1_source` owns awake cable changes and explicitly parked, cancelled sleep entry.
 Plugging USB power into a wireless session preserves its selected BT slot or
 2.4 GHz mode and starts the USB configuration link. Fn+F5 explicitly selects
 USB typing after enumeration. Unplugging USB typing selects the most recently
@@ -895,8 +895,8 @@ The entire handoff is bounded by `M1_SOURCE_TRANSITION_MS` (5 seconds). Source
 bounce before PHY mutation is debounced; another edge during mutation, a failed
 peripheral, or overlap with an in-progress Fn transport handoff fails closed.
 There are no flash writes, cold application reinitialization or automatic retry
-inside this owner. Cable changes during the battery sleep/restoration sequence
-remain terminal. Linked tests check the source owner, live handoff and RAM-state
+inside this owner. Cable arrival during battery sleep first follows the runtime
+restoration path below. Linked tests check the source owner, live handoff and RAM-state
 retention with scripted HAL/USB completion; physical unplug/replug is unverified.
 
 Image tests verify every load segment/vector/RAM-code address and reject
@@ -942,12 +942,35 @@ from the power-transition, periodic wake-scan and transport-state routines.
 Each handoff stage has a 3-second deadline; capture uses its HAL deadline.
 Failures latch without retrying rails, peripherals or flash. Clock/time failures
 trap immediately; ordinary failures use the retained diagnostic path where USB
-is still usable. Cable arrival/removal remains terminal, not hot-plug recovery.
+is still usable.
+
+USB power arrival wakes the custom runtime without changing its wireless mode:
+
+- Before parking, transfer the existing neutral drain to the source owner.
+- While blanking, finish the LED frame and cancel sleep without cycling sensor
+  rails. A queued radio command is cancellable only before submission; a command
+  already in flight must complete before choosing retained or full restoration.
+- During RTC settling, periodic wake checks or an active one-shot scan, stop the
+  scan before changing rails and follow the reference GPIO/rail restoration.
+  A cancelled escalation from retention keeps the completed command-5 state;
+  an already-started command 3 finishes before a full radio restart.
+- Finish restoration with USB stopped, then use the ordinary parked source
+  handoff to attach USB. A transient arrival that disappears during restoration
+  still wakes the application, but does not force USB selection or enumeration.
+
+Arrival inside the guarded PHY/GPIO checks is handled as a source change, not a
+blind peripheral retry. No extra WFI is issued after arrival is observed. Arrival
+during WFI is noticed after the RTC/other wake returns; PC13 is polled, not an
+independent instant-wake interrupt. This custom policy restores the GUI link on
+power arrival; stock `0x0801754c` instead reinitializes/disconnects USB between
+sleep scans until its separate wake condition. The staged rail/GPIO and retained
+radio restoration follow the executable reference; GUI availability is intentional.
 
 The installed-image controller audit executes the real state machine, power
 policy, wake filter and GPIO writes with scripted HAL completion and elapsed
 time. It covers all wireless selections, critical unpaired sleep, retained/deep
-radio wake and terminal failures. This is not physical battery, charging,
+radio wake, cable arrival at every sleep/restoration stage, queued-versus-in-flight
+cancellation, source-check races and terminal failures. This is not physical battery, charging,
 current-draw, radio delivery or sleep/wake validation.
 
 ### Sleep/wake pin ownership
@@ -1138,8 +1161,8 @@ one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
 timeouts and faults. Runtime restoration requires release before rearming;
 it does not transmit the waking press.
 
-Complete power management still requires radio pairing, cable transitions during
-sleep/restoration, and physical qualification. The
+Complete power management still requires radio pairing, handling cable changes
+that overlap an Fn transport switch or PHY mutation, and physical qualification. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
 not be replaced by an unconditional WFI or indiscriminate GPIO power-off.
