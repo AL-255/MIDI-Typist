@@ -214,8 +214,14 @@ Shared sensor/bounds readback has native 104-key cache/freshness tests, an
 and after parallel calibration. Staged endpoints are not published; committed
 electrical bounds remain separate from normalized control readings. GUI tests
 cover strict MTB1 decoding, all-platform polling, capture exclusion, stale-data
-rejection and 82-key diagnostic export. Both complete hardware images build;
-physical readback timing and a user calibration run remain to be checked.
+rejection and 82-key diagnostic export. Both complete hardware images build.
+On the M1, live SysEx polling returned all 82 pre-travel samples and active bounds
+alongside GUI snapshots and power status. The real Tk selected-key panel displays
+distinct sensor/control values and enables diagnostic export. Counters stayed
+unchanged after the intentional initial save gap, and the complete factory
+calibration-field readback was unchanged. This is an idle readback check, not an
+8 kHz timing measurement or a completed physical calibration run; those remain
+to be qualified. Huntsman readback is built/offline-tested, not hardware-tested.
 
 M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
