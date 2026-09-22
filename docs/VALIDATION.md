@@ -254,13 +254,15 @@ keys released, control readings 3961–4096, and no light errors. This is a boun
 idle-input check, not qualification of pressed-key/polyphonic load, worst-case
 latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
 and guarded recovery remain available after a runtime scan fault.
-MIDI mode is not yet physically qualified: pressing keys in MIDI mode has
-produced a scan-queue overflow on the connected M1. Shared raw/MIDI work bitmaps
+MIDI mode is not yet physically qualified. The user reports working notes and
+Jankó, but Fn+V produced a retained scan-queue-overflow fault. Shared raw/MIDI work bitmaps
 and per-frame edge lists avoid repeated idle-key state processing without
 dropping scan samples; physical controller indices are cached per layout.
 A compiled instruction-count regression covers idle, strikes, held keys and
-chords; it does not
-model elapsed time or interrupt load. Acceptance requires a physical Fn+Enter
+chords. Modal tests execute Fn+V/Tab/E/S hold, release, choice and exit paths,
+and reject repeated engine reset/rearm calls on idle menu frames. The portable
+app also checks observation-only velocity/trigger/music/reset pages and fresh
+rearming. These do not model elapsed time or interrupt load. Acceptance requires a physical Fn+Enter
 transition followed by sustained idle, note/chord, wheel and sustain operation,
 with advancing scan sequences, no new scan/lighting faults and measured runtime
 timing. Test with and without a performance MIDI reader; a scripted menu test

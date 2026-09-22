@@ -412,8 +412,47 @@ static void held_preview_observation(void)
     samples[SYN_FN]=samples[SYN_ENTER]=3900;frame();frame();
     assert(midi.mode==1 && raw.armed && !menu.pending);
 }
+static void modal_observation(void)
+{
+    for(unsigned page=0;page<5;++page) {
+        init();chord(SYN_ENTER);
+        keyboard_raw_invalidate(&raw);keyboard_midi_guard(&midi,&raw);drain();logged=0;
+        menu.pending_revision=raw.revision;
+        if(page==0)menu.velocity_page=true;
+        if(page==1)menu.press_page=true;
+        if(page==2)menu.music_page=MENU_KEY;
+        if(page==3)menu.music_page=MENU_SCALE;
+        if(page==4)menu.reset_confirmation=true;
+        for(unsigned frame_index=0;frame_index<1000;++frame_index) {
+            frame();keyboard_app_service(&app,now,true,send_hid,send);
+            assert(keyboard_menu_observing(&menu) && !raw.armed && app.frame_valid);
+            assert(raw.neutral_idle && !raw.changed_count && app.readback_valid);
+            for(unsigned key=0;key<SYN_COUNT;++key)
+                assert(!raw.velocity[key].ready && !raw.velocity[key].pending &&
+                       !raw.velocity[key].captures && !raw.down[key]);
+            assert(!midi.panic && !logged);
+        }
+        if(page==4) {
+            assert(menu.confirmation_ready);
+            samples[100]=0;frame();
+            assert(!menu.reset_confirmation && !raw.armed && !resets);
+            samples[100]=3900;frame();assert(raw.armed);
+        }
+        else {
+            assert(menu.choice_ready);
+            samples[SYN_ESC]=3000;frame();
+            assert(!keyboard_menu_observing(&menu) && !raw.armed);
+            frame();assert(!raw.armed); /* held Escape cannot rearm output */
+            samples[SYN_ESC]=3900;frame();assert(raw.armed);
+            samples[SYN_TAB]=3000;frame();
+            for(unsigned i=0;i<RAW_VELOCITY_WINDOW;++i)frame();
+            drain();assert(midi.refs[72] && raw.velocity[SYN_TAB].captures==1);
+        }
+    }
+}
 int main(void)
 {
+    modal_observation();
     held_preview_observation();
     calibration_observation();
     sensor_readback();

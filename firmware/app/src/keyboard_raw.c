@@ -216,7 +216,7 @@ void keyboard_raw_observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
                           uint8_t profile, bool valid)
 {
     s->changed_count=0;
-    /* Calibration owns input until completion/abort. Keep live samples and
+    /* A menu or calibration owns input until completion/abort. Keep samples and
      * neutrality, but never arm outputs or spend scan time fitting velocities. */
     if(s->armed)keyboard_raw_invalidate(s);
     s->neutral_idle=observe(s,raw,count,profile,valid)>0;

@@ -264,6 +264,10 @@ capture when these domains differ; GUI telemetry already uses control samples.
 Use the shared frame lifecycle instead of mutating `raw.down` directly: it
 publishes a per-frame edge list and maintains velocity/MIDI work bitmaps. These
 skip idle state processing, never acquisition or sample validation.
+The shared application also selects observation-only processing while
+`keyboard_menu_observing()` is true. Menu readiness uses `neutral_idle`, not
+temporary performance arming; boards must keep driving the same lifecycle
+through modal selection and exit.
 During calibration the application observes every frame without running key
 edges or velocity fits. Keep calling the shared frame/service functions; do not
 implement this scheduling distinction in board code or drop calibration frames.

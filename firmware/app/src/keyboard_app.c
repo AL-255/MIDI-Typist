@@ -70,8 +70,9 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         calibration_init(s->cal);
         s->loaded=s->reset_pending=false;
     }
-    bool observing=calibration_active(s->cal);
-    raw->midi_mode=s->midi->mode || observing;
+    bool calibrating=calibration_active(s->cal);
+    bool observing=calibrating || keyboard_menu_observing(s->menu);
+    raw->midi_mode=s->midi->mode || calibrating;
     const keyboard_config_t before=raw->engine.config;
     const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
     uint16_t normalized[MT_KEY_CAPACITY];
@@ -136,7 +137,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         }
         if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }
-    if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(raw);
+    if((active || observing) && !calibration_active(s->cal) &&
+       !keyboard_menu_observing(s->menu)) keyboard_raw_invalidate(raw);
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
     if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,input_lo,input_hi,now);
 }

@@ -40,7 +40,7 @@ bool keyboard_raw_map(keyboard_raw_t *s,unsigned sensor,unsigned usage);
  * the pair stays valid (press < release). */
 unsigned keyboard_raw_press_level(unsigned level);
 bool keyboard_raw_set_press_all(keyboard_raw_t *s, unsigned press);
-/* Calibration-only observation: validate/copy every sample and update
+/* Menu/calibration observation: validate/copy every sample and update
  * neutral_idle without arming outputs, detecting edges or fitting velocity.
  * Invalidate before returning to normal frame processing. */
 void keyboard_raw_observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,

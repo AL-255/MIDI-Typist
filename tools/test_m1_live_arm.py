@@ -310,11 +310,49 @@ def midi_scan_work(path):
     print(f'PASS scan instruction-work regression: keyboard={keyboard//3}, MIDI={midi//3}, strike={strike//3}, held={held//3}, chord={chord//3}; physical cadence unmodeled')
 
 
+def modal_scan_work(path):
+    """Real menu dispatch; verify observation ownership, not physical timing."""
+    from unicorn import UC_HOOK_CODE
+    from keyboard_boards import m1_records
+    keys={record[7]:record[0] for record in m1_records()}
+    # M1 deliberately does not expose RESET. Its confirmation owner is tested
+    # by the portable app and Huntsman menu suites, not bypassed here.
+    for selector,choice in (('V','0'),('Tab','5'),('E','Q'),('S','H')):
+        d=Live(path,True,storage=True);d.run(20);d.chord(56);d.run(160)
+        d.samples[77]=d.samples[keys[selector]]=3000;d.tick();d.run(16)
+        d.samples[keys[selector]]=3900;d.tick() # selector first, Fn still held
+        d.samples[77]=3900;d.run(160)
+        calls=[0];work=[0]
+        forbidden={d.symbols[name]&~1 for name in
+                   ('keyboard_raw_invalidate','keyboard_engine_init','keyboard_engine_release_all')}
+        def hook(cpu,pc,size,user):
+            work[0]+=1
+            if pc in forbidden:calls[0]+=1
+        handle=d.cpu.hook_add(UC_HOOK_CODE,hook);d.cpu.ctl_flush_tb()
+        d.run(16)
+        assert calls[0]==0,(selector,calls[0]) # no per-scan rearm/reset cycle
+        d.cpu.hook_del(handle)
+        d.events.clear()
+        d.samples[keys[choice]]=1000;d.run(16)
+        assert not any(e[1]==0x90 for e in d.events),(selector,'menu leaked a note')
+        d.samples[keys[choice]]=3900;d.run(16)
+        # Escape closes the digit pages; selection release closes music/reset.
+        d.samples[keys['Esc']]=1000;d.tick()
+        d.samples[keys['Esc']]=3900;d.run(160)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui');s=d.snapshot()
+        assert s.flags&2 and s.performance_mode==1 and not s.midi_errors
+        if selector=='V':assert s.velocity_start==10
+        if selector=='Tab':assert s.press[0]<D['RAW_DEFAULT_PRESS']
+        assert not d.call('m1_live_scan_losses')
+        print(f'PASS M1 Fn+{selector}: held/release entry, stable modal observation ({work[0]//16} instructions/loop), choice, exit/rearm; cadence unmodeled')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     recovery_preflight(args.elf)
     integration(args.elf)
     midi_scan_work(args.elf)
+    modal_scan_work(args.elf)
     knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)

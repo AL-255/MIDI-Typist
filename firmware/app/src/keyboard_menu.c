@@ -48,6 +48,20 @@ void keyboard_menu_cancel(keyboard_menu_t *s)
     keyboard_text_stop(&s->text);
 }
 
+bool keyboard_menu_observing(const keyboard_menu_t *s)
+{
+    return s->pending || s->brightness_session || s->reset_confirmation ||
+        s->music_page || s->press_page || s->velocity_page;
+}
+
+static void suppress_input(keyboard_raw_t *raw)
+{
+    /* Entry cancels outputs/fits once. While the application observes menu
+     * samples, do not rebuild and clear the complete key engine at 8 kHz. */
+    if(raw->armed || raw->changed_count)keyboard_raw_invalidate(raw);
+    else raw->valid=false;
+}
+
 uint8_t keyboard_menu_control(uint8_t profile, uint8_t key)
 {
     const keyboard_action_t *a=keyboard_action(profile,key,0);
@@ -158,8 +172,8 @@ static uint8_t press_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -188,8 +202,8 @@ static uint8_t velocity_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -209,8 +223,8 @@ static uint8_t music_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw, uint32_
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -278,8 +292,8 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
         bool ready=s->confirmation_ready;
         /* Require all keys released once, then consume all confirmation input.
          * A Y held before entry cannot erase; simultaneous Y/N cancels. */
-        if (raw->armed) s->confirmation_ready=true;
-        keyboard_raw_invalidate(raw);
+        if (raw->neutral_idle) s->confirmation_ready=true;
+        suppress_input(raw);
         if (ready && (yes || no)) {
             keyboard_menu_cancel(s);
             return no ? MENU_NONE : MENU_RESET;

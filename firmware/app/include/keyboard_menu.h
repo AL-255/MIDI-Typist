@@ -41,6 +41,8 @@ uint8_t keyboard_menu_brightness(const keyboard_menu_t *s);
  * echoed back so the page opens on the nearest selection. */
 uint8_t keyboard_menu_control(uint8_t profile, uint8_t key);
 void keyboard_menu_cancel(keyboard_menu_t *s);
+/* Menu-owned input must be observed without rearming performance each scan. */
+bool keyboard_menu_observing(const keyboard_menu_t *s);
 bool keyboard_menu_thresholds(keyboard_raw_t *raw, const uint16_t *lower,
                               const uint16_t *upper);
 #endif
