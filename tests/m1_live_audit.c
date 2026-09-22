@@ -48,7 +48,7 @@ static bool drained(void *context) { (void)context;return host_drained; }
 static bool select_transport(void *context,m1_transport_t target)
 { (void)context;requested=target;++select_calls;return selection_ready; }
 uintptr_t m1_test_live_transports(void)
-{ static const m1_transport_ops_t ops={drained,select_transport,NULL,NULL};return (uintptr_t)&ops; }
+{ static const m1_transport_ops_t ops={.drained=drained,.select=select_transport};return (uintptr_t)&ops; }
 void m1_test_live_transport_gate(unsigned drained,unsigned ready)
 { host_drained=drained!=0;selection_ready=ready!=0; }
 unsigned m1_test_live_selection(unsigned field) { return field?select_calls:requested; }

@@ -140,9 +140,12 @@ reflashing. Live 82-key telemetry and released-key 8 kHz acquisition are checked
 pressed-key performance and complete wireless/power operation remain unverified;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 The M1 status line identifies the selected USB/Bluetooth-slot/2.4 GHz keyboard
-transport and whether it is ready, waiting for a host, or switching. USB control
+transport and whether it is ready, waiting for a host, switching, or pairing
+requested/searching. Searching is not confirmation of a paired host. USB control
 connection does not imply that keyboard output is routed to USB. Select the
-transport with Fn+F1–F5; MIDI remains USB-only.
+transport with Fn+F1–F5; MIDI remains USB-only. Holding Fn+F1–F4 for three
+seconds changes the preview to a pairing request, issued on release; see the
+[M1 transport controls](MONSGEEK_M1.md#power-and-transport-components).
 If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard
 snapshot; recovery must use the flashing workflow supported by that backend.

@@ -1,4 +1,5 @@
 #include "m1_radio.h"
+#include "defaults.h"
 #include <string.h>
 
 bool m1_radio_encode(m1_radio_packet_t *out,uint8_t opcode,const uint8_t *payload,size_t length)
@@ -18,6 +19,21 @@ bool m1_radio_encode(m1_radio_packet_t *out,uint8_t opcode,const uint8_t *payloa
     packet.size=(length+6u)&~3u; /* round (header + payload + checksum) up to 4 */
     *out=packet;
     return true;
+}
+bool m1_radio_make_pair(m1_radio_packet_t *out,unsigned mode)
+{
+    /* 0x0801819a: payload length 33, name length 12, slot digit at packet
+     * byte 15. This is framing, not proof of pairing or a radio-host ACK. */
+    static const char name[]=M1_BT_PAIR_NAME;
+    _Static_assert(sizeof(name)==12,"M1 pairing prefix must contain 11 bytes");
+    if(mode==5) {
+        const uint8_t payload[]={0,1};
+        return m1_radio_encode(out,M1_RADIO_CONTROL,payload,sizeof(payload));
+    }
+    if(mode>2)return false;
+    uint8_t payload[33]={2,12};
+    memcpy(payload+2,name,sizeof(name)-1u);payload[13]='1'+mode;
+    return m1_radio_encode(out,M1_RADIO_CONTROL,payload,sizeof(payload));
 }
 void m1_radio_make_poll(m1_radio_packet_t *out)
 {

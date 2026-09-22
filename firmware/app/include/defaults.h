@@ -221,6 +221,9 @@
 #endif
 #define M1_COLD_SCAN_SETTLE_US 10u
 #define M1_TRANSPORT_SWITCH_TIMEOUT_MS 3000u
+#define M1_PAIR_HOLD_MS 3000u
+#define M1_PAIR_SWITCH_TIMEOUT_MS 6000u
+#define M1_BT_PAIR_NAME "MIDI-Typist"
 #define M1_RADIO_START_PULSE_US 10000u
 #define M1_RADIO_TRANSFER_TIMEOUT_US 10000u
 /* Custom foreground scheduling, not inferred stock timer units. */
@@ -318,6 +321,9 @@
 #endif
 #if M1_TRANSPORT_SWITCH_TIMEOUT_MS < 1 || M1_TRANSPORT_SWITCH_TIMEOUT_MS >= 0x80000000u
 #error "invalid M1 transport timeout"
+#endif
+#if M1_PAIR_HOLD_MS < 1 || M1_PAIR_HOLD_MS >= 0x80000000u || M1_PAIR_SWITCH_TIMEOUT_MS < M1_TRANSPORT_SWITCH_TIMEOUT_MS || M1_PAIR_SWITCH_TIMEOUT_MS >= 0x80000000u
+#error "invalid M1 pairing timing"
 #endif
 #if M1_RADIO_START_PULSE_US < 1 || M1_RADIO_START_PULSE_US >= 0x80000000u || M1_RADIO_TRANSFER_TIMEOUT_US < 1 || M1_RADIO_TRANSFER_TIMEOUT_US >= 0x80000000u
 #error "invalid M1 radio timing"

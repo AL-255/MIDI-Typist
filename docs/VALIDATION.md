@@ -48,6 +48,11 @@ resets independent of wireless key ownership. Fn transport tests execute the
 runtime selection owner, local neutral-report drain, SPI mode requests and fresh
 matching peer status for every transport. They cover returning from an unpaired
 slot, unavailable USB, and release-before-rearm after a host becomes ready.
+Pairing tests cover the long-hold/release gesture, timer wrap, same-slot pairing,
+one-shot radio requests, GUI searching status and neutral rearm. Native codec
+tests check each slot's name, payload length, zero fill and checksum. ARM tests
+check both-DMA completion, fresh-status gates, held-key rejection, sleep/selection
+exclusion, timeout without retry and unchanged spontaneous-disconnect faults.
 Peer responses and transfer completion are scripted; local drain is not proof
 that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.

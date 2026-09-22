@@ -218,14 +218,15 @@ class Tests(unittest.TestCase):
     def test_transport_status(self):
         from keyboard_gui_model import transport_text
         for transport in range(6):
-            for flags in range(4):
+            for flags in range(16):
                 data=bytearray(packet());data[78:80]=bytes((transport,flags))
                 struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
-                if not transport and flags:
+                if flags & ~7 or (not transport and flags) or (flags & 4 and (transport<2 or flags & 1)):
                     with self.assertRaisesRegex(ValueError,'transport'):decode(data)
                 else:
                     s=decode(data);self.assertEqual((s.transport,s.transport_flags),(transport,flags))
                     self.assertEqual(bool(transport_text(s)),bool(transport))
+                    if flags & 4:self.assertIn('pairing requested / searching',transport_text(s))
 
     def test_capture_buffer_integrity(self):
         connection = Connection('/unused')

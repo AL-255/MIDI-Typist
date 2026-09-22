@@ -120,7 +120,7 @@ static void cancel_input(void)
     keyboard_app_invalidate(&app,now);
     keyboard_midi_abort(&midi);
     keyboard_aux_cancel(&auxiliary);auxiliary_allowed=false;m1_encoder_discard();
-    controls.pending=controls.held=0;controls.switching=controls.battery_show=false;
+    controls.pending=controls.held=0;controls.switching=controls.battery_show=controls.pairing=false;
     controls.neutral_required=true;keyboard_text_stop(&controls.text);
     light_sent=false;
 }
@@ -154,6 +154,14 @@ static bool select_transport(void *context,m1_transport_t target)
 }
 static bool transport_available(void *context,m1_transport_t target)
 { (void)context;return !transport_ops->available || transport_ops->available(transport_ops->context,target); }
+static bool pair_transport(void *context,m1_transport_t target)
+{
+    (void)context;
+    if(!transport_ops->pair)return false;
+    selection_attempted=true;
+    return transport_ops->pair(transport_ops->context,target) && radio_mode(target) &&
+        m1_wireless_pair_complete();
+}
 static bool decimal(const char **text,uint32_t *value)
 {
     const char *p=*text;if(*p<'0' || *p>'9')return false;
@@ -253,7 +261,9 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
             factory_result!=M1_FACTORY_RANGE) || !m1_factory_bootstrap(released,&bounds))return false;
     }
     static const midi_control_port_t port={millis,usb_ready,send_events,lock,unlock};
-    static const m1_transport_ops_t transport_port={drained,select_transport,NULL,transport_available};
+    static m1_transport_ops_t transport_port;
+    transport_port=(m1_transport_ops_t){drained,select_transport,NULL,transport_available,
+        transports && transports->pair?pair_transport:NULL};
     keyboard_app_init(&app,&raw,&midi,&menu,&calibration,storage?&app_ops:NULL);
     keyboard_aux_init(&auxiliary,auxiliary_mapping);auxiliary_allowed=false;
     /* Bind layout/roles without treating a fabricated sample as acquisition.
@@ -454,7 +464,8 @@ static void snapshot(void)
     status.transport=controls.current==M1_TRANSPORT_USB?MT_TRANSPORT_USB:
         controls.current==M1_TRANSPORT_RADIO?MT_TRANSPORT_RADIO:MT_TRANSPORT_BT1+controls.current;
     status.transport_flags=(output_ready()?MT_TRANSPORT_READY:0u) |
-        (controls.switching?MT_TRANSPORT_SWITCHING:0u);
+        (controls.switching?MT_TRANSPORT_SWITCHING:0u) |
+        (controls.current!=M1_TRANSPORT_USB && m1_wireless_pairing()?MT_TRANSPORT_PAIRING:0u);
     uint8_t out[SCAN_STREAM_GUI_SIZE];
     size_t size=keyboard_telemetry_encode(&app,&status,out,sizeof(out));
     if(size)(void)scan_stream_gui_push(out,size);
@@ -527,11 +538,11 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
         !menu.pending && !menu.music_page && !menu.velocity_page && !menu.press_page && !menu.reset_confirmation);
     mark=timing_step(TIMING_OUTPUT,mark);
     bool switching=controls.switching;
-    m1_transport_t old=controls.current;
+    uint32_t switch_errors=controls.errors;
     m1_controls_service(&controls,&app,now);
     if(switching && !controls.switching) {
         keyboard_aux_cancel(&auxiliary);auxiliary_allowed=false;m1_encoder_discard();
-        if(selection_attempted && old==controls.current) {
+        if(selection_attempted && switch_errors!=controls.errors) {
             /* A timed-out/cancelled physical selection may have changed the
              * hardware already. Do not silently resume on the old host. */
             transport_fault=true;m1_live_stop(now);

@@ -4,7 +4,7 @@
 #include "m1_usb.h"
 
 static uint32_t now;
-static bool starting,selecting;
+static bool starting,selecting,pairing;
 static m1_transport_t requested;
 
 void m1_transport_service(uint32_t now_us)
@@ -47,8 +47,18 @@ static bool select_mode(void *context,m1_transport_t target)
     } else if(target!=M1_TRANSPORT_USB)return false;
     selecting=false;return true;
 }
+static bool pair_mode(void *context,m1_transport_t target)
+{
+    if(target==M1_TRANSPORT_USB)return false;
+    if(!pairing) {
+        if(!select_mode(context,target) || !m1_wireless_request_pair(true,now))return false;
+        pairing=true;requested=target;
+    }
+    if(target!=requested || !m1_wireless_pair_complete())return false;
+    pairing=false;return true;
+}
 const m1_transport_ops_t *m1_transport_ops(void)
 {
-    static const m1_transport_ops_t ops={drained,select_mode,NULL,available};
+    static const m1_transport_ops_t ops={drained,select_mode,NULL,available,pair_mode};
     return &ops;
 }

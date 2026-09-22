@@ -1273,6 +1273,47 @@ def wireless(elf):
     print('PASS M1 wireless: mode/status gating, neutral baseline, paired remapped reports, backpressure, stale/invalid status, DMA faults, wrap and explicit restart; no host-delivery claim')
 
 
+def wireless_pairing(elf):
+    for mode in (0,1,2,5):
+        d=WirelessArm(elf,mode,start=0xffffd000)
+        assert not d.call('m1_wireless_request_pair',1,d.now) # no confirmed mode
+        d.baseline()
+        assert not d.call('m1_wireless_request_pair',0,d.now)
+        d.put(GPIO+0xc10,0)
+        assert not d.call('m1_wireless_request_pair',1,d.now) # unread peer status
+        d.put(GPIO+0xc10,4)
+        assert d.call('m1_wireless_request_pair',1,d.now)
+        assert d.call('m1_wireless_pairing') and not d.call('m1_wireless_pair_complete')
+        assert not d.call('m1_wireless_ready') and not d.offer((4,))
+        assert not d.call('m1_wireless_select',6,d.now)
+        assert not d.call('m1_wireless_request_sleep',3,1)
+        assert not d.call('m1_wireless_request_pair',1,d.now)
+        d.step();packet=d.packet()
+        assert packet[:4]==(bytes((0x94,2,0,1)) if mode==5 else bytes((0x94,33,2,12)))
+        if mode!=5:assert packet[4:16]==b'MIDI-Typist'+str(mode+1).encode()
+        d.put(DMA,0x30);d.step();assert not d.call('m1_wireless_pair_complete')
+        d.finish();assert not d.call('m1_wireless_pair_complete')
+        assert d.packet()[:4]==bytes((0x92,1,0,0)) # query, never resend mode/pair
+        d.finish();d.poll(state=4)
+        assert d.call('m1_wireless_pair_complete') and d.call('m1_wireless_pairing')
+        assert not d.call('m1_wireless_ready') and not d.offer((4,))
+        d.baseline() # linked state and a fresh neutral pair precede presses
+        assert not d.call('m1_wireless_pairing') and d.offer((4,))
+        assert not d.call('m1_wireless_request_pair',1,d.now) # queued non-neutral report
+        d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
+        assert not d.call('m1_wireless_request_pair',1,d.now) # committed held key
+        d.poll(state=4)
+        assert not d.call('m1_wireless_healthy') # unsolicited discontinuity still faults
+    for after_dma in (False,True):
+        d=WirelessArm(elf);d.baseline()
+        assert d.call('m1_wireless_request_pair',1,d.now)
+        if after_dma:d.step();d.finish();d.finish()
+        d.step(D['M1_RADIO_MODE_TIMEOUT_US'])
+        assert not d.call('m1_wireless_healthy') and not d.call('m1_wireless_pair_complete')
+        writes=len(d.writes);d.step();assert len(d.writes)==writes # no autonomous retry
+    print('PASS M1 pairing: explicit neutral request, all slots, DMA/status gates, neutral reconnect and fail-closed timeout')
+
+
 def wireless_power(elf):
     d=WirelessArm(elf);d.baseline()
     # Real battery filter -> scheduler -> SDK DMA buffer. Incomplete/invalid
@@ -1810,6 +1851,7 @@ def main():
     battery(args.elf)
     radio(args.elf)
     wireless(args.elf)
+    wireless_pairing(args.elf)
     wireless_power(args.elf)
     usb_power(args.elf)
     power_gpio(args.elf)

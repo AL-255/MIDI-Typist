@@ -220,7 +220,7 @@ and tests a separate 2048-byte M1 format; neither permits borrowing factory
 pages. M1 reserves two application-tail slots and audits its SDK/SRAM writer,
 and gates foreground autosave through outer-owner safety callbacks. Its
 experimental application has verified flashing, recovery and live GUI telemetry;
-pairing and physical wireless/cable/power qualification remain incomplete. Follow the
+physical pairing/wireless/cable/power qualification remains incomplete. Follow the
 [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
@@ -429,7 +429,14 @@ transport callbacks explicitly. The runtime M1 owner waits for neutral SPI
 ownership before issuing the reference mode command, confirms its status reply,
 and leaves USB control available. Report eligibility is checked separately from
 mode selection so an unpaired slot can still switch back to USB. Telemetry carries
-portable transport/ready/switching fields, not raw radio mode bytes.
+portable transport/ready/switching/pairing fields, not raw radio mode bytes.
+Pairing must be an explicit user action, separate from ordinary slot selection.
+M1's optional nonblocking `pair` callback selects the target and issues one request
+after the same neutral handoff, including when targeting the current slot. Its
+completion means local command completion plus fresh matching mode status, not
+a paired host. An absent callback disables the long-hold gesture. Do not infer
+failure merely because the selected transport did not change; use the transition
+result. Reconnection still requires a neutral report and released physical keys.
 For GUI power readback, register `midi_control_power_handler` with a nonblocking
 cached-state provider and enable `Board.power_status` in the GUI board catalog.
 Populate the portable `keyboard_power_status_t`; the shared service returns its

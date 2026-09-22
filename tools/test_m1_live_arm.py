@@ -66,6 +66,7 @@ class Live(Device,RadioArm):
             reply=bytes(n)
             if packet[0]==0x93:self.peer_mode=packet[2]
             if packet[0]==0x92:self.peer_pending=True
+            if packet[0]==0x94 and packet[2] in (0,2):self.peer_state=4
             if packet[0]==0x81 and packet[2]==1:
                 self.radio_modifiers=packet[3];self.radio_slots=packet[4:10]
             if packet[0]==0x81 and packet[2]==2:self.radio_bitmap=packet[3:18]
@@ -263,6 +264,7 @@ def main():
     knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)
+    runtime_pairing(args.elf)
     persistence(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
@@ -808,6 +810,30 @@ def runtime_transports(path):
         d.call('m1_test_usb_event',3);d.chord(5);d.run(250)
         assert d.call('m1_live_transport')==6 # unpaired mode can return to USB
         print(f'PASS M1 {"HS" if high else "FS"} runtime Fn transport owner: all slots/USB, routing, telemetry, unpaired escape and no held-key replay')
+
+
+def runtime_pairing(path):
+    for start,key,target,wire in ((6,1,0,2),(0,1,0,2),(1,3,2,4),(5,4,5,5)):
+        d=Live(path,True,mode=start,transports='runtime');d.run(200)
+        d.samples[77]=d.samples[key]=3000;d.tick()
+        for _ in range(D['M1_PAIR_HOLD_MS']+1):d.tick(step=1000)
+        assert not any(p[0]==0x94 for p in d.radio_packets) # preview only
+        d.samples[77]=d.samples[key]=3900;d.run(400)
+        assert not d.call('m1_live_transport_fault')
+        assert d.call('m1_live_transport')==target
+        commands=[p for p in d.radio_packets if p[0]==0x94]
+        assert len(commands)==1 and commands[0][2]==(0 if target==5 else 2)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        s=d.snapshot();assert s.transport==wire and s.transport_flags==4
+        d.samples[45]=3000;d.run(200);assert not d.radio_held(4)
+        d.peer_state=3;d.run(1000)
+        assert d.call('m1_wireless_ready') and not d.radio_held(4)
+        d.samples[45]=3900;d.run(200);d.samples[45]=3000;d.run(200)
+        assert d.radio_held(4)
+        d.samples[45]=3900;d.run(200)
+        assert len([p for p in d.radio_packets if p[0]==0x94])==1
+        assert not d.call('m1_live_transport_fault')
+    print('PASS M1 runtime pairing: long-hold/release, same-slot success, single command, GUI state and neutral rearm')
 
 
 if __name__=='__main__':main()

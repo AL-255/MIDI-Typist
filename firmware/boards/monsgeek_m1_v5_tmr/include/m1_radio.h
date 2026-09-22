@@ -13,7 +13,8 @@ enum {
     M1_RADIO_POLL=0x09, M1_RADIO_REPORT=0x81, M1_RADIO_BATTERY=0x90,
     M1_RADIO_STATUS_REQUEST=0x92, M1_RADIO_MODE=0x93, M1_RADIO_CONTROL=0x94,
     M1_RADIO_REPLY_STATUS=0x10,
-    M1_RADIO_STATE_REPORTS=3 /* observed reference report-eligibility state */
+    M1_RADIO_STATE_REPORTS=3, /* observed reference report-eligibility state */
+    M1_RADIO_STATE_PAIRING=4
 };
 enum { M1_RADIO_SLEEP=3, M1_RADIO_BT_RETAIN=5 };
 typedef struct {
@@ -29,6 +30,9 @@ typedef struct { uint8_t flags,state,mode; } m1_radio_status_t;
  * peer firmware-update commands. Payload semantics belong to the controller.
  * Invalid inputs leave output unchanged. Padding is always zeroed. */
 bool m1_radio_encode(m1_radio_packet_t *out,uint8_t opcode,const uint8_t *payload,size_t length);
+/* Reference held-control requests: BT mode 0..2 carries a custom 12-byte
+ * name; RF mode 5 carries [0,1]. No vendor firmware/name bytes are copied. */
+bool m1_radio_make_pair(m1_radio_packet_t *out,unsigned mode);
 void m1_radio_make_poll(m1_radio_packet_t *out);
 bool m1_radio_decode(const uint8_t *bytes,size_t transferred,m1_radio_reply_t *out);
 bool m1_radio_status(const m1_radio_reply_t *reply,m1_radio_status_t *out);

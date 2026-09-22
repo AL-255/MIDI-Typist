@@ -14,7 +14,7 @@
 #define MT_GUI_MAX_SIZE MT_GUI_SIZE(MT_GUI_MAX_KEYS,MT_GUI_MAX_HID)
 enum { MT_TRANSPORT_UNKNOWN,MT_TRANSPORT_USB,MT_TRANSPORT_BT1,
        MT_TRANSPORT_BT2,MT_TRANSPORT_BT3,MT_TRANSPORT_RADIO };
-enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u };
+enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u,MT_TRANSPORT_PAIRING=4u };
 /* Optional read-only power status, returned in the command ACK, not the
  * latest-only key stream. Unverified charger polarity has explicit raw states. */
 #define MT_POWER_SIZE 16u

@@ -2,7 +2,11 @@
 #include "defaults.h"
 #include <string.h>
 
-enum { NONE, MODE, QUERY, POLL, KEYS, BITMAP, BATTERY, SLEEP, CONSUMER };
+enum { NONE, MODE, QUERY, POLL, KEYS, BITMAP, BATTERY, SLEEP, CONSUMER, PAIR };
+enum { PAIR_NONE,PAIR_QUEUED,PAIR_REFRESH };
+static unsigned pair_state;
+static bool pair_complete;
+static uint32_t pair_at;
 static bool active,faulted,confirmed,have_status,pending,mode_sent,query_sent,poll_sent,linked;
 static unsigned flight,part;
 static m1_transport_t target;
@@ -43,6 +47,7 @@ static void begin_session(m1_transport_t mode,uint32_t tick)
     pending=true; /* mandatory neutral baseline before accepting presses */
     consumer_committed=consumer_staged=0;consumer_pending=consumer_seen=false;consumer_at=tick;
     active=true;
+    pair_state=PAIR_NONE;pair_complete=false;
 }
 bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
 {
@@ -61,20 +66,21 @@ void m1_wireless_stop(void)
     if(active)m1_radio_stop();
     active=false;confirmed=false;pending=false;flight=NONE;
     consumer_pending=false;
+    pair_state=PAIR_NONE;pair_complete=false;
 }
 bool m1_wireless_healthy(void) { return active && !faulted && m1_radio_healthy(); }
 bool m1_wireless_mode(m1_transport_t *mode)
 { if(!mode || !m1_wireless_healthy())return false;*mode=target;return true; }
 bool m1_wireless_ready(void)
 {
-    return target!=M1_TRANSPORT_USB && m1_wireless_healthy() && !sleep_command && confirmed && have_status && status.state==M1_RADIO_STATE_REPORTS &&
+    return target!=M1_TRANSPORT_USB && m1_wireless_healthy() && !sleep_command && !pair_state && confirmed && have_status && status.state==M1_RADIO_STATE_REPORTS &&
         (uint32_t)(now-status_at)<M1_RADIO_STATUS_TIMEOUT_US;
 }
 bool m1_wireless_selected(m1_transport_t mode)
 { return m1_wireless_healthy() && !sleep_command && target==mode && confirmed && have_status &&
     (uint32_t)(now-status_at)<M1_RADIO_STATUS_TIMEOUT_US; }
 bool m1_wireless_switch_ready(void)
-{ return m1_wireless_healthy() && !sleep_command && flight==NONE && m1_radio_ready() &&
+{ return m1_wireless_healthy() && !sleep_command && !pair_state && flight==NONE && m1_radio_ready() &&
     neutral(&committed) && (!pending || neutral(&staged)) &&
     !consumer_committed && (!consumer_pending || !consumer_staged); }
 bool m1_wireless_select(m1_transport_t mode,uint32_t tick)
@@ -85,12 +91,29 @@ bool m1_wireless_select(m1_transport_t mode,uint32_t tick)
     confirmed=have_status=mode_sent=query_sent=poll_sent=linked=false;
     battery_known=battery_sent=false;
     reports=0;pending=mode!=M1_TRANSPORT_USB;part=KEYS;
+    pair_complete=false;
     committed=(m1_radio_keyboard_t){0};staged=committed;
     consumer_committed=consumer_staged=0;consumer_pending=consumer_seen=false;consumer_at=tick;
     return true;
 }
+bool m1_wireless_request_pair(bool released,uint32_t tick)
+{
+    if(!released || target==M1_TRANSPORT_USB || !m1_wireless_selected(target) ||
+       !m1_wireless_switch_ready() || m1_radio_data_pending())return false;
+    pair_state=PAIR_QUEUED;pair_complete=false;pair_at=tick;
+    /* Only explicit neutral pairing may discard old link eligibility. A
+     * spontaneous discontinuity still follows the normal fault policy. */
+    linked=confirmed=have_status=false;
+    battery_known=battery_sent=false;
+    pending=false;return true;
+}
+bool m1_wireless_pair_complete(void)
+{ return pair_complete && m1_wireless_selected(target); }
+bool m1_wireless_pairing(void)
+{ return m1_wireless_healthy() && target!=M1_TRANSPORT_USB &&
+    (pair_state || (confirmed && have_status && status.state==M1_RADIO_STATE_PAIRING)); }
 bool m1_wireless_local_idle(void)
-{ return m1_wireless_healthy() && !pending && !consumer_pending && !battery_pending() &&
+{ return m1_wireless_healthy() && !pair_state && !pending && !consumer_pending && !battery_pending() &&
     (!sleep_command || sleep_complete) && flight==NONE && m1_radio_ready(); }
 uint32_t m1_wireless_reports_sent(void) { return reports; }
 uint32_t m1_wireless_errors(void) { return errors; }
@@ -140,7 +163,7 @@ bool m1_wireless_battery_sent(uint8_t *percent)
 bool m1_wireless_request_sleep(uint8_t command,bool host_released)
 {
     bool deepen=sleep_command==M1_RADIO_BT_RETAIN && sleep_complete && command==M1_RADIO_SLEEP;
-    if(!host_released || !m1_wireless_healthy() || (sleep_command && !deepen) || flight ||
+    if(!host_released || !m1_wireless_healthy() || pair_state || (sleep_command && !deepen) || flight ||
        !m1_radio_ready() || !neutral(&committed) || consumer_committed || consumer_pending ||
        (pending && (reports || !neutral(&staged))) ||
        (command!=M1_RADIO_SLEEP && command!=M1_RADIO_BT_RETAIN))return false;
@@ -170,6 +193,11 @@ static void receive(const uint8_t *bytes,size_t length)
         fail();return;
     }
     confirmed=mode_sent && received.mode==target;
+    if(confirmed && pair_state==PAIR_REFRESH) {
+        pair_state=PAIR_NONE;pair_complete=true;
+        committed=(m1_radio_keyboard_t){0};staged=committed;
+        reports=0;pending=true;part=KEYS; /* fresh neutral before any press */
+    }
     if(confirmed && target!=M1_TRANSPORT_USB && received.state==M1_RADIO_STATE_REPORTS)linked=true;
 }
 static bool send(unsigned kind,const m1_radio_packet_t *packet)
@@ -181,6 +209,7 @@ void m1_wireless_service(uint32_t tick)
 {
     if(!active || faulted)return;
     now=tick;
+    if(pair_state && (uint32_t)(now-pair_at)>=M1_RADIO_MODE_TIMEOUT_US) { fail();return; }
     /* The request deadline includes queueing AND observed completion. A late
      * DMA flag must not retroactively authorize an expired power handoff. */
     if(sleep_command && !sleep_complete && (uint32_t)(now-sleep_at)>=M1_RADIO_SLEEP_TIMEOUT_US) {
@@ -201,8 +230,20 @@ void m1_wireless_service(uint32_t tick)
             consumer_committed=consumer_staged;consumer_pending=false;consumer_seen=true;consumer_at=now;
         }
         else if(done==SLEEP)sleep_complete=true;
+        else if(done==PAIR) {
+            pair_state=PAIR_REFRESH;started=now;
+            confirmed=have_status=false;query_sent=false;
+        }
     }
     if(faulted)return;
+    if(pair_state==PAIR_QUEUED) {
+        if(!flight && m1_radio_ready()) {
+            m1_radio_packet_t packet;
+            if(!m1_radio_make_pair(&packet,target)) { fail();return; }
+            (void)send(PAIR,&packet);
+        }
+        return;
+    }
     /* Once the control packet was accepted, neither a later status timeout
      * nor a request cancellation may resume ordinary traffic into a sleeping
      * peer. The outer power/wake coordinator owns all subsequent decisions. */
@@ -226,7 +267,7 @@ void m1_wireless_service(uint32_t tick)
         if(send(POLL,&packet)) { last_poll=now;poll_sent=true; }
         return;
     }
-    if(!confirmed && (!mode_sent || (uint32_t)(now-last_mode)>=M1_RADIO_QUERY_US)) {
+    if(!confirmed && pair_state!=PAIR_REFRESH && (!mode_sent || (uint32_t)(now-last_mode)>=M1_RADIO_QUERY_US)) {
         uint8_t mode=target;
         (void)m1_radio_encode(&packet,M1_RADIO_MODE,&mode,1);
         if(send(MODE,&packet)) { mode_sent=true;last_mode=now; }

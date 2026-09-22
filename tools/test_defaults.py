@@ -92,6 +92,8 @@ class DefaultsTests(unittest.TestCase):
                         {'M1_USB_PHY_SETTLE_US':999}, {'M1_USB_INIT_DELAY_LIMIT_MS':24},
                         {'M1_USB_INIT_DELAY_LIMIT_MS':1001}, {'M1_USB_PHY_SETTLE_US':25001},
                         {'M1_RADIO_START_PULSE_US':0}, {'M1_RADIO_TRANSFER_TIMEOUT_US':0},
+                        {'M1_PAIR_HOLD_MS':0}, {'M1_PAIR_HOLD_MS':0x80000000},
+                        {'M1_PAIR_SWITCH_TIMEOUT_MS':2999}, {'M1_PAIR_SWITCH_TIMEOUT_MS':0x80000000},
                         {'M1_RADIO_START_PULSE_US':0x80000000},
                         {'M1_RADIO_TRANSFER_TIMEOUT_US':0x80000000},
                         {'M1_WAKE_SCAN_TIMEOUT_US':0}, {'M1_WAKE_SCAN_TIMEOUT_US':0x80000000},

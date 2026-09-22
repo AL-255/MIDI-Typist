@@ -269,12 +269,16 @@ received and decoded on the connected high-speed USB device.
 | 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
 | 76 | u16 | header size, 80 |
 | 78 | u8 | selected keyboard transport: unreported=0, USB=1, Bluetooth slots 1/2/3=2/3/4, 2.4 GHz=5 |
-| 79 | u8 flags | transport report-eligible=1, switching=2; zero when transport is unreported |
+| 79 | u8 flags | transport report-eligible=1, switching=2, pairing requested/searching=4; zero when transport is unreported |
 
 Transport selection is distinct from report eligibility. A selected but unpaired
 Bluetooth slot reports waiting, not ready; neither flag proves reception by a
 remote host. The wired SysEx connection may coexist with wireless keyboard output.
 Unknown transport values/bits and unsupported snapshot magics are rejected.
+Pairing is valid only for wireless transports and cannot accompany report-eligible.
+It covers a pending explicit pairing request or peer searching state; it does not
+prove advertising, a bond or host delivery. During a switch the transport field
+continues to identify the old selection until handoff completes.
 
 M1 storage errors at offset 68 use `0x31001`–`0x3100c` for backend failures
 (argument, context, unsafe, geometry, linker, busy, controller, record, unlock,

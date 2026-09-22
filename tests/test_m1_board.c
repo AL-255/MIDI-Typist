@@ -330,10 +330,55 @@ static bool transport_select(void *context,m1_transport_t target)
 static bool accept_report(const keyboard_report_t *report) { (void)report; return true; }
 static bool accept_midi(uint8_t a,uint8_t b,uint8_t c,uint8_t d)
 { (void)a;(void)b;(void)c;(void)d; return true; }
+static unsigned paired_count;
+static bool transport_pair(void *context,m1_transport_t target)
+{ assert(!context);++paired_count;selected=target;return accept_switch; }
+static void pairing_controls(void)
+{
+    static const keyboard_app_ops_t ops={0};
+    const m1_transport_ops_t transport={.drained=transport_drained,
+        .select=transport_select,.pair=transport_pair};
+    const m1_transport_t targets[]={0,1,2,5};
+    for(unsigned f=1;f<=4;++f) {
+        m1_controls_t s;
+        keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
+        assert(m1_controls_bind(&s,&app,targets[f-1],&transport,NULL));
+        for(unsigned i=0;i<82;++i) { samples[i]=3900;lo[i]=1;hi[i]=4096; }
+        now=UINT32_MAX-100;frame();frame();
+        samples[M1_FN_SENSOR]=samples[f]=3000;frame();
+        assert(s.pending==f && !s.pairing);
+        now=s.held_at+M1_PAIR_HOLD_MS-1;frame();assert(!s.pairing);
+        frame();assert(s.pairing && !s.switching); /* unsigned time wrap */
+        unsigned calls=paired_count;
+        m1_controls_service(&s,&app,now);assert(paired_count==calls);
+        samples[f]=3900;frame();assert(s.switching && s.pairing);
+        drained=false;accept_switch=true;
+        keyboard_app_service(&app,now,true,accept_report,accept_midi);
+        m1_controls_service(&s,&app,now);assert(paired_count==calls);
+        drained=true;m1_controls_service(&s,&app,now);
+        assert(paired_count==calls+1 && !s.switching && !s.pairing);
+        assert(s.current==targets[f-1] && s.neutral_required && !s.errors);
+        samples[M1_FN_SENSOR]=3900;frame();frame();
+        /* A short same-slot press is not a pairing request. */
+        samples[M1_FN_SENSOR]=samples[f]=3000;frame();
+        samples[f]=3900;frame();assert(!s.switching && !s.pairing);
+        assert(paired_count==calls+1);
+    }
+    for(unsigned index=0;index<2;++index) {
+        unsigned sensor=index?M1_SPACE_SENSOR:5;
+        m1_controls_t s;
+        keyboard_app_init(&app,&raw,&midi,&menu,&cal,&ops);
+        assert(m1_controls_bind(&s,&app,M1_TRANSPORT_USB,&transport,NULL));
+        for(unsigned i=0;i<82;++i)samples[i]=3900;
+        frame();frame();samples[M1_FN_SENSOR]=samples[sensor]=3000;frame();
+        now=s.held_at+M1_PAIR_HOLD_MS;frame();assert(!s.pairing);
+        samples[M1_FN_SENSOR]=samples[sensor]=3900;frame();assert(!s.switching);
+    }
+}
 static void controls(void)
 {
     static const keyboard_app_ops_t ops={0};
-    const m1_transport_ops_t transport={transport_drained,transport_select,NULL,NULL};
+    const m1_transport_ops_t transport={.drained=transport_drained,.select=transport_select};
     m1_controls_t s;
     m1_battery_t battery;
     m1_battery_init(&battery);
@@ -462,6 +507,24 @@ static void radio_packets(void)
     m1_radio_reply_t reply,saved;
     memset(&unchanged,0xa5,sizeof(unchanged));
     memset(&saved,0x5a,sizeof(saved));
+    for(unsigned mode=0;mode<=7;++mode) {
+        packet=unchanged;
+        bool valid=mode<=2 || mode==5;
+        assert(m1_radio_make_pair(&packet,mode)==valid);
+        if(!valid) { assert(!memcmp(&packet,&unchanged,sizeof(packet)));continue; }
+        assert(packet.bytes[0]==M1_RADIO_CONTROL);
+        if(mode==5)assert(packet.size==8 && !memcmp(packet.bytes+1,"\2\0\1\1",4));
+        else {
+            assert(packet.size==36 && packet.bytes[1]==33);
+            assert(packet.bytes[2]==2 && packet.bytes[3]==12);
+            assert(!memcmp(packet.bytes+4,"MIDI-Typist",11));
+            assert(packet.bytes[15]=='1'+mode);
+            for(unsigned i=16;i<35;++i)assert(!packet.bytes[i]);
+        }
+        assert(m1_radio_decode(packet.bytes,packet.size,&reply));
+        for(unsigned i=packet.size;i<sizeof(packet.bytes);++i)assert(!packet.bytes[i]);
+    }
+    assert(!m1_radio_make_pair(NULL,0) && !m1_radio_make_pair(NULL,5));
     const uint8_t opcodes[]={M1_RADIO_REPORT,M1_RADIO_BATTERY,
         M1_RADIO_STATUS_REQUEST,M1_RADIO_MODE,M1_RADIO_CONTROL};
     for(unsigned op=0;op<sizeof(opcodes);++op) {
@@ -670,7 +733,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

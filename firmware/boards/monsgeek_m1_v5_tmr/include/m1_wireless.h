@@ -5,7 +5,8 @@
 /* Single foreground owner of the radio HAL. Init requires initialized, idle
  * SPI3 and explicit permission from the outer coordinator: previous host
  * releases and peer power are its responsibility. Never use local_idle as a
- * host-delivery acknowledgement. No pairing or boot commands are emitted. */
+ * host-delivery acknowledgement. Pairing requires a separate explicit request;
+ * boot/firmware-update commands are never emitted. */
 bool m1_wireless_init(m1_transport_t mode,bool previous_host_released,uint32_t now_us);
 void m1_wireless_service(uint32_t now_us);
 void m1_wireless_stop(void);
@@ -30,6 +31,13 @@ bool m1_wireless_switch_ready(void);
 /* Awake peer only. Keep SPI/rails initialized; cancel unsent neutral metadata,
  * send 0x93 and query status. Mode 6 parks wireless reporting for USB. */
 bool m1_wireless_select(m1_transport_t mode,uint32_t now_us);
+/* One explicit pairing request after mode selection and neutral completion.
+ * Reject held/pending output or another control transaction. No automatic
+ * repeat: completion requires finished DMA plus a subsequent matching status,
+ * NOT connection to a host. State 3 separately permits keyboard reports. */
+bool m1_wireless_request_pair(bool host_released,uint32_t now_us);
+bool m1_wireless_pair_complete(void);
+bool m1_wireless_pairing(void);
 uint32_t m1_wireless_reports_sent(void);
 uint32_t m1_wireless_errors(void);
 bool m1_wireless_status(m1_radio_status_t *out);

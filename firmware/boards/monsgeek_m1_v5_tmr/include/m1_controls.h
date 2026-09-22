@@ -18,15 +18,19 @@ typedef struct {
     bool (*select)(void *context,m1_transport_t target);
     void *context;
     bool (*available)(void *context,m1_transport_t target); /* NULL: all offered */
+    /* Optional: select target, issue one pairing request, then confirm fresh
+     * mode status. True is NOT proof of a bond or connected host. Same-slot
+     * requests are valid. Called repeatedly after drained until complete. */
+    bool (*pair)(void *context,m1_transport_t target); /* NULL: no long-hold pairing */
 } m1_transport_ops_t;
 typedef struct {
     m1_transport_t current,target;
     const m1_transport_ops_t *ops;
     const m1_battery_t *battery;
     keyboard_text_t text;
-    uint32_t revision, requested_at, errors;
+    uint32_t revision, requested_at, errors, held_at;
     uint8_t held, pending;
-    bool switching,battery_show,neutral_required;
+    bool switching,battery_show,neutral_required,pairing;
 } m1_controls_t;
 bool m1_transport_valid(unsigned transport);
 /* Binds only this board's optional application hooks; does not touch hardware.

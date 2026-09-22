@@ -116,7 +116,9 @@ def power_text(status):
 def transport_text(snapshot):
     names=('Not reported','USB','Bluetooth 1','Bluetooth 2','Bluetooth 3','2.4 GHz')
     if not snapshot.transport:return ''
-    state='switching' if snapshot.transport_flags & 2 else 'ready' if snapshot.transport_flags & 1 else 'waiting for host'
+    state=('pairing requested / searching' if snapshot.transport_flags & 4 else
+           'switching' if snapshot.transport_flags & 2 else
+           'ready' if snapshot.transport_flags & 1 else 'waiting for host')
     return f'{names[snapshot.transport]}: {state}'
 
 
@@ -150,7 +152,8 @@ def decode(data):
         raise ValueError('GUI checksum mismatch')
     end = HEADER_SIZE+count*RECORD_SIZE
     transport,transport_flags=data[78:80]
-    if transport>5 or transport_flags & ~3 or (not transport and transport_flags):
+    if (transport>5 or transport_flags & ~7 or (not transport and transport_flags) or
+        (transport_flags & 4 and (transport<2 or transport_flags & 1))):
         raise ValueError('invalid transport state')
     if any(data[end+hid_bytes:size-4]):
         raise ValueError('invalid GUI padding')

@@ -13,8 +13,8 @@ not yet established. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet qualified for use.
-Automatic battery sleep/wake and cable-arrival restoration are linked;
-pairing and physical wireless/power qualification remain unfinished.
+Automatic battery sleep/wake, cable-arrival restoration and explicit wireless
+pairing requests are linked; physical wireless/power qualification remains unfinished.
 
 ## Identify a keyboard
 
@@ -339,6 +339,7 @@ application. Its table defines these Fn controls; bare F1–F5 remain normal key
 | --- | --- |
 | Fn+F1 / F2 / F3 | Bluetooth slot 1 / 2 / 3 |
 | Fn+F4 | 2.4 GHz |
+| Hold Fn+F1 / F2 / F3 / F4 for 3 seconds, then release | Request pairing for that Bluetooth slot / 2.4 GHz |
 | Fn+F5 | USB |
 | Fn+Enter | Keyboard/MIDI toggle on USB only; unavailable on wireless |
 | Fn+Space | Battery bar on number keys while held; amber Space means unavailable |
@@ -352,7 +353,8 @@ does not provide an old-host receipt acknowledgement; local completion must not
 be described as one. The owner then sends mode opcode `93` and waits for a fresh
 matching status reply. All selections, including USB mode 6, use that reference
 packet contract (`0x080180AE`); the mode branch is instruction-checked against
-the private image. No pairing, vendor forwarding or peer-update command is sent.
+the private image. Short presses never send a pairing command. Vendor forwarding
+and peer-update commands are not implemented.
 The USB control link stays connected while keyboard output uses wireless.
 
 A matching mode selects the slot even if it is unpaired. State 3 separately
@@ -360,8 +362,29 @@ permits reports; Fn menus remain usable while waiting. A newly eligible host
 requires neutral input, so offline-held keys cannot be replayed. Fn+F5 is not
 offered without ready USB. An attempted switch that times out or loses scan
 integrity is terminal, retaining wired diagnostics when available; it does not
-silently resume on an ambiguous host. Cable transitions and pairing remain
-outside this runtime owner. Transport selection is not yet persisted.
+silently resume on an ambiguous host. Cable transitions belong to the separate
+power-source owner. Transport selection is not yet persisted.
+
+For explicit pairing, keep Fn+F1–F4 held until the preview changes to `PAIR BT1`,
+`PAIR BT2`, `PAIR BT3` or `PAIR RF`, then release the combination and all keys.
+This can replace the selected slot's existing bond; use a short press to select
+an already paired host. The three-second hold is a custom default, not a measured
+factory timing. Fn+F5 and Fn+Space never request pairing.
+
+After the neutral handoff and target-mode confirmation, the owner sends one
+control `94` packet. The reference branches at `0x080180FE` / `0x0801819A`
+establish the radio payload `[0, 1]` and Bluetooth's 33-byte payload: control 2,
+12-byte name length, name, then zero fill. The custom names are `MIDI-Typist1`
+through `MIDI-Typist3`; no factory name bytes are included. Both DMA directions
+and SPI drain must finish before requesting fresh mode status. No automatic
+pairing retry or intervening mode resend occurs. The complete transition has a
+six-second deadline; the pairing phase has a three-second deadline.
+
+The GUI shows **pairing requested / searching** during the radio request or
+peer state 4. Neither a completed command nor matching mode proves a paired
+host. State 3 separately permits reports, starting with a fresh neutral report
+and released physical keys. Actual advertising names, bond replacement, receiver
+pairing and wireless host delivery still require hardware verification.
 
 Wireless forces keyboard mode, including a restored MIDI setting. The shared
 menu hides the MIDI entry hint. USB selection does not automatically enable MIDI.
@@ -459,7 +482,8 @@ host delivery or sleep**. `m1_radio_quiesce` requires explicit caller permission
 and no outstanding/unconsumed transfer before applying the reference's inactive
 pin pattern. It does not infer permission from an opcode or an unknown reply.
 The foreground scheduler below owns this HAL. The runtime power controller
-coordinates sleep/retention; pairing and physical host-delivery proof remain outstanding.
+coordinates sleep/retention; the explicit pairing owner is described above.
+Physical host-delivery proof remains outstanding.
 
 Native tests cover every supported payload length, opcode rejection, checksum,
 padding, malformed lengths and status offsets. Linked Cortex-M4 tests execute
@@ -513,8 +537,8 @@ releases, rollover recovery and evolving polyphony. Linked ARM tests execute
 the scheduler and official SPI/DMA drivers with scripted replies/completion,
 covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
 backpressure, stale/invalid status, faults and timer wrap. `m1_live` binds this
-component to the shared keyboard application. A complete transport/power owner, pairing,
-physical host delivery and the electrical sleep handoff remain required.
+component to the shared keyboard application and runtime transport/power owners.
+Physical pairing, host delivery and the electrical sleep handoff remain unverified.
 
 ### Radio battery and sleep-control handoff
 
@@ -857,8 +881,8 @@ millisecond/microsecond readings. Profile restore, gated autosave and parallel
 calibration saves are linked. Fn+F1–F5 uses the runtime transport owner; RESET
 remains disabled.
 
-The development loop implements battery idle/critical sleep, wake restoration
-and cable transitions as described below. It does **not** implement pairing.
+The development loop implements battery idle/critical sleep, wake restoration,
+cable transitions and explicit long-hold pairing requests as described here.
 An unsupported source change or device fault
 stops acquisition/radio/lighting, retains rails, and latches a
 terminal diagnostic. If USB and the timebase remain usable, it sends neutral
@@ -1161,7 +1185,7 @@ one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
 timeouts and faults. Runtime restoration requires release before rearming;
 it does not transmit the waking press.
 
-Complete power management still requires radio pairing, handling cable changes
+Complete power management still requires physical pairing verification, handling cable changes
 that overlap an Fn transport switch or PHY mutation, and physical qualification. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
