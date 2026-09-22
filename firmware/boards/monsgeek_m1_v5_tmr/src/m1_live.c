@@ -161,6 +161,20 @@ static bool decimal(const char **text,uint32_t *value)
     }
     *text=p;*value=n;return true;
 }
+bool m1_live_publish_stats(void)
+{
+    if(!initialized)return false;
+    uint8_t payload[24u+12u*TIMING_COUNT]={'M','1','P','F',1,TIMING_COUNT};
+    payload[6]=sizeof(payload);payload[7]=sizeof(payload)>>8;
+    put32(payload+8,now);put32(payload+12,scan_sequence);
+    put32(payload+16,losses);put32(payload+20,m1_hal_errors());
+    for(unsigned i=0;i<TIMING_COUNT;++i) {
+        put32(payload+24+12*i,timing[i].calls);
+        put32(payload+28+12*i,timing[i].total);
+        put32(payload+32+12*i,timing[i].maximum);
+    }
+    return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+}
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
@@ -175,18 +189,7 @@ static bool command(const char *line)
         put32(payload+28,input.overflows);
         return midi_control_publish(MT_DUMP,payload,sizeof(payload));
     }
-    if(!strcmp(line,"runtime stats")) {
-        uint8_t payload[24u+12u*TIMING_COUNT]={'M','1','P','F',1,TIMING_COUNT};
-        payload[6]=sizeof(payload);payload[7]=sizeof(payload)>>8;
-        put32(payload+8,now);put32(payload+12,scan_sequence);
-        put32(payload+16,losses);put32(payload+20,m1_hal_errors());
-        for(unsigned i=0;i<TIMING_COUNT;++i) {
-            put32(payload+24+12*i,timing[i].calls);
-            put32(payload+28+12*i,timing[i].total);
-            put32(payload+32+12*i,timing[i].maximum);
-        }
-        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
-    }
+    if(!strcmp(line,"runtime stats"))return m1_live_publish_stats();
     if(!strcmp(line,"factory read")) {
         uint8_t payload[M1_FACTORY_DUMP_BYTES];
         return m1_factory_read_dump(payload)==M1_FACTORY_OK &&

@@ -2,6 +2,7 @@
 """Offline bidirectional USB-MIDI SysEx control tests at both USB speeds."""
 import argparse
 import re
+import struct
 from pathlib import Path
 import midi_sysex as sx
 from midi_arm_peer import MidiArmPeer
@@ -48,6 +49,22 @@ def main():
         commit=re.search(r'MT_GIT_COMMIT "([^"]+)"',header)[1]
         state=re.search(r'MT_GIT_STATE "([^"]+)"',header)[1]
         assert git == f'{commit} state={state}'.encode()
+        # An in-flight bulk payload owns immutable encoded bytes. While it is
+        # busy, capture service must neither consume the next record nor
+        # repeatedly assemble a packet it cannot publish.
+        dev.call('scan_stream_last_key',3500,456,0)
+        dev.cpu.mem_write(0x2003d000,struct.pack('<61H',*([3900]*61)))
+        dev.call('scan_stream_push',0x2003d000,61,1,0)
+        assert dev.call('midi_control_publish_ready') and dev.call('scan_stream_service')
+        assert not dev.call('midi_control_publish_ready')
+        dev.cpu.mem_write(0x2003d000,struct.pack('<61H',*([3000]*61)))
+        dev.call('scan_stream_push',0x2003d000,61,1,0)
+        scratch=dev.symbols['s_packet'];dev.cpu.mem_write(scratch,b'\xa5'*64)
+        assert not dev.call('scan_stream_service')
+        assert bytes(dev.cpu.mem_read(scratch,64))==b'\xa5'*64
+        from keyboard_capture import KeyDecoder
+        assert list(KeyDecoder(3500,456,61).feed(dev.drain()))==[3900,3000]
+        dev.call('scan_stream_stop')
         dev.peer.command('git'); dev.peer.drain()
         assert dev.peer.messages[-1][0] == sx.ACK
         assert dev.peer.messages[-1][3] == b'git='+git

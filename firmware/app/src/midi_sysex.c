@@ -4,7 +4,20 @@
 static const uint8_t prefix[]={0xf0,0x7d,0x4d,0x54,MT_SYSEX_VERSION};
 static uint32_t crc_update(uint32_t crc,const uint8_t *p,size_t n)
 {
-    while(n--) { crc^=*p++; for(unsigned i=0;i<8;++i) crc=(crc>>1)^((0u-(crc&1u))&0xedb88320u); }
+    /* Reflected IEEE CRC-32, four polynomial steps per lookup. The small
+     * table keeps the wire CRC unchanged without an eight-step bit loop for
+     * every captured byte. No MCU-specific CRC peripheral or alignment. */
+    static const uint32_t nibble[16]={
+        0x00000000u,0x1db71064u,0x3b6e20c8u,0x26d930acu,
+        0x76dc4190u,0x6b6b51f4u,0x4db26158u,0x5005713cu,
+        0xedb88320u,0xf00f9344u,0xd6d6a3e8u,0xcb61b38cu,
+        0x9b64c2b0u,0x86d3d2d4u,0xa00ae278u,0xbdbdf21cu
+    };
+    while(n--) {
+        crc^=*p++;
+        crc=(crc>>4)^nibble[crc&15u];
+        crc=(crc>>4)^nibble[crc&15u];
+    }
     return crc;
 }
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }

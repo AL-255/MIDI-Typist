@@ -15,12 +15,12 @@ Each capture command carries a new nonce. Inner sequence numbers begin at zero;
 missing, duplicated, invalid or loss-marked records fail the capture. A device
 acquisition discontinuity is a loss even if its transmitted records are consecutive.
 Device buffering is 256 records, published in batches of up to 32.
-The host uses a bounded MIDI callback queue and a 16384-sample buffer.
+The host uses bounded native/IPC MIDI queues and a 16384-sample buffer.
 Overflow never silently discards waveform data. Reconnect to start a new session
 after a fault; the GUI does not retry uncertain settings changes.
 
 Velocity reproduction uses [the firmware's window and filter](KEY_VELOCITY.md).
 Its declared timebase is 8000 Hz, not a claim of measured acquisition speed.
-The physical Linux SysEx capture check delivers approximately 1.34 ksample/s.
+Sustained M1 capture under live load is not yet qualified.
 See [telemetry](TELEMETRY.md#per-key-stream-stream-key) for fields and
 [validation](VALIDATION.md) for evidence limits.

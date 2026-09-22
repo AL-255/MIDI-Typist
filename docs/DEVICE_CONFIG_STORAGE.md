@@ -169,8 +169,17 @@ Saved MIDI mode is suppressed for wireless operation. GUI fields report the
 actual journal slot, generation, pending state and latched error independently
 of the imported-calibration flag.
 
-`device_store_poll` marks pending changes without writing. When a stable neutral
-snapshot is due, the foreground additionally checks completed neutral output,
+`device_store_poll` marks pending changes without writing. On each scheduled
+settings check, it compares all current persisted inputs against an exact
+RAM cache of the last validated polling inputs. Unchanged inputs skip profile
+bit-packing and CRC work; pending changes still mature through the normal quiet
+window. Each threshold, mapping and global setting participates in the comparison.
+Reverting to the saved settings cancels pending work. Accepting a verified record
+invalidates the cache; explicit calibration and the final write still serialize
+and validate the complete snapshot. The cache changes neither flash format nor
+owned storage addresses.
+
+Before a write, the foreground additionally checks completed neutral output,
 MIDI cleanup, local transport drain, idle lighting and no transport selection.
 The supplied `m1_live_storage_ops_t.begin` qualifies power and pauses hardware:
 `M1_SAVE_DEFER` leaves hardware unchanged, `M1_SAVE_READY` acquires ownership,

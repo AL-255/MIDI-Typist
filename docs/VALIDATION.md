@@ -136,6 +136,8 @@ unsafe activity and failed blank/program verification. It checks RAM-only
 transactions, temporary exception vectors, reboot fallback, fault latching and
 stuck-busy fail-stop. Foreground tests separately script profile I/O and the
 owner gate, checking pending status, stable neutral autosave, no-change wear,
+exact polling-cache comparisons of every global and per-key setting, edit
+reversion, retained debounce time and cache invalidation after a verified save,
 restart restoration, failure latching and terminal gate/resume failure at both USB
 packet sizes. Parallel calibration tests cover all 82 endpoints, GUI/Fn+C entry,
 deferred completion while keys remain held, whole-profile restore, intentional

@@ -18,8 +18,16 @@ uint32_t calibration_crc32(const uint8_t *p, unsigned n);
 /* One complete snapshot per page. Never split settings/calibration generations
  * between independent writers: only a verified new snapshot replaces the old. */
 typedef struct {
+    uint16_t press[CAL_KEYS],release[CAL_KEYS];
+    uint8_t notes[CAL_KEYS],keycodes[CAL_KEYS],globals[13],profile,count;
+} device_settings_t;
+typedef struct {
     uint8_t record[CAL_PAGE_SIZE];
-    uint32_t generation, calibration_generation, error, changed_at, pending_crc, checked_at;
+    /* RAM-only exact comparison of the last validated polling inputs. This
+     * is not another save format or a truncated hash of the configuration. */
+    device_settings_t observed;
+    bool observed_valid;
+    uint32_t generation, calibration_generation, error, changed_at, checked_at;
     uint8_t slot;
     bool valid, saved, ready, applied, pending, cold, fault;
 } device_store_t;

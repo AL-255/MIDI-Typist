@@ -72,6 +72,10 @@ During normal M1 operation, `runtime stats` queues one read-only `DUMP` with
 magic `M1PF`, version 1. Stop GUI/capture streaming and drain its in-flight
 response before requesting this dump: a busy bulk-response slot returns ERROR
 (`unsupported command`); ACK means the dump was queued, not already delivered.
+After a runtime failure, the diagnostic control owner also exposes these
+retained counters: time, scan sequence and timing stages stop advancing with
+live service, while the HAL error field includes the terminal fault. This does
+not restart acquisition. Boot failure before live initialization has no snapshot.
 
 | Offset | Type | Meaning |
 | --- | --- | --- |
@@ -174,6 +178,9 @@ one/two/three bytes ending F7. Cable-0 notes are serviced before control traffic
 A complete encoded outbound message remains immutable; each up-to-16-event
 chunk is copied to a separate DMA buffer. Command execution and CRC processing
 run in main, not in the USB ISR. Buffer/timing defaults live in `defaults.h`.
+Bulk capture preparation first checks transmit-slot readiness; a busy slot
+does not repeatedly copy the same pending batch. Software CRC-32 uses a small
+nibble table, with identical wire bytes and no MCU-specific CRC peripheral.
 
 ## Channels
 

@@ -16,5 +16,9 @@ void midi_control_usb_reset(void);
 void midi_control_receive_usb(const uint8_t *events,size_t length);
 void midi_control_service(void);
 bool midi_control_ready(void);
+/* Foreground hint only, not a reservation. Avoid preparing/copying a bulk
+ * payload while a reply or immutable transmission owns the slot. Publish
+ * still rechecks readiness, including a USB reset between these calls. */
+bool midi_control_publish_ready(void);
 bool midi_control_publish(uint8_t kind,const uint8_t *data,size_t length);
 #endif

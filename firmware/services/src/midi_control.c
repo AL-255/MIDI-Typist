@@ -110,9 +110,11 @@ static void receive_command(uint32_t now)
     bool ok=s_command && s_command((const char *)payload);
     reply(ok?MT_ACK:MT_ERROR,info.sequence,ok?"":"unsupported command");
 }
+bool midi_control_publish_ready(void)
+{ return midi_control_ready() && !s_reply_kind && s_tx_at==s_tx_size; }
 bool midi_control_publish(uint8_t kind,const uint8_t *data,size_t length)
 {
-    if(!midi_control_ready() || s_reply_kind || s_tx_at<s_tx_size)return false;
+    if(!midi_control_publish_ready())return false;
     s_tx_size=midi_sysex_encode(kind,s_session,0,data,length,s_tx,sizeof(s_tx));s_tx_at=0;
     return s_tx_size!=0;
 }

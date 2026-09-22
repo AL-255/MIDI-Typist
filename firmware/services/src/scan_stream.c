@@ -87,7 +87,7 @@ bool scan_stream_service(void)
     if(s_mode==KEY && s_fault && !s_fault_sent && !s_count) {
         key_record(s_records,0,2);s_head=1;s_tail=0;s_count=1;s_fault_sent=true;
     }
-    if(!s_count)return false;
+    if(!s_count || !midi_control_publish_ready())return false;
     unsigned count=s_mode==KEY?(s_count<BATCH?s_count:BATCH):1;
     unsigned size=s_mode==KEY?SCAN_STREAM_KEY_SIZE:s_mode==GUI?s_gui_size:128u;
     for(unsigned i=0;i<count;++i)

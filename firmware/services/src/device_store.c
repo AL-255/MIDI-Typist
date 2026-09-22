@@ -122,19 +122,40 @@ bool device_record_valid(const uint8_t *p)
     while(pos<CRC_OFFSET*8u)if(!getbits(p,&pos,1))return false;
     return true;
 }
+static void current_globals(const keyboard_app_t *app,uint8_t out[13])
+{
+    const keyboard_raw_t *r=app->raw; const keyboard_midi_t *m=app->midi;
+    const keyboard_config_t *c=&r->engine.config;
+    const uint8_t globals[]={m->mode,m->janko,m->lower_muted,app->menu->brightness,m->velocity_start,
+        m->music.root,m->music.scale,(uint8_t)(m->octave+10),r->enabled,
+        c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked};
+    memcpy(out,globals,sizeof(globals));
+}
+static bool current_settings(const keyboard_app_t *app,device_settings_t *out)
+{
+    const keyboard_raw_t *r=app->raw;
+    if(!keyboard_layout_valid(r->profile,r->count))return false;
+    /* Zero unused cells/padding so a complete byte comparison is deterministic
+     * across all board capacities. Scan samples and transient menus are not
+     * settings and must not make the persistence path do work at scan rate. */
+    memset(out,0,sizeof(*out));out->profile=r->profile;out->count=r->count;
+    current_globals(app,out->globals);
+    memcpy(out->press,r->press,r->count*sizeof(*r->press));
+    memcpy(out->release,r->release,r->count*sizeof(*r->release));
+    memcpy(out->keycodes,r->keycode,r->count);
+    memcpy(out->notes,app->midi->mapping,r->count);
+    return true;
+}
 static bool capture(uint8_t *p,const device_store_t *s,const keyboard_app_t *app,
                     const keyboard_calibration_t *cal)
 {
     const keyboard_raw_t *r=app->raw; const keyboard_midi_t *m=app->midi;
-    const keyboard_config_t *c=&r->engine.config;
     if(!keyboard_layout_valid(r->profile,r->count) || sensor_end(r->profile,r->count)>CRC_OFFSET*8u)
         return false;
     memset(p,255,CAL_PAGE_SIZE); memcpy(p,MT_STORE_MAGIC,4);p[4]=r->profile;p[5]=cal!=NULL || s->saved;
     put32(p+GENERATION_OFFSET,s->generation+1u);
     put32(p+CAL_GENERATION_OFFSET,s->calibration_generation+(cal!=NULL));
-    const uint8_t globals[]={m->mode,m->janko,m->lower_muted,app->menu->brightness,m->velocity_start,
-        m->music.root,m->music.scale,(uint8_t)(m->octave+10),r->enabled,
-        c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked};
+    uint8_t globals[13];current_globals(app,globals);
     unsigned pos=GLOBAL_OFFSET*8u;
     for(unsigned i=0;i<13;++i) {
         if(globals[i]>=(1u<<global_widths[i]))return false;
@@ -163,7 +184,7 @@ static void accept(device_store_t *s,const uint8_t *p,unsigned slot)
 {
     memcpy(s->record,p,CAL_PAGE_SIZE); s->slot=slot;s->valid=true;s->saved=p[5];
     s->generation=u32(p+GENERATION_OFFSET);s->calibration_generation=u32(p+CAL_GENERATION_OFFSET);
-    s->pending=s->cold=s->fault=false;s->error=0;
+    s->pending=s->cold=s->fault=s->observed_valid=false;s->error=0;
 }
 void device_store_load(device_store_t *s,uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi,cal_read_fn read)
 {
@@ -235,13 +256,20 @@ bool device_store_poll(device_store_t *s,keyboard_app_t *app,uint32_t now,bool f
     if(!s->ready || !s->applied || s->fault || app->reset_pending || !app->frame_valid) return false;
     if(!force && (uint32_t)(now-s->checked_at)<SETTINGS_CHECK_PERIOD_MS) return false;
     s->checked_at=now;
-    uint8_t p[CAL_PAGE_SIZE];
-    if(!capture(p,s,app,NULL)) { s->error=0x20001;s->fault=true;return false; }
-    /* Exclude generation/checksum: unchanged settings must not wear flash. */
-    bool changed=!s->valid || memcmp(p+GLOBAL_OFFSET,s->record+GLOBAL_OFFSET,CRC_OFFSET-GLOBAL_OFFSET);
-    if(!changed) {s->pending=false;return false;}
-    const uint32_t crc=calibration_crc32(p+GLOBAL_OFFSET,CRC_OFFSET-GLOBAL_OFFSET);
-    if(!s->pending || crc!=s->pending_crc) {s->pending=true;s->pending_crc=crc;s->changed_at=now;}
+    device_settings_t current;
+    if(!current_settings(app,&current)) {s->error=0x20001;s->fault=true;return false;}
+    if(!s->observed_valid || memcmp(&current,&s->observed,sizeof(current))) {
+        uint8_t p[CAL_PAGE_SIZE];
+        if(!capture(p,s,app,NULL)) { s->error=0x20001;s->fault=true;return false; }
+        s->observed=current;s->observed_valid=true;
+        /* Exclude generation/checksum: unchanged settings must not wear flash. */
+        bool changed=!s->valid || memcmp(p+GLOBAL_OFFSET,s->record+GLOBAL_OFFSET,CRC_OFFSET-GLOBAL_OFFSET);
+        if(!changed) {s->pending=false;return false;}
+        /* Exact input change, not a hash comparison: even a CRC collision
+         * must restart debounce. The durable record is still CRC-checked. */
+        s->pending=true;s->changed_at=now;
+    }
+    if(!s->pending)return false;
     const keyboard_menu_t *menu=app->menu;
     if((uint32_t)(now-s->changed_at)<SETTINGS_SAVE_QUIET_MS || calibration_active(app->cal) ||
        app->raw->engine.config.mode || menu->pending || menu->music_page || menu->press_page ||

@@ -37,6 +37,53 @@ static void boot(device_store_t *s,unsigned profile)
     device_store_load(s,profile,count,lo,hi,read_page);
     device_store_apply(s,&app);
 }
+static void polling_cache(unsigned profile)
+{
+    device_store_t s;memset(pages,255,sizeof(pages));boot(&s,profile);
+    assert(device_store_update(&s,&app,NULL,read_page,write_page));
+    unsigned before_writes=writes;uint32_t now=400;
+    assert(!device_store_poll(&s,&app,now,true) && s.observed_valid && !s.pending);
+    /* Change each persisted input independently. Repeated identical polls
+     * must retain the original quiet-window timestamp; reverting an edit
+     * must cancel it, even when both configurations have been cached. */
+#define CHECK_CHANGE(field,value) do { \
+    int previous=(field);(field)=(value);now+=20; \
+    assert(!device_store_poll(&s,&app,now,true) && s.pending && !s.fault); \
+    uint32_t changed=s.changed_at;now+=20; \
+    assert(!device_store_poll(&s,&app,now,true) && s.pending && s.changed_at==changed); \
+    (field)=previous;now+=20; \
+    assert(!device_store_poll(&s,&app,now,true) && !s.pending && !s.fault); \
+} while(0)
+    CHECK_CHANGE(midi.mode,!midi.mode);
+    CHECK_CHANGE(midi.janko,!midi.janko);
+    CHECK_CHANGE(midi.lower_muted,!midi.lower_muted);
+    CHECK_CHANGE(menu.brightness,menu.brightness?0:1);
+    CHECK_CHANGE(midi.velocity_start,midi.velocity_start==1?2:1);
+    CHECK_CHANGE(midi.music.root,midi.music.root?0:1);
+    CHECK_CHANGE(midi.music.scale,midi.music.scale?0:1);
+    CHECK_CHANGE(midi.octave,midi.octave?0:1);
+    CHECK_CHANGE(raw.enabled,!raw.enabled);
+    CHECK_CHANGE(raw.engine.config.saved_actuation,raw.engine.config.saved_actuation==1?2:1);
+    CHECK_CHANGE(raw.engine.config.saved_rapid,raw.engine.config.saved_rapid==1?2:1);
+    CHECK_CHANGE(raw.engine.config.rapid_enabled,!raw.engine.config.rapid_enabled);
+    CHECK_CHANGE(raw.engine.config.locked,!raw.engine.config.locked);
+    for(unsigned i=0;i<raw.count;++i) {
+        CHECK_CHANGE(raw.press[i],raw.press[i]-1);
+        CHECK_CHANGE(raw.release[i],raw.release[i]+1);
+        if(midi.mapping[i]!=MIDI_UNMAPPED)CHECK_CHANGE(midi.mapping[i],(midi.mapping[i]+1)%128);
+        if(keyboard_key_for_sensor(profile,i)!=keyboard_layout(profile)->fn)
+            CHECK_CHANGE(raw.keycode[i],raw.keycode[i]?0:4);
+    }
+#undef CHECK_CHANGE
+    assert(writes==before_writes);
+    midi.velocity_start=midi.velocity_start==1?2:1;now+=20;
+    assert(!device_store_poll(&s,&app,now,true) && s.pending);
+    now+=SETTINGS_SAVE_QUIET_MS;
+    assert(device_store_poll(&s,&app,now,true));
+    assert(device_store_update(&s,&app,NULL,read_page,write_page));
+    assert(!s.observed_valid && !s.pending);
+    now+=20;assert(!device_store_poll(&s,&app,now,true) && s.observed_valid);
+}
 int main(void)
 {
     unsigned profiles=0;
@@ -150,6 +197,7 @@ int main(void)
                 assert(raw.keycode[i]==codes[i] && midi.mapping[i]==notes[i]);
             }
         }
+        polling_cache(profile);
     }
     /* RESET retires the older journal slot first. */
     device_store_t saved={.saved=true,.slot=0};

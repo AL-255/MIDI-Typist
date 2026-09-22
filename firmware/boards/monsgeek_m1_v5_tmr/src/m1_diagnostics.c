@@ -25,6 +25,7 @@ static bool send(const uint8_t *events,uint32_t size)
 }
 static bool command(const char *line)
 {
+    if(!strcmp(line,"runtime stats"))return runtime_fault && m1_live_publish_stats();
     if(!strcmp(line,"boot scan")) {
         uint16_t samples[M1_KEY_COUNT];uint32_t sequence;
         if(!m1_boot_scan(samples,&sequence))return false;

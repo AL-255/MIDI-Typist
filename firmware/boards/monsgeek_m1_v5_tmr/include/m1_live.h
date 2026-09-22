@@ -79,4 +79,8 @@ m1_transport_t m1_live_transport(void);
 bool m1_live_transport_fault(void);
 bool m1_live_storage_fault(void);
 uint32_t m1_live_storage_error(void);
+/* Read-only timing snapshot through the current control owner. After runtime
+ * failure, retained counters/time describe the last live service, not a new
+ * acquisition. Unavailable before successful live initialization. */
+bool m1_live_publish_stats(void);
 #endif
