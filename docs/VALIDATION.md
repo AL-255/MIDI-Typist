@@ -6,6 +6,8 @@ The separate [M1 backend](MONSGEEK_M1.md#verification-limits) has a physically
 checked identity query and IAP transfer, official-SDK ARM library/application builds, and native
 82-key application/scanner plus GUI tests. Native tests also cover Fn transport
 controls, USB-only MIDI, the battery curve/filter, sleep-request policy and radio packet codec.
+Battery-filter tests include rising/falling ramps, interrupted directional
+qualification and critical-threshold progression; they do not measure cell capacity.
 Linked Cortex-M4 tests execute clock, wired/battery cold-start, battery-input, USB power-down, RTC sleep,
 scan, LED and SPI3 radio HALs with official SDK drivers; register effects and completion
 events are modeled. These do not validate an installable

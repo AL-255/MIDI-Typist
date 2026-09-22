@@ -246,6 +246,50 @@ static void battery(void)
     for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
         m1_battery_sample(&s,1705,false,true,t);
     assert(s.percent==99); /* charger qualification overrides monotonic display */
+    /* Qualification is directional, not ten identical percentages. A moving
+     * estimate must not indefinitely postpone discharge/charge indication. */
+    for(unsigned charging=0;charging<2;++charging) {
+        m1_battery_init(&s);
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,charging?1100:1705,!charging,false,t);
+        unsigned initial=s.percent;
+        assert(initial==(charging?1u:100u));
+        for(unsigned batch=0;batch<M1_BATTERY_CONFIRM_BATCHES;++batch) {
+            unsigned adc=charging?1350+batch*(300u/M1_BATTERY_CONFIRM_BATCHES):
+                                  1600-batch*(300u/M1_BATTERY_CONFIRM_BATCHES);
+            for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+                m1_battery_sample(&s,adc,!charging,false,t);
+            if(batch+1u<M1_BATTERY_CONFIRM_BATCHES) {
+                assert(s.percent==initial && s.confirmations==batch+1u);
+            } else {
+                assert(s.percent==m1_battery_percent(s.average) && s.percent!=initial);
+                assert(!s.confirmations);
+            }
+        }
+    }
+    m1_battery_init(&s);
+    for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+        m1_battery_sample(&s,1280,true,false,t);
+    for(unsigned batch=0;batch<M1_BATTERY_CONFIRM_BATCHES;++batch)
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,1250-batch*(220u/M1_BATTERY_CONFIRM_BATCHES),true,false,t);
+    assert(m1_battery_critical(&s)); /* falling estimates reach protection */
+    /* Returning to the displayed level breaks directional qualification. */
+    for(unsigned charging=0;charging<2;++charging) {
+        m1_battery_init(&s);
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,1280,!charging,false,t);
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,charging?1400:1200,!charging,false,t);
+        assert(s.percent==20 && s.confirmations==1);
+        unsigned adc=2u*1280-s.average; /* next filtered average returns to 1280 */
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,adc,!charging,false,t);
+        assert(s.average==1280 && s.percent==20 && !s.confirmations);
+        for(unsigned i=0;i<M1_BATTERY_FILTER_SAMPLES;++i,t+=M1_BATTERY_SAMPLE_MS)
+            m1_battery_sample(&s,charging?1400:1200,!charging,false,t);
+        assert(s.percent==20 && s.confirmations==1);
+    }
 }
 static keyboard_raw_t raw;
 static keyboard_midi_t midi;

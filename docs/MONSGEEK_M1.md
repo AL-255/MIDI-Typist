@@ -412,8 +412,11 @@ The board's piecewise ADC-to-percentage curve is tested against the recovered
 arithmetic for all 4096 inputs: 1145 or below maps to 1%, 1280 to 20%, 1704 to
 99%, and 1705 or above to 100%. These are ADC characterization points, not
 millivolts. The custom filter averages eight fresh samples, then applies a
-half-weight running average. Display changes are debounced and monotonic within
-one charging/discharging interval. Cable changes restart the filter. Unlike the
+half-weight running average. Display changes require ten consecutive filtered
+estimates above the displayed level on external power, or below it on battery;
+the tenth commits the latest estimate. Estimates need not be identical. Returning
+to the displayed level or crossing it in the opposite direction resets the
+counter. Cable changes restart the filter. Unlike the
 stock special case, an empty reading on external power is not presented as 100%.
 Filter timing and display intensity are explicit defaults, not claims of exact
 stock scheduler timing.

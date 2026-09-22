@@ -19,7 +19,7 @@ typedef enum {
 typedef struct {
     uint16_t samples[M1_BATTERY_FILTER_SAMPLES], average;
     uint32_t sampled_at;
-    uint8_t count, percent, candidate, confirmations, charger_count;
+    uint8_t count, percent, confirmations, charger_count;
     m1_charger_status_t charger, charger_candidate;
     bool valid, sample_clock, externally_powered, source_known;
 } m1_battery_t;

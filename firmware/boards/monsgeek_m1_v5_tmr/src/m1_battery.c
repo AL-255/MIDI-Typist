@@ -52,7 +52,9 @@ bool m1_battery_sample(m1_battery_t *s,uint16_t adc,bool pc13_high,
     }
     bool progress=external?percent>s->percent:percent<s->percent;
     if(!progress) { s->confirmations=0; return true; }
-    if(s->candidate!=percent) { s->candidate=percent; s->confirmations=0; }
+    /* Qualify consecutive estimates on the expected side of the displayed
+     * level, not identical estimates. A moving battery level must still reach
+     * the display and low/critical policy after the qualification window. */
     if(++s->confirmations>=M1_BATTERY_CONFIRM_BATCHES) {
         s->percent=percent; s->confirmations=0;
     }
