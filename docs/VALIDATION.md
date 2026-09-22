@@ -192,6 +192,13 @@ the control port returns the embedded Git identity and live 82-key GUI snapshots
 The process-isolated GUI transport has completed repeated live connect/stream/
 disconnect cycles without retaining native workers. The GUI flasher's read-only
 USB-bound identity handshake also completes and releases its MIDI owner.
+The real Tk GUI has displayed the M1's 82-key layout alongside repeated
+power-status replies on USB: external source, estimated percentage and explicitly
+unverified raw charger state. Full-rate capture excludes power polling and
+returns to fresh GUI/power readback without new scanner or lighting errors;
+a five-second check delivered 39,968 consecutive selected-key samples. These
+checks validate the readback path, not battery capacity, charger polarity or
+battery-powered sleep. Factory calibration-field readback remains unchanged.
 Released-key M1 capture delivered approximately 80,000 consecutive samples over
 ten seconds without sequence gaps or new scan errors, then returned to fresh GUI
 snapshots. A further five-second GUI check received 152 snapshots, with all 82

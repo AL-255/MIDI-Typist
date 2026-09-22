@@ -54,6 +54,8 @@ so raw high/low must not be interpreted as charging/full. Power readback updates
 once per second while configuration is idle and pauses during full-rate capture.
 Boards without this capability display that power telemetry is unavailable.
 See the [power-status contract](TELEMETRY.md#power-status).
+The M1 display/readback and capture coexistence are physically checked over USB;
+battery-percentage accuracy and charging behavior remain unverified.
 
 Text uses the best family the platform's Tk build can really render: the
 Windows system UI face, the macOS system face, or
