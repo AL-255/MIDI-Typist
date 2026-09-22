@@ -388,6 +388,7 @@ def main():
     calibration_persistence(args.elf)
     power_handoff(args.elf)
     source_handoff(args.elf)
+    source_switch_handoff(args.elf)
 
 
 def power_handoff(path):
@@ -602,6 +603,49 @@ def source_handoff(path):
         assert d.call('m1_live_source_resume',d.time//1000,mode,1)
         d.run(200);assert not d.radio_held(0x4f)
     print('PASS source handoff: explicit USB abandonment, radio drain, offline USB restore, unsaved settings, fresh control lease and no held-key replay')
+
+
+def source_switch_handoff(path):
+    # A physical cable edge may cancel an Fn selection only BEFORE the first
+    # platform select/pair call. Sleep must not steal that user transaction.
+    for high in (False,True):
+        for original,selector in ((6,1),(0,5)):
+            d=Live(path,high,mode=original,transports=True,storage=True);d.run(400)
+            d.call('m1_test_live_transport_gate',0,0)
+            d.chord(selector)
+            assert not d.call('m1_test_live_selection',1)
+            assert not d.call('m1_live_power_suspend',d.time//1000)
+            detached=original==6
+            if detached:
+                # Rejection before endpoint release must leave the switch live.
+                assert not d.call('m1_live_source_suspend',d.time//1000,1)
+                assert not d.call('m1_live_power_suspend',d.time//1000)
+                d.call('m1_usb_bind',0)
+                for at in (0x920,0x940,0x960):d.put(USB+at,0)
+            assert d.call('m1_live_source_suspend',d.time//1000,int(detached))
+            for _ in range(1200):
+                d.tick()
+                if d.call('m1_live_power_park'):break
+            else:raise AssertionError('Cancelled Fn selection did not drain/park')
+            assert not d.call('m1_test_live_selection',1)
+            assert d.call('m1_live_transport')==original
+            assert d.call('m1_live_source_resume',d.time//1000,original,1)
+            if detached:d.call('m1_test_usb_init',int(high))
+            d.samples[81]=3000;d.run(20)
+            assert not d.held(0x4f) and not d.radio_held(0x4f)
+            d.samples[81]=3900;d.run(20)
+            d.samples[81]=3000;d.run(200)
+            assert d.held(0x4f) if original==6 else d.radio_held(0x4f)
+            assert not d.call('m1_live_transport_fault')
+            assert not d.call('m1_test_live_selection',1)
+    # Once the platform callback ran, it may already have touched the peer.
+    # Neither cable handling nor ordinary sleep can silently roll it back.
+    d=Live(path,True,transports=True);d.run(20)
+    d.call('m1_test_live_transport_gate',1,0);d.chord(1)
+    assert d.call('m1_test_live_selection',1)>0
+    assert not d.call('m1_live_source_suspend',d.time//1000,0)
+    assert not d.call('m1_live_power_suspend',d.time//1000)
+    print('PASS FS/HS source/Fn overlap: cancel before platform selection, retain old host, drain, neutral rearm; attempted selection still protected')
 
 
 def calibration_persistence(path):

@@ -82,7 +82,10 @@ bool m1_live_power_resume(uint32_t now_ms,bool platform_restored);
 /* Awake cable handoff only. usb_disconnected requires the outer owner to
  * have physically stopped USB and relinquished every IN buffer. Lost USB
  * output is abandoned, NOT counted as delivered neutral reports. Wireless
- * output still drains normally. Resume preserves RAM settings/bounds and may
+ * output still drains normally. An Fn selection waiting for old-host drain is
+ * cancelled before its first platform select/pair call; after that call,
+ * suspension is rejected because physical ownership may already have changed.
+ * Resume preserves RAM settings/bounds and may
  * retarget a disconnected USB keyboard to a restored wireless transport.
  * Same-mode USB may resume before host enumeration after physical restoration;
  * ordinary readiness edges still require release before typing. */

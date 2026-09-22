@@ -319,16 +319,22 @@ static bool neutral_sent(void)
     const keyboard_report_t neutral={0};
     return app.sent_valid && !memcmp(&app.sent,&neutral,sizeof(neutral));
 }
-bool m1_live_power_suspend(uint32_t now_ms)
+static bool power_suspend(uint32_t now_ms,bool source_change)
 {
     if(!initialized || power_state==POWER_STOPPED || transport_fault || storage_fault ||
-       selection_attempted || controls.switching)return false;
+       selection_attempted || (controls.switching && !source_change))return false;
     if(power_state!=POWER_AWAKE)return true;
     if(!enabled)return false;
+    /* A cable edge outranks an Fn switch still waiting for old-host drain.
+     * No platform select/pair call has run, so cancel_input can discard that
+     * request while preserving the current transport and its release duties.
+     * Ordinary sleep must wait; attempted physical selections remain guarded. */
     now=now_ms;enabled=false;power_state=POWER_DRAINING;
     cancel_input();scan_stream_lost();++losses;seen=source_healthy=false;
     scan_stream_stop();midi_control_usb_reset();return true;
 }
+bool m1_live_power_suspend(uint32_t now_ms)
+{ return power_suspend(now_ms,false); }
 bool m1_live_power_park(void)
 {
     if(!initialized || transport_fault || storage_fault)return false;
@@ -355,7 +361,7 @@ bool m1_live_power_activity(bool *activity)
 bool m1_live_source_suspend(uint32_t now_ms,bool usb_disconnected)
 {
     if(usb_disconnected && (m1_usb_ready() || !m1_usb_in_idle()))return false;
-    if(!m1_live_power_suspend(now_ms))return false;
+    if(!power_suspend(now_ms,true))return false;
     if(usb_disconnected && controls.current==M1_TRANSPORT_USB) {
         usb_abandoned=true;
         /* The endpoint owner aborted the old consumer transaction. Preserve

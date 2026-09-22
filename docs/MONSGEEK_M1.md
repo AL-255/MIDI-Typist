@@ -8,8 +8,9 @@ and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Flashing, recovery and live 82-key high-speed USB telemetry are hardware-checked.
 Released-key acquisition is hardware-checked with GUI telemetry active and an
-8 kHz timer configuration; the physical cadence and pressed-key performance are
-not yet established. This is not a daily-use build.
+8 kHz timer configuration. The user confirms working MIDI notes, Jankó and Fn+V;
+worst-case pressed-key timing and full-layout operation remain unqualified.
+This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
 Bluetooth/2.4 GHz operation and power management are not yet qualified for use.
@@ -939,9 +940,12 @@ USB may resume before enumeration, so a power-only cable does not block wireless
 typing. RAM mappings, thresholds and calibration survive; stale input/control
 buffers are discarded and released keys are required before rearming.
 
-The entire handoff is bounded by `M1_SOURCE_TRANSITION_MS` (5 seconds). Source
-bounce before PHY mutation is debounced; another edge during mutation, a failed
-peripheral, or overlap with an in-progress Fn transport handoff fails closed.
+The entire handoff is bounded by `M1_SOURCE_TRANSITION_MS` (5 seconds). A cable
+edge cancels an Fn selection still waiting for old-host drain, retaining the
+current transport's release duties. Ordinary sleep cannot cancel that selection.
+Once a platform select/pair callback has run, cable overlap still fails closed:
+physical ownership may already have changed. Source bounce before PHY mutation
+is debounced; another edge during mutation or a failed peripheral also fails closed.
 There are no flash writes, cold application reinitialization or automatic retry
 inside this owner. Cable arrival during battery sleep first follows the runtime
 restoration path below. Linked tests check the source owner, live handoff and RAM-state
@@ -1210,7 +1214,7 @@ timeouts and faults. Runtime restoration requires release before rearming;
 it does not transmit the waking press.
 
 Complete power management still requires physical pairing verification, handling cable changes
-that overlap an Fn transport switch or PHY mutation, and physical qualification. The
+after an Fn switch begins physical selection or during PHY mutation, and physical qualification. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
 not be replaced by an unconditional WFI or indiscriminate GPIO power-off.
@@ -1231,7 +1235,8 @@ uses provisional bounds when factory records are outside the accepted electrical
 domain, without changing those records. Released-key GUI snapshots and a
 continuous per-key capture are physically checked. A/S presses and simultaneous
 detection have matching report bits and independent velocities; full-layout
-typing and musical output are not yet qualified. See [validation](VALIDATION.md) for measurement limits.
+typing and worst-case musical load are not yet qualified. MIDI notes, Jankó and
+Fn+V have user confirmation. See [validation](VALIDATION.md) for measurement limits.
 The alternate application PID remains covered only offline.
 
 Offline tests exercise report framing, invalid replies, model rejection,

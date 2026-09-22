@@ -91,8 +91,12 @@ settings and no held-key replay. Sleep-source tests inject arrival at every
 drain/blank/peer/wake-scan/restoration stage, including retention escalation,
 queued-versus-in-flight cancellation, a transient arrival and races inside
 PHY/GPIO/sleep guards. They check restoration before USB attachment and no extra
-WFI after an observed arrival. Physical cable transitions remain unverified;
-edges during PHY mutation or an Fn transport switch still fail closed.
+WFI after an observed arrival. FS/HS live tests check cancellation of an Fn
+switch waiting for old-host drain, with unchanged transport, neutral output and
+fresh release before rearming. Rejected endpoint handoffs retain the pending
+switch, and an attempted platform selection cannot be cancelled this way.
+Physical cable transitions remain unverified; edges during PHY mutation or
+after an Fn switch begins physical selection still fail closed.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests
@@ -256,8 +260,8 @@ keys released, control readings 3961–4096, and no light errors. This is a boun
 idle-input check, not qualification of pressed-key/polyphonic load, worst-case
 latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
 and guarded recovery remain available after a runtime scan fault.
-MIDI mode is not yet physically qualified. The user reports working notes and
-Jankó, but Fn+V produced a retained scan-queue-overflow fault. Shared raw/MIDI work bitmaps
+The user confirms working MIDI notes, Jankó and Fn+V. This is functional
+confirmation, not full MIDI timing/load qualification. Shared raw/MIDI work bitmaps
 and per-frame edge lists avoid repeated idle-key state processing without
 dropping scan samples; physical controller indices are cached per layout.
 A compiled instruction-count regression covers idle, strikes, held keys and
