@@ -230,7 +230,12 @@ keys released, control readings 3961–4096, and no light errors. This is a boun
 idle-input check, not qualification of pressed-key/polyphonic load, worst-case
 latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
 and guarded recovery remain available after a runtime scan fault.
-Power-cycle and software-requested recovery return to the factory bootloader.
+Normal startup leaves the IAP flag blank. Compiled tests check read-only startup,
+whole-page qualification, exact flag-only programming with SRAM SDK/vectors,
+and live/boot-fault/runtime-fault update ordering. USB shutdown or flag-write
+failure must prevent reset; no metadata erase or retry is permitted. The
+on-demand transition and normal reboot persistence await hardware qualification;
+early startup failure may require a debugger, not merely a power cycle.
 Read-only factory diagnostics return valid markers but resting values outside
 the 12-bit import domain. The complete 518-byte calibration-field readback remains
 unchanged after flashing and automatic settings-only initialization. The live
@@ -257,8 +262,8 @@ pause invalidation, and released-key fast-path velocity semantics have offline
 tests. The per-key pending-strike bitmap is checked against every occupied slot
 through the native MIDI suite, including retrigger and overflow cleanup. These
 checks do not establish sustained pressed-key/polyphonic
-performance or worst-case latency. A physical A/S check observed eight separate
-A presses followed by a simultaneous A+S hold. GUI telemetry showed the matching
+performance or worst-case latency. A physical A/S check observed eight
+A presses and two S presses, including simultaneous A+S. GUI telemetry showed the matching
 NKRO report bits, independent releases and separate per-key velocity captures,
 with no unexpected down keys or new scanner/lighting errors. Both readings
 returned to 4096 after release; fully pressed readings reached 1 in the provisional

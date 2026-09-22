@@ -1,6 +1,7 @@
 #include "m1_diagnostics.h"
 #include "m1_boot.h"
 #include "m1_image.h"
+#include "m1_storage.h"
 #include "m1_factory.h"
 #include "m1_hal.h"
 #include "m1_usb.h"
@@ -45,7 +46,7 @@ static bool command(const char *line)
         return midi_control_publish(MT_DUMP,payload,sizeof(payload));
     }
     if(!strcmp(line,"bootloader")) {
-        if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)return false;
+        if(m1_storage_check_recovery(true)!=M1_STORAGE_OK)return false;
         update_requested=true;return true;
     }
     if(!strcmp(line,"boot status") || !strcmp(line,"stream gui") ||

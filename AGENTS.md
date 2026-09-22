@@ -121,8 +121,14 @@
   On Huntsman, calibration and profile RESET may modify only 0x78000/0x78200
   (verified FF inside the original allocator's free block). On M1, only the
   application-tail reservation above is writable for profiles. The M1 experimental
-  startup may program only the factory IAP magic at 0x08004800 in an already
-  erased boot-flag page, from SRAM; it must not erase bootloader metadata or code.
+  updater entry may program only the factory IAP magic at 0x08004800 in an already
+  erased boot-flag page, from SRAM after peripheral shutdown and supply checks;
+  it must not erase bootloader metadata or code. Normal startup must leave the
+  flag blank so reset preserves the application and custom profiles. Never reset
+  into IAP until the exact persistent flag is verified; an invalid application
+  header alone does not protect an interrupted header-first update. Document
+  that early startup failures can require hardware debugging, not power-cycle
+  recovery. Keep cold-boot and explicit-update hardware qualification separate.
   The authorized stock-to-custom entry command resets stock user settings, but
   must leave factory sensor-calibration pages untouched. Do not execute RESET on a
   user's saved calibration merely to test it.

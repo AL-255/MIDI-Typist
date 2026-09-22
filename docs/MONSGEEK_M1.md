@@ -724,7 +724,7 @@ both scripted callbacks and the runtime selection owner. Radio status and DMA
 completion remain scripted, not proof of host delivery, physical scans or
 measured 8 kHz operation.
 Verified radio delivery, physical cable/sleep qualification and
-power-cycle persistence remain unfinished in the installable experimental application.
+power-cycle persistence remain physically unqualified in the experimental application.
 Normal peer-reported disconnect/reconnect is supported with release-before-rearm;
 hardware/protocol faults are not automatically restarted. Physical wireless
 reconnection remains unverified.
@@ -860,7 +860,7 @@ validation remain required.
 
 `m1_development.elf` links at the actual application addresses; its generated
 `.bin` is accepted by the GUI's experimental factory-conversion action. Builds
-do not open hardware. See the [trial recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+do not open hardware. See the [update/recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 | Region | Contract |
 | --- | --- |
@@ -884,9 +884,17 @@ complete SDK/custom flash-writer section into SRAM before clearing BSS and
 calling main. Unused vectors trap with debugger-visible exception information.
 It does not call the SDK's unbounded `SystemInit`.
 
-Main checks the flash-density register and arms the IAP recovery word in an
-already erased boot-flag page using the SRAM-resident SDK writer. It does not
-erase metadata or clear this flag during the trial. It establishes clocks/time and invokes
+Main checks the flash-density register and requires an erased IAP flag page,
+without writing it. Thus normal reset retains the application and profile slots.
+Only an explicit update request shuts down peripherals and USB, checks external
+power, and programs/verifies the exact IAP word using the SRAM-resident SDK
+writer before reset. It never erases boot metadata. The factory loader's flag
+and identity branch at `0x080012aa..0x080012cc`, app handoff at `0x08001356`,
+and flag erase at `0x08001322..0x08001336` establish this contract. The persistent
+flag protects interrupted header-first updates; corrupting the header alone
+would not. Early startup failures no longer imply power-cycle recovery and may
+require hardware debugging. This policy still needs hardware qualification.
+Main establishes clocks/time and invokes
 `m1_boot`. PC13 external power selects USB; battery selects
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
 not persisted yet. After handoff it polls `m1_runtime_power_service` using independent
@@ -1213,12 +1221,14 @@ running **v4.08**, enumerating as `3151:5030` at USB high speed. The reference
 version is v4.10; matching model IDs do not prove identical peripheral or update
 behavior between revisions. Guarded factory entry and application IAP transfer
 have a physical checksum/readback success verdict. Custom USB enumerates at
-480 Mb/s and answers build and startup diagnostic queries. Power-cycle and
-software-requested reset-to-IAP recovery have been observed. Keyboard startup
+480 Mb/s and answers build and startup diagnostic queries. The on-demand IAP
+flag transition and normal cold-boot persistence have compiled offline checks,
+but are not yet hardware-qualified. Keyboard startup
 uses provisional bounds when factory records are outside the accepted electrical
 domain, without changing those records. Released-key GUI snapshots and a
-continuous per-key capture are physically checked; pressed typing and musical
-output are not yet qualified. See [validation](VALIDATION.md) for measurement limits.
+continuous per-key capture are physically checked. A/S presses and simultaneous
+detection have matching report bits and independent velocities; full-layout
+typing and musical output are not yet qualified. See [validation](VALIDATION.md) for measurement limits.
 The alternate application PID remains covered only offline.
 
 Offline tests exercise report framing, invalid replies, model rejection,

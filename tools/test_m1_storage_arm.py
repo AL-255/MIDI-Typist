@@ -279,6 +279,22 @@ def run(elf):
 
 
 def recovery_check(elf):
+    # Qualification never unlocks/programs; every word in the protected page
+    # matters. Both the ordinary-boot and explicit-update policies are tested.
+    for value,tail,cold,update in ((0xffffffff,0xffffffff,0,0),
+        (0x55aa55aa,0xffffffff,VERIFY,0),(0,0xffffffff,VERIFY,VERIFY),
+        (0xffffffff,0,VERIFY,VERIFY),(0x55aa55aa,0,VERIFY,VERIFY)):
+        d=Store(elf,recovery=True);d.put(BASE+0x4800,value);d.put(BASE+0x4ffc,tail)
+        before=bytes(d.cpu.mem_read(BASE,0x40000))
+        assert d.call('m1_storage_check_recovery',0)==cold
+        assert d.call('m1_storage_check_recovery',1)==update
+        assert bytes(d.cpu.mem_read(BASE,0x40000))==before and not d.commands
+        if value==0x55aa55aa and update==0:
+            assert d.call('m1_storage_arm_recovery',1)==0 and not d.commands
+    for target,value,expected in ((SIZE,128,GEOMETRY),(FLASH+12,1,BUSY),
+                                 (FLASH+12,4,CONTROLLER),(FLASH+16,0,CONTROLLER)):
+        d=Store(elf,recovery=True);d.put(target,value)
+        assert d.call('m1_storage_check_recovery',1)==expected and not d.commands
     for failure,expected in ((None,0),('unlock_fails',UNLOCK),
                               ('program_fails',PROGRAM),('drop_program',VERIFY)):
         d=Store(elf,recovery=True)
@@ -295,7 +311,18 @@ def recovery_check(elf):
     assert d.call('m1_storage_arm_recovery',1)==VERIFY and not d.commands
     d=Store(elf,recovery=True)
     assert d.call('m1_storage_arm_recovery',0)==UNSAFE and not d.commands
-    print('PASS M1 trial recovery: exact boot-flag word, no erase, SRAM SDK/vectors, readback and failure guards')
+    # Peripheral shutdown is mandatory even with an already armed flag.
+    for armed in (False,True):
+        for address,value in ((DMA+8,1),(ADC+8,1),(TMR3,1),(TMR6,1),
+                              (SPI+8,128),(0xe000e010,1)):
+            d=Store(elf,recovery=True)
+            if armed:d.put(BASE+0x4800,0x55aa55aa)
+            d.put(address,value)
+            assert d.call('m1_storage_arm_recovery',1)==UNSAFE and not d.commands
+    d=Store(elf,recovery=True);d.cpu.mem_map(0x40040000,0x1000)
+    d.put(0x40023830,1<<29);d.put(0x40040008,1<<5) # enabled OTG bus master
+    assert d.call('m1_storage_arm_recovery',1)==UNSAFE and not d.commands
+    print('PASS M1 explicit recovery: read-only cold boot, exact flag-only write, no erase, SRAM SDK/vectors and failure guards')
 
 
 if __name__=='__main__':

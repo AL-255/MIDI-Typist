@@ -61,6 +61,9 @@ static unsigned storage_allowed;
 static bool storage_resumes,storage_owned;
 static unsigned storage_begins,storage_ends,storage_writes;
 static uint32_t storage_error;
+uint32_t m1_test_recovery_result=M1_STORAGE_VERIFY;
+uint32_t __wrap_m1_storage_check_recovery(bool allow_armed)
+{ return allow_armed?m1_test_recovery_result:M1_STORAGE_ARGUMENT; }
 uint32_t __wrap_m1_storage_read(unsigned slot,uint8_t *page)
 { if(slot>1)return M1_STORAGE_ARGUMENT;memcpy(page,pages[slot],sizeof(pages[0]));return 0; }
 uint32_t __wrap_m1_storage_write(unsigned slot,const uint8_t *page,bool safe)
@@ -92,7 +95,7 @@ const void *const m1_live_test_exports[]={
     m1_live_power_suspend,m1_live_power_park,m1_live_power_resume,
     m1_live_source_suspend,m1_live_source_resume,
     m1_live_power_activity,m1_wireless_resume_retained,
-    m1_live_factory_result,
+    m1_live_factory_result,m1_live_update_requested,
     m1_live_storage_fault,m1_test_live_storage,m1_test_live_storage_gate,
     m1_transport_ops,m1_wireless_selected,m1_wireless_switch_ready,m1_wireless_select,
     m1_test_live_storage_count,m1_test_live_storage_page,

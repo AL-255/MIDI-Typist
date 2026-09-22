@@ -123,9 +123,10 @@ def transport_text(snapshot):
 
 
 def storage_notice(board):
-    if board.reset_erases_custom:
-        return ('Settings and calibration can be written to device flash, but reset, power cycling '
-                'or reflashing erases custom saves. A confirmed write does not make this trial reboot-persistent.')
+    if board.update_erases_custom:
+        return ('Settings save automatically after release; wait for settings saved before unplugging. '
+                'Calibration saves after all keys finish. Entering the factory bootloader erases custom saves; '
+                'normal reset does not. See the board recovery warning for hardware qualification limits.')
     return ('Settings save automatically after release; wait for settings saved before unplugging. '
             'Calibration saves after all keys finish.')
 
@@ -134,7 +135,7 @@ def settings_text(snapshot,board):
     if snapshot.storage_flags & 4:return 'settings SAVE FAILED'
     if snapshot.storage_flags & 2:return 'settings pending: release all keys'
     if snapshot.storage_flags & 1:
-        return 'settings written to flash; reset erases saves' if board.reset_erases_custom else 'settings saved'
+        return 'settings saved; reflashing erases saves' if board.update_erases_custom else 'settings saved'
     return 'settings not confirmed saved'
 
 

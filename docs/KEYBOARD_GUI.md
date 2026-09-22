@@ -47,10 +47,11 @@ use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
 Board guidance comes from the verified build target, not the key count. The M1
-configuration page displays a recovery warning: reset/power cycling enters the
-factory bootloader and erases the trial application and custom settings; reflashing
-also erases custom saves. Its status distinguishes **written to flash** from
-reboot persistence. Calibration and profile-apply confirmations repeat this limit.
+configuration page distinguishes normal reset, which retains firmware/settings,
+from explicit factory-bootloader entry, which erases them. The warning states that
+early startup failures can require hardware debugging and the cold-boot/update
+transition awaits physical qualification. Calibration and profile-apply confirmations
+repeat the update-loss contract; **settings saved** confirms a flash write, not a power-cut test.
 Unsaved bounds are labelled **unsaved**, not factory calibration. M1 help lists
 Fn transport/pairing/battery controls and marks custom-profile RESET unavailable.
 
@@ -144,7 +145,7 @@ confirmation. It supports application and bootloader states, including custom
 reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
 The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
-before offering a trial conversion, or checks USB-bound SysEx identity for custom
+before offering experimental conversion, or checks USB-bound SysEx identity for custom
 reflashing. Live 82-key telemetry and released-key 8 kHz acquisition are checked;
 pressed-key performance and complete wireless/power operation remain unverified;
 see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).

@@ -225,7 +225,7 @@ static bool command(const char *line)
             midi_control_publish(MT_DUMP,payload,sizeof(payload));
     }
     if(!strcmp(line,"bootloader")) {
-        if(*(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS!=M1_RECOVERY_FLAG_VALUE)return false;
+        if(m1_storage_check_recovery(true)!=M1_STORAGE_OK)return false;
         update_requested=true;return true;
     }
     if(!strcmp(line,"stream gui")) { scan_stream_gui();return true; }

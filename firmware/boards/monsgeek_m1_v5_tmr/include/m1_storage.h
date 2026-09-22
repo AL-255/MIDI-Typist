@@ -41,8 +41,13 @@ uint32_t m1_storage_read(unsigned slot,uint8_t *page);
 uint32_t m1_storage_write(unsigned slot,const uint8_t *page,bool platform_safe);
 uint32_t m1_storage_erase(unsigned slot,bool platform_safe);
 bool m1_storage_fatal(void);
-/* Experimental installation recovery: cold, quiescent startup only. Program
- * the exact factory IAP flag in an already erased metadata page; never erase
- * or accept an address from the caller. Leaves the flag armed across resets. */
+/* Read-only metadata qualification. Normal boot requires a wholly erased page;
+ * update preflight may also accept the exact armed word with an erased tail. */
+uint32_t m1_storage_check_recovery(bool allow_armed);
+/* Explicit update only, after peripheral/USB shutdown and supply qualification.
+ * Program the exact factory IAP flag in an already erased metadata page; never
+ * erase or accept an address from the caller. An already armed exact page is
+ * accepted without reprogramming. Normal startup must not call this function.
+ * The factory loader retains the flag until successful update completion. */
 uint32_t m1_storage_arm_recovery(bool platform_safe);
 #endif

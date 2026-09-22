@@ -1,4 +1,4 @@
-/* Application-only experimental image, with early reset-to-IAP recovery.
+/* Application-only experimental image, with explicit guarded IAP entry.
  * No bootloader/boot flag, factory settings or custom profile page contents. */
 ENTRY(M1_Reset_Handler)
 MEMORY {

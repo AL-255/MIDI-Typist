@@ -1,4 +1,4 @@
-# M1 libraries and an experimental application with reset-to-IAP recovery.
+# M1 libraries and an experimental application with explicit guarded IAP entry.
 # Runtime transport/power recovery remains incomplete. Native build runs this board
 # against the real shared application; ARM build uses the pinned official SDK.
 add_library(midi_typist_app STATIC ${MT_APP_SOURCES})
@@ -109,6 +109,7 @@ if(CMAKE_CROSSCOMPILING)
     target_link_options(m1_boot_audit PRIVATE -nostartfiles --specs=nosys.specs
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -Wl,--wrap=m1_storage_read -Wl,--wrap=m1_storage_write
+        -Wl,--wrap=m1_storage_check_recovery
         -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_boot_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     add_executable(m1_hal_audit tests/m1_hal_audit.c)
@@ -134,7 +135,8 @@ if(CMAKE_CROSSCOMPILING)
     set_property(TARGET m1_live_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     foreach(symbol m1_hal_periodic_active m1_hal_frame m1_hal_service m1_hal_errors
         m1_battery_hal_service m1_battery_hal_status m1_lighting_service m1_lighting_ready
-        m1_lighting_healthy m1_lighting_errors m1_lighting_offer m1_storage_read m1_storage_write)
+        m1_lighting_healthy m1_lighting_errors m1_lighting_offer m1_storage_read m1_storage_write
+        m1_storage_check_recovery)
         target_link_options(m1_live_audit PRIVATE -Wl,--wrap=${symbol})
     endforeach()
     add_executable(m1_save_audit tests/m1_save_audit.c)

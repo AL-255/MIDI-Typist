@@ -8,9 +8,14 @@ This describes the complete Huntsman custom application. The GUI's separate
 [M1 factory identity query](MONSGEEK_M1.md#identity-protocol) uses vendor HID,
 not these custom telemetry frames; it exposes no configuration stream.
 The experimental M1 application accepts the ASCII command `bootloader` on its
-active SysEx control session only if the factory IAP flag is armed. It requests
-a reset after stopping local peripherals; disconnect, not an ACK alone, is the
-transition. The factory updater then erases the application and custom saves.
+active SysEx control session only if the boot-flag page is erased or contains
+exactly the factory IAP magic with an erased tail. It requests foreground
+peripheral shutdown, external-power checks and SRAM flag programming/readback
+before reset. Any failure prevents reset; an ACK is only request acceptance.
+The transition requires the identity-bound factory USB enumeration, not a mere
+disconnect. The factory updater then erases the application and custom saves.
+Normal boot leaves the flag blank and does not request that erase. See the
+[recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 The M1 control port enumerates at USB high speed and provides live 82-key
 snapshots. Released-key validity is hardware-checked with GUI telemetry active;
 the declared scan rate is 8 kHz. See [validation limits](VALIDATION.md) for what

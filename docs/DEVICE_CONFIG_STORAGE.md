@@ -235,6 +235,12 @@ readiness and electrical inputs. Foreground audits script profile I/O and the
 gate; the separate backend audit runs the actual SDK against modeled flash
 effects. None proves physical supply adequacy or persistence.
 
+Normal M1 reset leaves the factory IAP flag blank and restores the application
+journal. Only explicit updater entry arms that flag and causes the factory loader
+to erase the application/custom slots. This cold-boot/update transition has
+compiled offline coverage, not physical qualification; see the
+[M1 recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+
 ## Reset, flashing and telemetry
 
 Fn+R previews RESET and opens RESET?; after neutral, Y confirms and N cancels.
@@ -251,9 +257,10 @@ a private backup.
 
 MTG4 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
 reports the full 32-bit profile generation, and 64/68 calibration generation/error.
-See [telemetry](TELEMETRY.md). GUI flashing preserves compatible records by default; confirmed Fn+R
-explicitly clears them. Stock firmware may
-reclaim this custom tail space.
+See [telemetry](TELEMETRY.md). Huntsman GUI flashing preserves compatible records
+by default; confirmed Fn+R explicitly clears them. M1 factory-IAP flashing
+always erases both custom slots and M1 profile RESET is disabled. Stock firmware
+may reclaim custom application-tail space.
 
 ## Validation
 

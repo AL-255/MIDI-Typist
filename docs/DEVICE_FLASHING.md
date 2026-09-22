@@ -93,17 +93,18 @@ not claimed as separate physical conversion tests. See [validation](VALIDATION.m
 
 ## MonsGeek M1 experimental conversion
 
-**Flashing, reset-to-IAP recovery and live 82-key USB telemetry work on the test
-keyboard. Released-key acquisition holds 8 kHz with GUI telemetry active; pressed-key
-performance and complete wireless/power behavior remain unverified. Do not install
-this trial for normal use.**
+**Factory IAP transfers and live 82-key USB telemetry are physically checked.
+A/S presses, releases and simultaneous detection are checked, not the full layout
+or pressed-key performance. The on-demand update/cold-boot policy below has compiled
+offline coverage but awaits hardware qualification. Complete wireless/power behavior
+remains unverified. Do not install this experimental build for normal use.**
 
 Select the M1 model and use **Read firmware details…** to confirm internal
 ID2949 for factory firmware, or the embedded build target over the selected
 device's USB-bound MIDI control port for custom firmware. Verified factory
 devices offer installation/restoration; custom devices offer reflash/restoration.
 Configuration disconnects before custom inspection or flashing. Choose
-`build-m1-hal/m1_development.bin` for the current trial, or supply your own
+`build-m1-hal/m1_development.bin` for the current application, or supply your own
 ID2949 factory `.bin`. A factory file may be application-only or boot-prefixed;
 only its application slice from `0x5000` through at most `0x28000` is sent.
 No vendor image is bundled. Linux needs libusb and the GUI Python dependencies.
@@ -115,15 +116,21 @@ the transition to the same physical port, serializes 64-byte writes without
 automatic retries, and requires the bootloader's checksum/readback verdict.
 That verdict confirms transfer, not working keyboard functionality.
 
-**The trial deliberately keeps reset-to-IAP recovery armed.** Before starting
-peripherals, it programs only the IAP magic word at `0x08004800`, from SRAM,
-and refuses a nonblank metadata page. It does not erase bootloader metadata.
-If this startup step completes, the next reset/power cycle enters the factory
-updater and erases the trial application and custom saves. Both power-cycle and
-software-requested return to the factory bootloader have been observed.
+**Normal reset preserves the application and custom saves.** Startup only checks
+that the boot-flag page is erased. The explicit SysEx `bootloader` command checks
+that the page is blank, or contains exactly the IAP magic with an erased tail.
+The foreground owner requires external power, stops scan/lighting/radio/USB,
+then programs and verifies only `0x55aa55aa` at `0x08004800` from SRAM. Only after
+successful verification does it reset. Shutdown/write failure prevents reset;
+unknown metadata is rejected, never erased. The factory loader retains this flag
+during transfer and clears it only on successful completion, protecting an
+interrupted header-first update. A command ACK alone is not proof of IAP entry.
+
+This does **not** provide forced bootloader recovery on every power cycle.
+Early clock/startup failures may require hardware debugging. Both normal reboot
+persistence and on-demand flag programming need physical qualification before
+this build is treated as recoverable without a debugger.
 
 A pre-existing shared bootloader PID is not sufficient model/recovery proof,
 so the GUI does not offer direct recovery of an unidentified bootloader.
-The trial's SysEx `bootloader` command permits a controlled reset only while
-the recovery flag is armed. Full transport switching and power management
-remain incomplete.
+Full transport switching and power management remain incompletely qualified.

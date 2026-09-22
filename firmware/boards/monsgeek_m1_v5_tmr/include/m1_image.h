@@ -6,9 +6,9 @@
 #define M1_APPLICATION_IDENTITY "AT32F405 8KMKB"
 #define M1_APPLICATION_IDENTITY_BYTES 14u
 #define M1_VECTOR_WORDS 128u
-/* Factory IAP metadata, not executable bootloader code. The experimental
- * image arms this before peripheral startup and deliberately leaves it set:
- * the next reset enters IAP and erases the application/custom profile slots. */
+/* Factory IAP metadata, not executable bootloader code. Program this only for
+ * an explicit update, after quiescing peripherals. Normal boot leaves it blank.
+ * An armed reset enters IAP and erases the application/custom profile slots. */
 #define M1_RECOVERY_FLAG_ADDRESS 0x08004800u
 #define M1_RECOVERY_FLAG_VALUE 0x55aa55aau
 typedef enum {

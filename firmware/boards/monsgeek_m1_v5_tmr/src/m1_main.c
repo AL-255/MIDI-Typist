@@ -25,6 +25,21 @@ static __attribute__((noreturn)) void halted(m1_main_state_t why,uint32_t detail
      * This development image has no complete runtime recovery policy yet. */
     for(;;)__WFI();
 }
+static __attribute__((noreturn)) void enter_iap(uint32_t now)
+{
+    /* A command ACK is acceptance, not recovery proof. Do not reset until the
+     * persistent flag is verified: it protects header-first factory updates
+     * even if their transfer/power fails. No metadata erase is permitted. */
+    __disable_irq();
+    if(!wired())halted(M1_MAIN_RECOVERY_FAULT,M1_STORAGE_UNSAFE);
+    m1_live_stop(now);
+    m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
+    if(m1_usb_hw_stop()!=M1_USB_HW_OK || !wired())
+        halted(M1_MAIN_RECOVERY_FAULT,M1_STORAGE_QUIESCE);
+    uint32_t result=m1_storage_arm_recovery(true);
+    if(result)halted(M1_MAIN_RECOVERY_FAULT,result);
+    NVIC_SystemReset();
+}
 static __attribute__((noreturn)) void stop_live(m1_main_state_t why,uint32_t detail,uint32_t now)
 {
     /* Valid-clock failures only. Retain USB diagnostics/software recovery;
@@ -38,19 +53,16 @@ static __attribute__((noreturn)) void stop_live(m1_main_state_t why,uint32_t det
     for(;;) {
         m1_time_point_t time;
         if(!m1_time_now(&time))halted(M1_MAIN_TIME_FAULT,0);
-        if(m1_diagnostics_service(time.ms)) {
-            __disable_irq();(void)m1_usb_hw_stop();NVIC_SystemReset();
-        }
+        if(m1_diagnostics_service(time.ms))enter_iap(time.ms);
     }
 }
 void m1_main(void)
 {
     uint16_t density=*(const volatile uint16_t *)M1_FLASH_SIZE_REGISTER;
     if(density!=M1_FLASH_SIZE_KIB)halted(M1_MAIN_GEOMETRY_FAULT,density);
-    /* Before changing clocks or starting bus masters: retain reset-to-IAP
-     * recovery throughout this experimental runtime. Never clear automatically
-     * merely because USB enumeration or a synthetic scan looks healthy. */
-    uint32_t recovery=m1_storage_arm_recovery(true);
+    /* Successful factory updates leave an erased flag page. Leave it untouched
+     * so ordinary reset boots the application and retains its profile slots. */
+    uint32_t recovery=m1_storage_check_recovery(false);
     if(recovery)halted(M1_MAIN_RECOVERY_FAULT,recovery);
     m1_main_state=M1_MAIN_CLOCK;
     m1_clock_result_t clock=m1_clock_init();
@@ -78,11 +90,7 @@ void m1_main(void)
         }
         /* After a valid-clock failure, keep the cold-start control channel
          * alive. Never retry startup, accept settings or emit keyboard notes. */
-        if(m1_diagnostics_service(now.ms)) {
-            __disable_irq();(void)m1_usb_hw_stop();
-            m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
-            NVIC_SystemReset();
-        }
+        if(m1_diagnostics_service(now.ms))enter_iap(now.ms);
     }
     m1_main_state=M1_MAIN_RUNNING;
     for(;;) {
@@ -94,12 +102,7 @@ void m1_main(void)
         if(power==M1_RUNTIME_TIME_FATAL)halted(M1_MAIN_TIME_FAULT,m1_runtime_power_error());
         if(power==M1_RUNTIME_FAILED)
             stop_live(M1_MAIN_DEVICE_FAULT,M1_DEVICE_POWER|(m1_runtime_power_error()<<16),now.ms);
-        if(m1_live_update_requested()) {
-            __disable_irq();
-            m1_live_stop(now.ms);(void)m1_usb_hw_stop();
-            m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
-            NVIC_SystemReset();
-        }
+        if(m1_live_update_requested())enter_iap(now.ms);
         /* The power owner deliberately stops these peripherals after park.
          * Its stage-specific guards replace the awake health checks then. */
         if(power!=M1_RUNTIME_AWAKE && power!=M1_RUNTIME_DRAIN)continue;

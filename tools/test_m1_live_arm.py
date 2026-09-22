@@ -155,6 +155,21 @@ def knob_integration(path):
     print('PASS knob-to-host integration: real GPIO decoder, USB/radio volume/mute pulses, Fn/loss cleanup and neutral transport handoff')
 
 
+def recovery_preflight(path):
+    for high in (False,True):
+        d=Live(path,high)
+        d.send(sx.HELLO);d.wait(sx.READY)
+        assert not d.call('m1_live_update_requested')
+        d.command('bootloader',error=True)
+        assert not d.call('m1_live_update_requested')
+        # Simulated read-only metadata qualification. The independent storage
+        # audit executes the real page reader; main-loop tests own arming/reset.
+        d.put(d.symbols['m1_test_recovery_result'],0)
+        d.command('bootloader')
+        assert d.call('m1_live_update_requested')
+    print('PASS M1 live SysEx update preflight: rejected metadata leaves request clear; qualified page queues explicit update at FS/HS')
+
+
 def integration(path):
     for high in (False,True):
         d=Live(path,high)
@@ -260,6 +275,7 @@ def integration(path):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
+    recovery_preflight(args.elf)
     integration(args.elf)
     knob_integration(args.elf)
     wireless_integration(args.elf)

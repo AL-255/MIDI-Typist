@@ -21,7 +21,7 @@ Startup uses provisional travel bounds when factory records cannot be imported.
 Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry active.
 Pressed-key performance and complete wireless/power behavior remain unverified;
 this is not a daily-use port.
-See the [M1 trial and recovery limits](docs/DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+See the [M1 update and recovery limits](docs/DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Each hardware backend builds separately—not one universal binary.
 
 ## Use the keyboard

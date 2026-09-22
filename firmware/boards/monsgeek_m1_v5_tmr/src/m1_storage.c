@@ -33,7 +33,9 @@ static bool active(void)
         if(((dma_channel_type *)(DMA1_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen ||
            ((dma_channel_type *)(DMA2_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen)return true;
     return ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) ||
-           SPI2->sts_bit.bf || SPI3->sts_bit.bf;
+           SPI2->sts_bit.bf || SPI3->sts_bit.bf ||
+           (CRM->ahben1_bit.otghsen && OTG2_GLOBAL->gahbcfg_bit.dmaen) ||
+           (SysTick->CTRL&SysTick_CTRL_ENABLE_Msk);
 }
 static uint32_t readable(void)
 {
@@ -121,6 +123,26 @@ uint32_t m1_storage_write(unsigned slot,const uint8_t *page,bool platform_safe)
 uint32_t m1_storage_erase(unsigned slot,bool platform_safe)
 { return change(slot,NULL,platform_safe); }
 
+/* Read only, with interrupts masked by the caller. The rest of this metadata
+ * page must be erased even when the one permitted word is already armed. */
+static uint32_t recovery_page(bool allow_armed)
+{
+    const volatile uint32_t *flag=(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS;
+    if(flag[0]!=UINT32_MAX && (!allow_armed || flag[0]!=M1_RECOVERY_FLAG_VALUE))
+        return M1_STORAGE_VERIFY;
+    for(unsigned i=1;i<M1_STORAGE_PAGE_BYTES/4u;++i)
+        if(flag[i]!=UINT32_MAX)return M1_STORAGE_VERIFY;
+    return M1_STORAGE_OK;
+}
+uint32_t m1_storage_check_recovery(bool allow_armed)
+{
+    if(!context())return M1_STORAGE_CONTEXT;
+    uint32_t mask=__get_PRIMASK();__disable_irq();
+    uint32_t result=readable();
+    if(!result && FLASH->ctrl!=0x80u)result=M1_STORAGE_CONTROLLER;
+    if(!result)result=recovery_page(allow_armed);
+    __set_PRIMASK(mask);return result;
+}
 static IN_RAM uint32_t arm_recovery(void)
 {
     flash_unlock();
@@ -146,14 +168,8 @@ uint32_t m1_storage_arm_recovery(bool platform_safe)
     uint32_t result=readable();
     if(!result && active())result=M1_STORAGE_UNSAFE;
     if(!result && FLASH->ctrl!=0x80u)result=M1_STORAGE_CONTROLLER;
-    if(!result) {
-        /* A successful factory update erases this page. Refuse any other
-         * contents instead of erasing boot metadata speculatively. */
-        const volatile uint32_t *flag=(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS;
-        for(unsigned i=0;i<M1_STORAGE_PAGE_BYTES/4u;++i)
-            if(flag[i]!=UINT32_MAX) { result=M1_STORAGE_VERIFY;break; }
-    }
-    if(!result) {
+    if(!result)result=recovery_page(true);
+    if(!result && *(const volatile uint32_t *)M1_RECOVERY_FLAG_ADDRESS==UINT32_MAX) {
         uint32_t vector=SCB->VTOR;
         for(unsigned i=0;i<16;++i)emergency_vectors[i]=(uintptr_t)fail_stop;
         emergency_vectors[0]=__get_MSP();

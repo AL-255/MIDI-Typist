@@ -94,7 +94,7 @@ application's USB transport, not libc file I/O.
 These commands compile the real shared application with the M1's 82-key layout,
 test its board callbacks natively, and compile its HALs and development ELF for
 Cortex-M4. They never access a keyboard. The application `.bin` is an
-[experimental reset-to-IAP trial](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion),
+[experimental M1 recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion),
 not a working plug-and-play release.
 
 ```sh

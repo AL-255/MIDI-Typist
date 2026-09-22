@@ -7,6 +7,10 @@
 #include "m1_usb.h"
 #include <string.h>
 static unsigned reads,writes;
+/* The full page qualification/SDK writer has a separate compiled audit. */
+uint32_t m1_test_recovery_result=M1_STORAGE_VERIFY;
+uint32_t __wrap_m1_storage_check_recovery(bool allow_armed)
+{ return allow_armed?m1_test_recovery_result:M1_STORAGE_ARGUMENT; }
 uint32_t __wrap_m1_storage_read(unsigned slot,uint8_t *page)
 {
     ++reads;

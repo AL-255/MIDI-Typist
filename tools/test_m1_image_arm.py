@@ -192,7 +192,8 @@ def main_loop(image):
         d.cpu.mem_write(SIZE,struct.pack('<H',128 if failure=='geometry' else 256))
         d.put(GPIOC+0x10,0 if external else 1<<13)
         d.put(GPIOC,0) # input source pin, real SDK GPIO setup is allowed
-        results={'m1_storage_arm_recovery':0x3100c if failure=='recovery' else 0,
+        results={'m1_storage_check_recovery':0x3100c if failure=='recovery' else 0,
+            'm1_storage_arm_recovery':0,
             'm1_runtime_power_state':{'power':16,'power_clock':17,'power_time':18,'sleeping':5}.get(failure,0),
             'm1_runtime_power_error':6,
             'm1_live_update_requested':0,
@@ -239,8 +240,10 @@ def main_loop(image):
         if expected==9:
             assert d.u32(s['m1_main_detail'])=={'device':1,'lighting':2,'transport':4,'storage':8,'radio':16,'power':32|(6<<16)}[failure]
         labels=[x[0] for x in trace]
+        assert 'm1_storage_arm_recovery' not in labels # ordinary boot never writes IAP metadata
         if expected==3:
-            assert labels.index('m1_storage_arm_recovery')<labels.index('m1_clock_init')
+            assert labels.index('m1_storage_check_recovery')<labels.index('m1_clock_init')
+            assert next(x for x in trace if x[0]=='m1_storage_check_recovery')[1][0]==0
             assert live==2 and times==[(0xfffffffc,125)]*2
             assert labels.index('m1_boot_service')<labels.index('m1_runtime_power_service')
             if failure=='sleeping':assert 'm1_hal_healthy' not in labels
@@ -264,6 +267,51 @@ def main_loop(image):
     print('PASS M1 development main: ordered startup, source-selected transport, independent timestamps and terminal failures (component calls stubbed)')
 
 
+def update_entry(image):
+    # Run each real main-loop update call site through teardown and reset.
+    # Peripheral effects/flash result are scripted; the SDK writer has its own
+    # audit. AIRCR is observed, not replaced by an always-success reset stub.
+    for source in ('live','boot_fault','runtime_fault'):
+        for failure in (None,'metadata','usb','source'):
+            d=Reset(image);d.reset();s=d.s;trace=[];reset=[]
+            d.cpu.mem_write(SIZE,struct.pack('<H',256));d.put(GPIOC+0x10,0);d.put(GPIOC,0)
+            responses={'m1_storage_check_recovery':0,'m1_clock_init':0,'m1_time_start':1,
+                'm1_boot_begin':1,'m1_boot_state':6 if source=='boot_fault' else 5,
+                'm1_boot_error':9,'m1_usb_hw_running':1,'m1_diagnostics_service':1,
+                'm1_runtime_power_state':0,'m1_live_update_requested':source=='live',
+                'm1_hal_healthy':source!='runtime_fault','m1_lighting_healthy':1,
+                'm1_live_transport_fault':0,'m1_live_storage_fault':0,'m1_live_transport':6,
+                'm1_storage_arm_recovery':0x3100c if failure=='metadata' else 0,
+                'm1_usb_hw_stop':1 if failure=='usb' else 0}
+            voids=('m1_boot_service','m1_live_stop','m1_hal_stop','m1_lighting_stop',
+                   'm1_wireless_stop','m1_radio_stop','m1_diagnostics_runtime_fault',
+                   'm1_runtime_power_service')
+            addresses={s[n]&~1:n for n in set(responses)|set(voids)|{'m1_time_now'}}
+            def code(cpu,address,size,user):
+                if bytes(cpu.mem_read(address,2))==b'\x30\xbf':cpu.emu_stop();return
+                name=addresses.get(address)
+                if not name:return
+                trace.append(name);result=responses.get(name,0)
+                if name=='m1_time_now':
+                    cpu.mem_write(cpu.reg_read(UC_ARM_REG_R0),struct.pack('<II',125,125000));result=1
+                if name=='m1_storage_check_recovery':assert cpu.reg_read(UC_ARM_REG_R0)==0
+                if name=='m1_usb_hw_stop' and failure=='source':d.put(GPIOC+0x10,1<<13)
+                if name=='m1_storage_arm_recovery':
+                    assert cpu.reg_read(UC_ARM_REG_PRIMASK)==1 and cpu.reg_read(UC_ARM_REG_R0)==1
+                    assert trace[-7:-1]==['m1_live_stop','m1_hal_stop','m1_lighting_stop',
+                                          'm1_wireless_stop','m1_radio_stop','m1_usb_hw_stop']
+                cpu.reg_write(UC_ARM_REG_R0,int(result));cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
+            def write(cpu,access,address,size,value,user):
+                if address==0xe000ed0c and value&4:
+                    reset.append(value);assert trace[-1]=='m1_storage_arm_recovery';cpu.emu_stop()
+            d.cpu.hook_add(UC_HOOK_CODE,code);d.cpu.hook_add(UC_HOOK_MEM_WRITE,write)
+            d.cpu.emu_start(s['m1_main'],FLASH+0x40000,count=200000)
+            assert bool(reset)==(failure is None),(source,failure,trace)
+            assert trace.count('m1_storage_arm_recovery')==int(failure not in ('usb','source'))
+            if failure:assert d.u32(s['m1_main_state'])==11
+    print('PASS M1 update entry: live/boot-fault/runtime-fault teardown, verified flag before reset, failure prevents reset')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('elf',type=Path)
     args=parser.parse_args();data=args.elf.read_bytes();image=Image(data)
@@ -271,6 +319,7 @@ def main():
     for psp in (False,True):Reset(image).reset(psp)
     print('PASS M1 reset: real entry, MSP/PSP normalization, masked vectors, data/RAM-code copy, BSS and memory guards')
     main_loop(image)
+    update_entry(image)
 
 
 if __name__=='__main__':main()

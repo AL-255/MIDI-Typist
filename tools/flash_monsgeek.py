@@ -33,12 +33,12 @@ IDENTITY_SETTLE_SECONDS = .05
 BOOT_TIMEOUT_SECONDS = 15
 ENUMERATION_POLL_SECONDS = .1
 INSTALL = FlashAction('install', 'Install experimental MIDI-Typist', 'custom',
-    'Reset factory user settings and install the M1 trial application. '
-    'Factory sensor calibration is preserved. The next reset enters IAP and erases the trial and custom saves.')
+    'Reset factory user settings and install the experimental M1 application. '
+    'Factory sensor calibration is preserved. Normal reset retains the application; explicit IAP entry erases custom saves.')
 RESTORE = FlashAction('restore', 'Install MonsGeek factory application', 'monsgeek',
     'Use your own ID2949 factory image. Resets factory user settings; preserves sensor calibration and bootloader code.')
 REFLASH = FlashAction('reflash', 'Reflash experimental MIDI-Typist', 'custom',
-    'Replace the M1 application through its armed recovery path. Custom profiles are erased.')
+    'Replace the M1 application through guarded IAP entry. Custom profiles are erased.')
 CUSTOM_TARGET = 'MG-M1V5TMR'
 
 
@@ -78,11 +78,11 @@ class MonsGeekAdapter:
     control_inspection_modes = ('custom_candidate', 'custom')
     default_image = str(Path(__file__).resolve().parents[1]/'build-m1-hal/m1_development.bin')
     filetypes = (('M1 application or factory dump', '*.bin'),)
-    safety = ('M1 trial keyboard/GUI operation uses provisional calibration when factory bounds cannot be imported; not for daily use. '
+    safety = ('M1 keyboard/GUI operation uses provisional calibration when factory bounds cannot be imported; not for daily use. '
               'Experimental conversion: factory entry resets stock user settings. '
               'Bootloader code and factory sensor calibration are preserved. '
-              'Every update erases custom saves. Trial startup arms reset-to-IAP recovery; '
-              'power cycling erases the trial application. '
+              'Every update erases custom saves. Normal reset retains the application and settings; '
+              'early startup failure may need hardware debugging. The on-demand IAP transition awaits hardware qualification. '
               'A shared bootloader PID alone '
               'cannot authorize an update. No automatic retries.')
 
@@ -235,7 +235,7 @@ class MonsGeekAdapter:
                 'Model verification':CUSTOM_TARGET+' confirmed by USB-bound SysEx',
                 'Control port':port,'Recovery':self.safety})
             if enter_boot:
-                status('Custom M1 build verified: '+build[0]+'. Requesting armed recovery once.')
+                status('Custom M1 build verified: '+build[0]+'. Requesting guarded IAP entry once.')
                 boot_requested=True # send failure has uncertain acceptance; never resend or cancel
                 connection.send(sx.encode(sx.COMMAND,session,1,b'bootloader'))
             yield confirmed

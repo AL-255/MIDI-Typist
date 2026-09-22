@@ -262,7 +262,7 @@ def diagnostics(path):
         b'M1BS\x01\x00\x52\x00'+struct.pack('<I82H',1234,*range(2000,2082)))
     responses['m1_boot_scan']=0
     assert not send(sx.COMMAND,8,b'boot scan') and messages[-1][0]==sx.ERROR
-    d.put(0x08004800,0x55aa55aa)
+    d.put(d.symbols['m1_test_recovery_result'],0)
     assert send(sx.COMMAND,9,b'bootloader') and messages[-1][0]==sx.ACK
     responses['m1_usb_generation']=2
     assert not service() and not d.call('midi_control_ready')
