@@ -635,13 +635,19 @@ then `m1_live_power_park` to drain local neutral reports and relinquish foregrou
 hardware ownership. Unlike stop/reinitialization, this preserves RAM settings,
 active calibration and pending unsaved changes. It cancels transient menus,
 calibration, captures and the GUI lease; no flash writes occur during handoff.
+While draining, complete acquisitions are consumed and discarded, so report
+backpressure does not fill the scan FIFO. A never-linked wireless transport may
+hand off a cancellable neutral baseline and unsent battery metadata; this is
+not a claimed host delivery. Previously committed held reports must still drain.
 While parked, live service touches no peripherals. The outer owner still owes
 host-release/peer-sleep policy, LED blanking, scan/USB shutdown and rail/clock
 sequencing. Local completion is not permission to remove power.
 After explicit physical restoration and servicing the same transport,
 `m1_live_power_resume` discards unread pre-wake scans/control traffic and requires
 fresh neutral acquisitions and a new GUI handshake. Stopping an already parked
-owner is terminal and does not reclaim hardware. The development main loop does
+owner is terminal and does not reclaim hardware. Wireless restoration requires
+a fresh matching mode reply but not an already connected host; host arrival
+still invalidates offline input and requires release before rearming. The development main loop does
 not yet invoke this handoff automatically.
 
 `m1_transport_ops_t` callbacks connect Fn+F1–F5 to `m1_transport`, bound by the

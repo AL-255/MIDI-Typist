@@ -51,6 +51,10 @@ slot, unavailable USB, and release-before-rearm after a host becomes ready.
 Peer responses and transfer completion are scripted; local drain is not proof
 that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.
+Power-handoff tests also check scan consumption during prolonged output drain,
+never-linked neutral cancellation and a completed critical-sleep control packet
+without an RF host. Restore tests require fresh matching peer state, admit a
+searching peer, and reject replay of keys held through wake and host connection.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests

@@ -99,5 +99,6 @@ const void *const m1_live_test_exports[]={
     m1_radio_init,m1_radio_service,m1_radio_healthy,m1_radio_ready,
     m1_wireless_init,m1_wireless_stop,m1_wireless_ready,m1_wireless_healthy,m1_wireless_local_idle,
     m1_wireless_reports_sent,m1_wireless_mode,m1_wireless_service,
+    m1_wireless_request_sleep,m1_wireless_sleep_sent,
     m1_test_live_transports,m1_test_live_transport_gate,m1_test_live_selection,m1_test_live_battery
 };

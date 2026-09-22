@@ -289,7 +289,10 @@ def power_handoff(path):
         assert d.call('m1_live_power_suspend',d.time//1000) # no second panic/gap
         assert d.call('m1_live_scan_losses')==1
         assert not d.call('m1_live_power_park')
-        d.call('m1_test_live_led',0);d.run(300)
+        d.call('m1_test_live_led',0)
+        for _ in range(300):
+            d.tick()
+            assert not d.call('m1_test_live_get',2), 'draining retained an acquisition'
         assert not d.call('m1_live_power_park')
         assert d.hid==bytes(30) and not d.call('midi_control_ready')
         if high:
@@ -352,6 +355,36 @@ def power_handoff(path):
         assert not s.flags&2 and not d.call('m1_test_live_storage_count',2)
         d.samples[81]=3900;d.run();d.samples[81]=3000;d.run();assert d.radio_held(135)
     print('PASS M1 radio power handoff: all four modes release locally, parked scheduler ownership, explicit restoration, retained keymaps and no MIDI')
+    for mode in (0,1,2,5):
+        d=Live(path,True,mode=mode,storage=True);d.peer_state=1;d.run(400)
+        assert d.call('m1_wireless_selected',mode) and not d.call('m1_wireless_ready')
+        assert not d.call('m1_wireless_reports_sent')
+        d.samples[81]=3000;d.run(20)
+        assert d.call('m1_live_power_suspend',d.time//1000);park(d)
+        # A never-linked neutral baseline is cancellable, not a delivered
+        # release. This must permit critical sleep without an RF host.
+        assert d.call('m1_wireless_request_sleep',3,1)
+        for _ in range(100):
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+            if d.call('m1_wireless_sleep_sent')==3:break
+        assert d.call('m1_wireless_sleep_sent')==3
+        assert not d.call('m1_wireless_reports_sent') and not any(d.radio_slots)
+        d.call('m1_wireless_stop');d.start_radio(mode)
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        for _ in range(400):
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+            if d.call('m1_wireless_selected',mode):break
+        assert d.call('m1_wireless_selected',mode) and not d.call('m1_wireless_ready')
+        assert d.call('m1_live_power_resume',d.time//1000,1)
+        d.run(10);s=reconnect(d);assert not s.flags&2
+        # A key held through wake/connection is not replayed. New neutral
+        # acquisition and a fresh press are still required on host arrival.
+        d.peer_state=3;d.run(2*D['M1_RADIO_QUERY_US']//125)
+        assert d.call('m1_wireless_ready')
+        assert not d.radio_held(0x4f)
+        d.samples[81]=3900;d.run(100);d.samples[81]=3000;d.run(200)
+        assert d.radio_held(0x4f)
+    print('PASS M1 unlinked power handoff: neutral cancellation, critical sleep packet, fresh searching-mode restore and no held-key replay on connect')
 
 
 def calibration_persistence(path):

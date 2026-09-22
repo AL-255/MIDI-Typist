@@ -291,7 +291,7 @@ bool m1_live_power_park(void)
     uint32_t mask=lock();
     bool ready=m1_usb_in_idle() && (controls.current==M1_TRANSPORT_USB?
         usb_ready() && !midi.panic && !midi.count:
-        radio_mode(controls.current) && m1_wireless_ready() && m1_wireless_local_idle());
+        radio_mode(controls.current) && m1_wireless_switch_ready());
     if(ready)power_state=POWER_PARKED;
     unlock(mask);return ready;
 }
@@ -301,7 +301,11 @@ bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
        transport_fault || storage_fault || !m1_hal_periodic_active() ||
        !m1_lighting_healthy())return false;
     now=now_ms;check_epoch();
-    if(!output_ready())return false;
+    /* A searching wireless peer is a valid restored transport. Require a
+     * fresh matching mode, not a connected host; the ordinary readiness edge
+     * still cancels offline input before any newly connected host can type. */
+    if(controls.current==M1_TRANSPORT_USB?!usb_ready():
+       !m1_wireless_selected(controls.current))return false;
     uint32_t discarded;
     (void)m1_hal_frame(samples,&discarded);
     uint8_t events[M1_USB_HS_PACKET];
@@ -413,6 +417,12 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     if(power_state==POWER_DRAINING) {
         /* No new scan, configuration, battery packet, LED frame or flash
          * transaction may compete with the neutral-output handoff. */
+        /* Acquisition stays owned by the outer power controller until park.
+         * Host backpressure can outlast the scan FIFO: consume and discard
+         * frames while draining, never feed them to keys/velocity/capture.
+         * The suspend boundary has already invalidated those consumers. */
+        uint32_t discarded;
+        (void)m1_hal_frame(samples,&discarded);
         keyboard_app_service(&app,now,false,neutral_sent()?NULL:send_keyboard,
                              controls.current==M1_TRANSPORT_USB?send_midi:NULL);
         service_auxiliary(false);

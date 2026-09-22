@@ -55,14 +55,19 @@ void m1_live_stop(uint32_t now_ms);
  * lease, but retains settings, active bounds and unsaved journal state. It
  * never writes flash or changes rails. Repeat suspension is idempotent.
  * Continue service until park accepts locally completed neutral HID/MIDI,
- * current radio mode readiness, USB IN buffer release and completed LEDs.
+ * a neutral radio boundary, USB IN buffer release and completed LEDs. A
+ * never-linked wireless peer may cancel an unsent neutral baseline; it must
+ * never count that cancellation as delivered host data. Pending battery-only
+ * metadata does not prevent handoff. Draining consumes/discards scan frames
+ * so an absent/slow host cannot itself overflow the acquisition FIFO.
  * park then stops ALL live foreground HAL/service work; the outer owner takes
  * exclusive hardware ownership. This is NOT radio-host receipt, peer sleep,
  * LED blanking, stopped acquisition, or permission to change clocks/rails.
  * A live USB IRQ may still handle control/idle requests until the owner stops it.
  * No timeout silently grants ownership; the outer controller owns its deadline.
  * resume requires explicit physical restoration, healthy periodic acquisition,
- * lighting and the same ready transport. It discards unread pre-wake frames
+ * lighting and the same ready USB transport or fresh matching wireless mode
+ * (a wireless host may still be searching). It discards unread pre-wake frames
  * and control input, starts a new GUI lease, and requires fresh neutral scans.
  * Never reload flash or synthesize a key/velocity from a wake-only sample.
  * No suspend during physical transport selection or terminal owner faults.
