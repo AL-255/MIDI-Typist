@@ -233,8 +233,16 @@ pause invalidation, and released-key fast-path velocity semantics have offline
 tests. The per-key pending-strike bitmap is checked against every occupied slot
 through the native MIDI suite, including retrigger and overflow cleanup. These
 checks do not establish sustained pressed-key/polyphonic
-performance or worst-case latency. Individual press-to-key mapping, full
-calibration, LED appearance and wireless behavior still require hardware checks.
+performance or worst-case latency. A physical A/S check observed eight separate
+A presses followed by a simultaneous A+S hold. GUI telemetry showed the matching
+NKRO report bits, independent releases and separate per-key velocity captures,
+with no unexpected down keys or new scanner/lighting errors. Both readings
+returned to 4096 after release; fully pressed readings reached 1 in the provisional
+control coordinates. This approximately 30 Hz snapshot check validates these two
+physical-key bindings and firmware report contents, not every acquisition sample,
+OS input delivery, electrical calibration or measured velocity accuracy. Mapping
+of the remaining keys, full calibration, LED appearance and wireless behavior
+still require hardware checks.
 The live encoder diagnostic reports phase 3 (both phases high), button released,
 and zero movement, invalid transitions or queue overflows with the knob untouched.
 Its sampling counter advances alongside periodic acquisition. Rotation/button
