@@ -319,6 +319,9 @@ control values **4096 released / 1 pressed**, clipping at the endpoints. Thresho
 velocity, wheels, menus, lighting, aftertouch, GUI readouts and captures use this
 control domain; calibration and saved endpoints retain electrical ADC+1 values.
 Huntsman's input policy is unchanged. These linear coordinates are not millimetres.
+The shared travel converter validates and normalizes each frame in one pass,
+skipping division for clipped endpoints while retaining exact integer rounding.
+Any invalid sample or endpoint invalidates the whole frame.
 
 ## Power and transport components
 

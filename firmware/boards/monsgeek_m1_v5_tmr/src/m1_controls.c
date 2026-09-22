@@ -35,9 +35,9 @@ static bool system_input(keyboard_app_t *app,void *context,uint32_t now)
         keyboard_text_stop(&s->text); return false;
     }
     if(s->switching) { consume(app); return true; }
-    bool neutral=true;
-    for(unsigned i=0;i<raw->count;++i)if(raw->raw[i]<=raw->release[i])neutral=false;
     if(s->neutral_required) {
+        bool neutral=true;
+        for(unsigned i=0;i<raw->count;++i)if(raw->raw[i]<=raw->release[i])neutral=false;
         if(neutral)s->neutral_required=false;
         consume(app); return true;
     }

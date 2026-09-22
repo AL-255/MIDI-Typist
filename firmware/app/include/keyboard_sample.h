@@ -9,4 +9,9 @@
  * Equal endpoints are an invalid board configuration, not a released key. */
 bool keyboard_sample_normalize(uint16_t native, uint16_t released_full_scale,
                                uint16_t pressed_full_scale, uint16_t *canonical);
+/* Descending per-key electrical travel bounds, validated while converting.
+ * On false, discard the entire output (a prefix may have been written). */
+bool keyboard_samples_travel(const uint16_t *native, const uint16_t *lower,
+                             const uint16_t *upper, unsigned count,
+                             unsigned minimum_span, uint16_t *canonical);
 #endif

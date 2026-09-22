@@ -81,6 +81,30 @@ static void normalizer(void)
     assert(value==1);
     assert(keyboard_sample_normalize(0,1000,3000,&value) && value==4096);
     assert(keyboard_sample_normalize(65535,1000,3000,&value) && value==1);
+    uint16_t samples[4],lower[4]={1,1000,2000,3968},upper[4]={4096,1700,3000,4096},out[4];
+    for(unsigned n=1;n<=4096;++n) {
+        for(unsigned i=0;i<4;++i)samples[i]=n;
+        assert(keyboard_samples_travel(samples,lower,upper,4,128,out));
+        for(unsigned i=0;i<4;++i) {
+            assert(keyboard_sample_normalize(n,upper[i],lower[i],&value));
+            assert(out[i]==value);
+        }
+    }
+    assert(!keyboard_samples_travel(NULL,lower,upper,4,128,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,0,128,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,0,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,4096,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,129,out));
+    for(unsigned i=0;i<4;++i) {
+        samples[i]=0;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        samples[i]=4097;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        samples[i]=4096;
+        uint16_t saved=lower[i];lower[i]=0;
+        assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));lower[i]=saved;
+        saved=upper[i];upper[i]=lower[i];
+        assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        upper[i]=4097;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));upper[i]=saved;
+    }
 }
 static void performance(void)
 {

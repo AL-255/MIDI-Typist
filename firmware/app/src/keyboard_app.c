@@ -77,12 +77,9 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     const uint16_t *input=samples;
     const uint16_t *input_lo=lo,*input_hi=hi;
     if(policy && policy->normalize_travel) {
-        valid=valid && calibration_bounds_valid(profile,count,lo,hi);
-        for(unsigned i=0;i<count;++i) {
-            normalized[i]=0;
-            if(!samples[i] || samples[i]>4096u)valid=false;
-            if(valid)(void)keyboard_sample_normalize(samples[i],hi[i],lo[i],&normalized[i]);
-        }
+        valid=valid && keyboard_samples_travel(samples,lo,hi,count,
+                                               calibration_min_span(profile),normalized);
+        if(!valid)memset(normalized,0,count*sizeof(*normalized));
         input=normalized;
         input_lo=s->input_lower;input_hi=s->input_upper;
     }

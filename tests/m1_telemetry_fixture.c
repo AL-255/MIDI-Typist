@@ -88,11 +88,11 @@ int main(void)
     assert(size==1508);
     assert(!keyboard_telemetry_encode(&app,&status,frame,size-1));
     scan_stream_last_key(3500,42,81);
-    scan_stream_push(samples,82,1,0);
+    for(unsigned i=0;i<MIDI_CONTROL_SAMPLE_BATCH;++i)scan_stream_push(samples,82,1,i);
     used=0; assert(scan_stream_service());
     for(unsigned i=0;i<50;++i)midi_control_service();
     assert(midi_sysex_decode(wire,used,&info,payload,sizeof(payload)));
-    assert(info.kind==MT_SAMPLES && info.length==20 && payload[14]==81);
+    assert(info.kind==MT_SAMPLES && info.length==20*MIDI_CONTROL_SAMPLE_BATCH && payload[14]==81);
     assert((payload[12]|(unsigned)payload[13]<<8)==3981);
     scan_stream_gui();
     assert(scan_stream_gui_push(frame,size));

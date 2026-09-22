@@ -261,6 +261,10 @@ lighting and aftertouch. `NULL` retains electrical-domain controls, as on Huntsm
 The application always passes unmodified electrical samples to calibration and
 stores its electrical endpoints. Send `app.raw->raw`, not board ADC frames, to
 capture when these domains differ; GUI telemetry already uses control samples.
+`keyboard_samples_travel` combines electrical-bound validation and conversion
+for descending per-key endpoints, with the same rounding as the scalar helper.
+On failure its entire output must be discarded, including any converted prefix;
+the application invalidates the frame and never emits partially validated keys.
 
 Default calibration requires rest at least 2048, a candidate no higher than half
 rest and a span of at least 512. A non-NULL policy supplies `minimum_release`,
