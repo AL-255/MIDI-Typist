@@ -149,7 +149,7 @@ execution, a stack high-water measurement or installation approval.
 | Linked Cortex-M4 execution | M1 clock waits/failures, wired/battery cold-start rail ordering, ADC rank/bank/DMA configuration, battery sampling, SPI LED/radio handling and coexistence, USB power-down guards/timeout, RTC setup/backup preservation and scripted sleep/resume; no analog timing, physical wake or radio-peer simulation |
 | Linked Cortex-M33 execution | SDK startup/USB/DMA/I2C paths, descriptor/control transfers, MIDI packets, LED writes, faults, MIDI SysEx, updater entry and storage integration |
 | Original-reference comparison | Selected scan/editor/lighting behavior and flash register transactions; the original fixture is separate and read-only |
-| Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, bounds and timeout handling, resolved typography (antialiased or native-pixel bitmap faces) and a settings panel that scrolls in a small window; no keyboard opened |
+| Tk against simulated MIDI | Real widgets, configuration ACK/readback, capture isolation, flashing-tab actions/confirmation, board-specific recovery/calibration guidance, bounds and timeout handling, resolved typography, whole-page and nested settings scrolling at small sizes; no keyboard opened |
 | Sphinx | All public pages build, internal references resolve, source links exist; warnings fail CI |
 
 `python3 tools/run_tests.py` runs 27 audit groups, including native Huntsman

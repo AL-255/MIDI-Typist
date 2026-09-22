@@ -312,9 +312,9 @@ fontconfig/Xft, so for the smoothest text use an interpreter whose Tk has it:
 the distribution `python3` with `python3-tk` and `python3-rtmidi` (the venv
 documented above inherits whatever Tk its base interpreter has). Text
 rendering is a property of that interpreter, not of the keyboard firmware.
-A short window keeps the bottom-left settings panel usable: it scrolls with
-its own scrollbar, and the window refuses to shrink below the point where the
-keyboard, settings and footer fit.
+In a short window, the configuration page scrolls to keep large keyboard layouts,
+settings and the footer reachable. The bottom-left settings panel also has its
+own scrollbar; use the outer page scrollbar to reach that panel when necessary.
 
 Use the port selector for multiple keyboards. Auto-detection chooses only a
 unique paired control port; performance MIDI belongs in the DAW. Linux can

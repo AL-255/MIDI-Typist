@@ -4,11 +4,34 @@ import struct
 import unittest
 from keyboard_boards import boards, get_board, m1_records, M1_TARGET, DEFAULT_TARGET
 from keyboard_gui_model import profile_from_snapshot, validate_profile, MIDI_CONTROLS, decode, frame_size
+from keyboard_gui_model import board_help, storage_notice, settings_text, calibration_prompt
 from keyboard_capture import KeyDecoder, StreamError, press_velocity
 from test_keyboard_gui import packet
 
 
 class Tests(unittest.TestCase):
+    def test_board_guidance_matches_storage_and_controls(self):
+        m1=get_board(M1_TARGET);huntsman=get_board(DEFAULT_TARGET)
+        snapshot=decode(packet(storage_flags=1))
+        self.assertIn('reset erases',settings_text(snapshot,m1))
+        self.assertEqual(settings_text(snapshot,huntsman),'settings saved')
+        for board in (m1,huntsman):
+            self.assertEqual(settings_text(replace(snapshot,storage_flags=4),board),'settings SAVE FAILED')
+            self.assertIn('pending',settings_text(replace(snapshot,storage_flags=2),board))
+            self.assertIn('not confirmed',settings_text(replace(snapshot,storage_flags=0),board))
+            self.assertIn('not calibration or the complete device state',board_help(board))
+            self.assertIn(storage_notice(board),calibration_prompt(board))
+        self.assertIn('bootloader',m1.recovery_notice)
+        self.assertIn('not electrical ADC',m1.input_notice)
+        self.assertIn('Fn+F1',board_help(m1));self.assertIn('unavailable',board_help(m1))
+        self.assertNotIn('before unplugging',board_help(m1))
+        self.assertFalse(huntsman.recovery_notice)
+        self.assertNotIn('Fn+F1',board_help(huntsman))
+        self.assertIn('clears custom state',board_help(huntsman))
+        # Presentation is catalog data, not a target-name branch in the view.
+        renamed=replace(m1,target='EXAMPLE-BOARD')
+        self.assertEqual(board_help(renamed),board_help(m1))
+
     def test_variable_wire_sizes_and_board_binding(self):
         for count,hid in ((61,30),(62,30),(65,30),(82,30),(128,32)):
             wire=packet(count=count,hid_bytes=hid)

@@ -365,8 +365,9 @@ Connect, then select a drawn key. Tiles show live raw values, press state and
 latest velocity. The panel shows thresholds, note/control role, waveform,
 calibration progress and settings-save status. Stale telemetry disables edits.
 A displayed HID submission is not proof of host receipt. If the window is
-short, scroll the settings panel on the left: its fields, buttons and the
-shortcut reference stay reachable instead of being cut off.
+short, use the page scrollbar to reach the settings and footer. The settings
+panel on the left scrolls independently through its fields, buttons and shortcut
+reference. The mouse wheel scrolls the innermost region under the pointer.
 
 ### Change one key or all keys
 

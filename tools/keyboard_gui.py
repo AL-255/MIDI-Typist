@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
 from keyboard_gui_transport import Connection, find_midi_device
-from keyboard_gui_model import transport_text, power_text
+from keyboard_gui_model import transport_text, power_text, board_help, storage_notice, settings_text, calibration_prompt
 from midi_backend import control_ports
 from keyboard_keycodes import CHOICES, keycode_name, parse_keycode
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
@@ -52,8 +52,8 @@ class App:
         self.initial_fields = False
         self.flashing = False           # a worker thread owns the device
         root.title('MIDI-Typist • '+self.board.name)
-        # Fit the screen, but never below the size at which the page still
-        # shows its keyboard, settings row and footer without clipping.
+        # Large physical layouts scroll as a page; keep controls reachable
+        # without imposing their natural height on a small screen.
         width = min(1180,max(900,root.winfo_screenwidth()-80))
         height = min(920,max(700,root.winfo_screenheight()-140))
         root.geometry(f'{width}x{height}')
@@ -86,13 +86,17 @@ class App:
         style.configure('Horizontal.TProgressbar',background='#68d8cf',troughcolor='#17232d',bordercolor='#354958')
         style.configure('Title.TLabel',font=self.fonts.title_font())
         self.notebook = ttk.Notebook(root); self.notebook.pack(fill='both',expand=True)
-        outer = ttk.Frame(self.notebook,padding=18)
-        self.notebook.add(outer,text='  Keyboard configuration  ')
+        self.page_area=ScrollArea(self.notebook)
+        outer=self.page_area.body;outer.configure(padding=18)
+        self.notebook.add(self.page_area,text='  Keyboard configuration  ')
         self._page_wrap = 0
-        outer.bind('<Configure>',self._wrap_page)
+        outer.bind('<Configure>',self._wrap_page,add='+')
         self.board_title = tk.StringVar(value=self.board.name+' / KEYBOARD')
         ttk.Label(outer,textvariable=self.board_title,style='Title.TLabel').pack(anchor='w')
-        ttk.Label(outer,text='Raw Schmitt thresholds • press below the lower value, release above the upper value').pack(anchor='w',pady=(3,12))
+        self.coordinate_label=ttk.Label(outer,text=self.board.input_notice,wraplength=1100)
+        self.coordinate_label.pack(anchor='w',pady=(3,8))
+        self.recovery_label=ttk.Label(outer,text=self.board.recovery_notice,foreground='#ffca80',wraplength=1100)
+        if self.board.recovery_notice:self.recovery_label.pack(anchor='w',pady=(0,8))
         bar = ttk.Frame(outer); bar.pack(fill='x')
         self.device = tk.StringVar(value=device)
         self.port_selector = ttk.Combobox(bar,textvariable=self.device,width=25,postcommand=self.refresh_ports)
@@ -124,7 +128,7 @@ class App:
         self.calibration_status = tk.StringVar(value='Calibration: connect to a keyboard to read status.')
         self.calibration_label = ttk.Label(outer,textvariable=self.calibration_status,wraplength=1100)
         self.calibration_label.pack(anchor='w',pady=(0,8))
-        self.message = tk.StringVar(value='Settings save automatically after release; wait for settings saved before unplugging. Calibration saves after all keys finish.')
+        self.message = tk.StringVar(value=storage_notice(self.board))
         self.footer = ttk.Label(outer,textvariable=self.message,wraplength=890)
         self.footer.pack(side='bottom',anchor='w',pady=(12,0))
         lower = ttk.Frame(outer); lower.pack(fill='both',expand=True)
@@ -137,7 +141,7 @@ class App:
         self.power_label = ttk.Label(panel,textvariable=self.power_status,wraplength=350)
         self.power_label.pack(anchor='w',pady=(0,8))
         self._panel_wrap = 0
-        panel.bind('<Configure>',self._wrap_panel)
+        panel.bind('<Configure>',self._wrap_panel,add='+')
         self.key_title = tk.StringVar(value='A  /  sensor 32')
         ttk.Label(panel,textvariable=self.key_title,style='Title.TLabel').pack(anchor='w')
         self.details = tk.StringVar(value='Waiting for device telemetry')
@@ -186,7 +190,7 @@ class App:
         self.velocity_entry.pack(side='left')
         self.velocity_button = ttk.Button(velocity_row,text='Apply velocity start',command=self.apply_velocity_start)
         self.velocity_button.pack(side='left',padx=6)
-        self.help_label = ttk.Label(panel,text=f'Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\nFn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\nFn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\nLCtrl/LAlt: pitch −/+; LWin: modulation\nSpace: sustain (CC64), uses key thresholds\nWheels: raw {D["MIDI_WHEEL_RELEASE_RAW"]} = 0%, {D["MIDI_WHEEL_PRESSED_RAW"]} = 100%\nMIDI channel 1; C4=60. Notes/Off configurable.\nSettings and calibration persist on-device. Release all keys and wait for\nsettings saved before unplugging. Fn+R or `cfg clean` clears custom state.\nHost JSON also exports thresholds and MIDI mappings. Config edits release keys/notes and wait for neutral.',justify='left')
+        self.help_label = ttk.Label(panel,text=board_help(self.board),justify='left')
         self.help_label.pack(anchor='w')
         plot = ttk.Frame(lower); plot.pack(side='right',fill='both',expand=True)
         holdbar = ttk.Frame(plot); holdbar.pack(fill='x',pady=(0,4))
@@ -209,7 +213,7 @@ class App:
         width = max(320,event.width-36)
         if width == self._page_wrap: return
         self._page_wrap = width
-        for label in (self.status_label,self.calibration_label,self.footer):
+        for label in (self.status_label,self.calibration_label,self.footer,self.coordinate_label,self.recovery_label):
             label.configure(wraplength=width)
 
     def _wrap_panel(self,event):
@@ -248,6 +252,13 @@ class App:
         self.board_title.set(board.name+' / KEYBOARD')
         self.root.title('MIDI-Typist • '+board.name)
         self.canvas.configure(height=int(board.height*52+10))
+        self.page_area.canvas.yview_moveto(0)
+        self.coordinate_label.configure(text=board.input_notice)
+        self.recovery_label.configure(text=board.recovery_notice)
+        if board.recovery_notice:self.recovery_label.pack(after=self.coordinate_label,anchor='w',pady=(0,8))
+        else:self.recovery_label.pack_forget()
+        self.help_label.configure(text=board_help(board))
+        self.message.set(storage_notice(board))
         self.draw()
 
     def select(self,index):
@@ -469,9 +480,7 @@ class App:
 
     def calibrate(self):
         if not self.usable() or self.snapshot.performance_mode: return
-        if not messagebox.askyesno('Calibrate all keys',
-            'Keyboard output pauses. Release ALL keys; wait for blue. Fully press and hold blue keys for one second until green. You may hold multiple keys together; each key has an independent timer. Include Fn and modifiers.\n\n'
-            'Five seconds of inactivity discards the attempt. Completing all keys saves calibration to this board\'s dedicated custom storage, preserving factory data. Continue?'): return
+        if not messagebox.askyesno('Calibrate all keys',calibration_prompt(self.board)): return
         try:
             self.connection.submit('calibrate')
             self.message.set('Calibration requested; ACK starts the routine, not a flash save. Watch progress below.')
@@ -558,7 +567,7 @@ class App:
             path = filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('Keyboard profile','*.json')])
             if path:
                 Path(path).write_text(json.dumps(profile,indent=2)+'\n')
-                self.message.set('Saved device-confirmed thresholds to '+path)
+                self.message.set('Exported per-key thresholds and mappings (not calibration or complete device state) to '+path)
         except (ValueError,OSError) as error: messagebox.showerror('Save profile',str(error))
 
     def load_profile(self):
@@ -568,7 +577,7 @@ class App:
         try:
             profile = json.loads(Path(path).read_text())
             values = validate_profile(profile,self.board.target)
-            if not messagebox.askyesno('Apply profile',f'Temporarily disable keyboard output and apply all {self.board.count} keys? Settings save automatically after release.'):
+            if not messagebox.askyesno('Apply profile',f'Temporarily disable keyboard output and apply all {self.board.count} keys?\n\n'+storage_notice(self.board)):
                 return
             enabled = bool(self.snapshot.flags & 1)
             if not self.connection.requests.empty(): raise ValueError('Wait for queued changes to finish first.')
@@ -688,11 +697,11 @@ class App:
             holding = sum(bool(v & 8) for v in s.velocity_state)
             calibration_text = (f'Calibration: {names[s.calibration_state]} | '
                 f'{s.calibration_completed}/{s.count} | holding {holding} | key {label}, hold {s.calibration_hold}/{D["CALIBRATION_HOLD_MS"]} ms | idle limit {s.calibration_idle/1000:.1f} s | '
-                f'flash generation {s.calibration_generation} ({"saved" if s.calibration_flags & 2 else "factory bounds"})')
+                f'flash generation {s.calibration_generation} ({"stored bounds" if s.calibration_flags & 2 else "unsaved bounds"})')
             if not s.calibration_flags & 4:
                 calibration_text = 'Calibration: ' + ('stored bounds (read-only)' if s.calibration_flags & 2 else 'unavailable')
             self.calibration_status.set(f'{"STALE • " if stale else ""}{calibration_text}'
-                + (' | settings SAVE FAILED' if s.storage_flags & 4 else ' | settings pending: release all keys' if s.storage_flags & 2 else ' | settings saved' if s.storage_flags & 1 else ' | settings not confirmed saved')
+                + ' | '+settings_text(s,self.board)
                 + (f' | {reasons[s.calibration_reason]}' if s.calibration_reason else '')
                 + (f' | storage error 0x{s.calibration_error:x}' if s.calibration_error else ''))
         self.paint(stale)

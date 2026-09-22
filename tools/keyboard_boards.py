@@ -35,6 +35,11 @@ class Board:
     hid_bytes: int = 30
     wire_layouts: tuple = ((1,61),(2,62),(3,65))
     power_status: bool = False
+    reset_erases_custom: bool = False
+    profile_reset: bool = True
+    recovery_notice: str = ''
+    input_notice: str = 'Sensor values: press below the lower threshold, release above the upper threshold.'
+    transport_notice: str = ''
 
     @property
     def count(self): return len(self.keys)
@@ -109,7 +114,15 @@ def boards():
     m1 = tuple(Key(s,label,x/4,y/4,w/4) for s,_,_,_,x,y,w,label in m1_records())
     return {
         DEFAULT_TARGET: Board(DEFAULT_TARGET,'Huntsman V3 Pro Mini',tuple(ansi_geometry()),D['HUNTSMAN_ASSUMED_SCAN_HZ']),
-        M1_TARGET: Board(M1_TARGET,'MonsGeek M1 V5 TMR',m1,D['M1_SCAN_HZ'],hid_bytes=30,wire_layouts=((1,82),),power_status=True),
+        M1_TARGET: Board(M1_TARGET,'MonsGeek M1 V5 TMR',m1,D['M1_SCAN_HZ'],
+            hid_bytes=30,wire_layouts=((1,82),),power_status=True,
+            reset_erases_custom=True,profile_reset=False,
+            recovery_notice='EXPERIMENTAL M1 TRIAL — Reset or power cycling enters the factory bootloader and erases custom firmware and settings. Reflashing also erases custom saves. Not for daily use.',
+            input_notice='Normalized travel: 4096 released, 1 fully pressed. Thresholds use this coordinate, not electrical ADC counts.',
+            transport_notice=f'Fn+F1–F3: Bluetooth slots; Fn+F4: 2.4 GHz; Fn+F5: USB.\n'
+                f'Hold Fn+F1–F4 for {D["M1_PAIR_HOLD_MS"]/1000:g} s, then release: request pairing.\n'
+                'MIDI is USB-only. Fn+Space: battery check. Knob: volume; press: mute.\n'
+                'After wireless reconnection, release all keys before typing.'),
     }
 
 

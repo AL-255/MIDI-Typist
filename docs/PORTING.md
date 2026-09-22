@@ -659,7 +659,17 @@ The configuration view selects physical geometry from `keyboard_boards.py` by
 build target, and binds host profiles to that target/layout. Register the allowed
 layout/count pairs, HID report length and declared sample rate; all are checked
 before accepting telemetry. MTG4 supports up to 128 sensors, with no fixed
-Huntsman-sized bitmaps. The GUI uses the same declared rate for capture velocity. The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
+Huntsman-sized bitmaps. The GUI uses the same declared rate for capture velocity.
+Set the catalog's `input_notice`, `transport_notice`, `recovery_notice`,
+`reset_erases_custom` and `profile_reset` to the actual backend contract; review
+these explicitly for every new platform. Do not advertise reboot persistence or
+Fn+R merely because the shared application supports flash storage and RESET.
+The GUI renders this metadata without target-name branches, including calibration
+and profile-apply confirmations. Missing stored-bound flags must not be labelled
+factory calibration. Keep warnings visible as page content, independent of
+transient connection messages. Check both geometry and access to settings/footer
+at small window sizes; the whole page and inner settings panel scroll independently.
+The [flashing tab](DEVICE_FLASHING.md) has a model-independent view:
 implement and register a separate adapter for each product, with its discovery,
 image checks, supported transitions and protected write boundary. Do not reuse
 Huntsman addresses for another platform. Preserve the shared SysEx/MTG4 contract;

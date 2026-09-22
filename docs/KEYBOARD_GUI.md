@@ -46,6 +46,13 @@ Tiles show control-domain readings, down state and latest velocity; M1 readings
 use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
+Board guidance comes from the verified build target, not the key count. The M1
+configuration page displays a recovery warning: reset/power cycling enters the
+factory bootloader and erases the trial application and custom settings; reflashing
+also erases custom saves. Its status distinguishes **written to flash** from
+reboot persistence. Calibration and profile-apply confirmations repeat this limit.
+Unsaved bounds are labelled **unsaved**, not factory calibration. M1 help lists
+Fn transport/pairing/battery controls and marks custom-profile RESET unavailable.
 
 On M1, the settings panel also shows estimated battery percentage, external or
 battery power, low/critical warnings and the raw charger-pin state. Unknown,
@@ -72,11 +79,13 @@ scale a face it does not have. Antialiased text needs a Tk built against
 fontconfig/Xft, which the distribution `python3` provides.
 See [GUI access and troubleshooting](BUILDING.md#gui-access-and-troubleshooting).
 
-The window opens at the largest comfortable size for the screen and never
-below the size at which the keyboard, settings row and footer still fit. The
-bottom-left settings panel scrolls with its own scrollbar (mouse wheel, arrows
-and Page Up/Down) whenever its fields, buttons or the shortcut reference are
-taller than the window, so nothing is clipped in a small window.
+The window opens at a comfortable screen size. The whole configuration page
+scrolls when a large keyboard layout or wrapped status text exceeds the window;
+the settings and footer remain reachable at 900×700. The bottom-left settings
+panel has its own scrollbar for fields and shortcut help. Mouse-wheel events
+belong to the innermost scroll region under the pointer; arrow keys and Page
+Up/Down work when its canvas has focus. Use the page scrollbar to move between
+the keyboard drawing, settings and footer.
 
 ## Key behavior
 

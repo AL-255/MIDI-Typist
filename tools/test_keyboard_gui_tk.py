@@ -128,6 +128,8 @@ def main():
             ImageGrab.grab(xdisplay=os.environ['DISPLAY']).save(args.screenshot)
         root.geometry('900x700'); root.update()
         assert len(app.items) == 61
+        assert app.page_area.overflowing() and app.page_area.showing_scrollbar()
+        app.page_area.canvas.yview_moveto(1.0);root.update()
         assert app.footer.winfo_rooty()+app.footer.winfo_height() < root.winfo_height()
         assert int(app.status_label.cget('wraplength')) <= root.winfo_width()  # status follows the window
         # The bottom-left settings region scrolls instead of clipping: its
@@ -135,6 +137,15 @@ def main():
         # window, and the scrollbar is only shown while the content overflows.
         area = app.panel_area
         assert area.overflowing() and area.showing_scrollbar()
+        assert int(app.page_area.canvas.cget('scrollregion').split()[3])==app.page_area.body.winfo_height()
+        area.canvas.yview_moveto(0.0);root.update()
+        wheel=SimpleNamespace(x_root=area.canvas.winfo_rootx()+20,
+            y_root=area.canvas.winfo_rooty()+20,delta=-120,num=0)
+        before=app.page_area.canvas.yview()
+        assert app.page_area._wheel(wheel) is None
+        assert area._wheel(wheel)=='break'
+        root.update()
+        assert app.page_area.canvas.yview()==before and area.canvas.yview()[0]>0
         # At the minimum window height the panel viewport is short, so every
         # field, button and the shortcut reference must be scrollable into it.
         for target in (app.details_label,app.apply_button,app.help_label):
@@ -169,9 +180,15 @@ def main():
         from keyboard_boards import M1_TARGET, DEFAULT_TARGET
         root=tk.Tk(); app=App(root,demo=True,board_target=M1_TARGET);root.update()
         assert app.board.count==82 and len(app.items)==82 and app.snapshot.count==82
+        app.device_build='v0.1.0-MG-M1V5TMR git='+'a'*40+' state=clean'
+        assert app.recovery_label.winfo_ismapped() and 'bootloader' in app.recovery_label['text']
+        assert 'Normalized travel' in app.coordinate_label['text']
+        assert 'Fn+F1' in app.help_label['text'] and 'unavailable' in app.help_label['text']
+        assert 'before unplugging' not in app.help_label['text']
         assert len(app.canvas.find_all())==328
         for width,height in ((1180,920),(900,700)):
             root.geometry(f'{width}x{height}');root.update()
+            app.update();root.update()
             for key in app.keys:
                 x1,y1,x2,y2=app.canvas.coords(app.items[key.sensor][0])
                 assert 0 <= x1 < x2 <= app.canvas.winfo_width(),key
@@ -180,12 +197,23 @@ def main():
                 assert key.label in app.key_title.get()
                 assert app.press.get()=='3500'
             assert str(app.apply_button['state'])=='disabled'
+            app.message.set('Wrapped status line\nSecond line\nThird line')
+            root.update()
+            app.page_area.canvas.yview_moveto(1.0);root.update()
+            assert int(app.page_area.canvas.cget('scrollregion').split()[3])==app.page_area.body.winfo_height()
+            assert app.panel_area.winfo_ismapped() and app.page_area.visible(app.footer)
+            assert app.footer.winfo_rooty()+app.footer.winfo_height()-root.winfo_rooty()<=root.winfo_height()
+            assert app.page_area.visible(app.panel_area)
         app.select(81);root.update()
         assert 'Right' in app.key_title.get() and 'Sensor:' in app.details.get()
         app.set_board(DEFAULT_TARGET);root.update()
         assert len(app.items)==61 and app.board.count==61
+        assert not app.recovery_label.winfo_ismapped()
+        assert 'Fn+F1' not in app.help_label['text']
+        assert 'before unplugging' in app.help_label['text']
         app.set_board(M1_TARGET);root.update()
         assert len(app.items)==82 and app.selected==45
+        assert app.recovery_label.winfo_ismapped()
         app.close();root=None
         print('PASS Tk M1: 82 keys, six physical rows, all selections, resize, target switching; no device access')
         device = Device(board_target=M1_TARGET); device.start()
@@ -202,6 +230,9 @@ def main():
                     raise AssertionError('M1 GUI condition timed out')
                 m1_until(app.usable)
                 assert app.board.target==M1_TARGET and len(app.items)==82
+                assert app.recovery_label.winfo_ismapped()
+                assert 'unsaved bounds' in app.calibration_status.get()
+                assert 'factory bounds' not in app.calibration_status.get()
                 m1_until(lambda:'87% (estimate)' in app.power_status.get())
                 assert 'polarity unverified' in app.power_status.get()
                 with app.connection.lock:
@@ -252,8 +283,9 @@ def main():
                 app.hold_button.invoke()
                 m1_until(lambda:app.connection.stream_mode=='gui' and app.usable())
                 m1_until(lambda:str(app.calibrate_button['state'])=='normal')
-                with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                with patch('keyboard_gui.messagebox.askyesno',return_value=True) as confirm:
                     app.calibrate_button.invoke()
+                    assert 'erases custom saves' in confirm.call_args.args[1]
                 m1_until(lambda:app.snapshot.calibration_state==3)
                 assert '0/82' in app.calibration_status.get()
                 app.cancel_calibration_button.invoke()

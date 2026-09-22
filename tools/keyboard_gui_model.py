@@ -122,6 +122,46 @@ def transport_text(snapshot):
     return f'{names[snapshot.transport]}: {state}'
 
 
+def storage_notice(board):
+    if board.reset_erases_custom:
+        return ('Settings and calibration can be written to device flash, but reset, power cycling '
+                'or reflashing erases custom saves. A confirmed write does not make this trial reboot-persistent.')
+    return ('Settings save automatically after release; wait for settings saved before unplugging. '
+            'Calibration saves after all keys finish.')
+
+
+def settings_text(snapshot,board):
+    if snapshot.storage_flags & 4:return 'settings SAVE FAILED'
+    if snapshot.storage_flags & 2:return 'settings pending: release all keys'
+    if snapshot.storage_flags & 1:
+        return 'settings written to flash; reset erases saves' if board.reset_erases_custom else 'settings saved'
+    return 'settings not confirmed saved'
+
+
+def board_help(board):
+    common=(f'Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\n'
+        'Fn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\n'
+        'Fn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\n'
+        'LCtrl/LAlt: pitch −/+; LWin: modulation\n'
+        'Space: sustain (CC64), uses key thresholds\n'
+        f'Wheels: readout {D["MIDI_WHEEL_RELEASE_RAW"]} = 0%, {D["MIDI_WHEEL_PRESSED_RAW"]} = 100%\n'
+        'MIDI channel 1; C4=60. Notes/Off configurable.')
+    reset=('Fn+R or cfg clean clears custom state.' if board.profile_reset else
+           'Custom-profile RESET (Fn+R / cfg clean) is unavailable on this build.')
+    return '\n\n'.join(text for text in (board.transport_notice,common,storage_notice(board),reset,
+        'Host JSON exports per-key thresholds and keyboard/MIDI mappings, not calibration or the complete device state. '
+        'Config edits release keys/notes and wait for neutral.') if text)
+
+
+def calibration_prompt(board):
+    return (f'Keyboard output pauses. Release ALL keys; wait for blue. Fully press and hold blue keys '
+        f'for {D["CALIBRATION_HOLD_MS"]/1000:g} s until green. Multiple keys may be held together; '
+        'each has an independent timer. Include Fn and modifiers.\n\n'
+        f'{D["CALIBRATION_IDLE_MS"]/1000:g} s of inactivity discards the attempt. Completing all keys '
+        'writes calibration to this board\'s custom storage, preserving factory data.\n\n'
+        +storage_notice(board)+'\n\nContinue?')
+
+
 def parse_build(text):
     """Parse current READY/version provenance into (display, version, target)."""
     if isinstance(text,bytes): text = text.decode('ascii','replace')
