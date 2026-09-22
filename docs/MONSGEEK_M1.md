@@ -12,7 +12,8 @@ Released-key acquisition is hardware-checked with GUI telemetry active and an
 not yet established. This is not a daily-use build.
 The Huntsman image must never be installed on this keyboard. Wireless
 receiver operation and other MonsGeek models are not implemented. Complete
-Bluetooth/2.4 GHz operation and power management are not yet available.
+Bluetooth/2.4 GHz operation and power management are not yet qualified for use.
+Automatic battery sleep/wake is linked; cable recovery and pairing remain unfinished.
 
 ## Identify a keyboard
 
@@ -327,7 +328,8 @@ Any invalid sample or endpoint invalidates the whole frame.
 
 The experimental image binds the Fn transport owner to the radio HAL/scheduler.
 Switching and routing have offline integration tests; **physical wireless delivery
-is not yet verified**. Automatic power/sleep integration remains incomplete.
+is not yet verified**. The [runtime battery controller](#runtime-battery-sleepwake)
+coordinates automatic sleep/wake; cable recovery remains incomplete.
 `m1_controls_bind` attaches board-specific input/lighting hooks to the shared
 application. Its table defines these Fn controls; bare F1–F5 remain normal keys:
 
@@ -449,8 +451,8 @@ Transfer completion proves only local SPI completion, **not radio acceptance,
 host delivery or sleep**. `m1_radio_quiesce` requires explicit caller permission
 and no outstanding/unconsumed transfer before applying the reference's inactive
 pin pattern. It does not infer permission from an opcode or an unknown reply.
-The foreground scheduler below owns this HAL. Pairing, host-delivery proof and
-sleep/retention coordination remain integration work.
+The foreground scheduler below owns this HAL. The runtime power controller
+coordinates sleep/retention; pairing and physical host-delivery proof remain outstanding.
 
 Native tests cover every supported payload length, opcode rejection, checksum,
 padding, malformed lengths and status offsets. Linked Cortex-M4 tests execute
@@ -630,10 +632,10 @@ changing rails; continue servicing releases before explicit reinitialization.
 Wireless restart additionally requires the outer owner's documented neutral-output
 handoff; a neutral SPI packet still does not prove receipt by the remote host.
 
-Power integration can use `m1_live_power_suspend`, continued foreground service,
+Power integration uses `m1_live_power_suspend`, continued foreground service,
 then `m1_live_power_park` to drain local neutral reports and relinquish foreground
 hardware ownership. Unlike stop/reinitialization, this preserves RAM settings,
-active calibration and pending unsaved changes. It cancels transient menus,
+calibration bounds and pending unsaved changes. It cancels transient menus,
 calibration, captures and the GUI lease; no flash writes occur during handoff.
 While draining, complete acquisitions are consumed and discarded, so report
 backpressure does not fill the scan FIFO. A never-linked wireless transport may
@@ -647,8 +649,8 @@ After explicit physical restoration and servicing the same transport,
 fresh neutral acquisitions and a new GUI handshake. Stopping an already parked
 owner is terminal and does not reclaim hardware. Wireless restoration requires
 a fresh matching mode reply but not an already connected host; host arrival
-still invalidates offline input and requires release before rearming. The development main loop does
-not yet invoke this handoff automatically.
+still invalidates offline input and requires release before rearming. The development
+main loop delegates this sequence to `m1_runtime_power`.
 
 `m1_transport_ops_t` callbacks connect Fn+F1–F5 to `m1_transport`, bound by the
 development main. Other callers can omit the callbacks to disable these actions.
@@ -679,7 +681,7 @@ the flash driver has its own controller-model audit. Transport tests exercise
 both scripted callbacks and the runtime selection owner. Radio status and DMA
 completion remain scripted, not proof of host delivery, physical scans or
 measured 8 kHz operation.
-Automatic runtime power/cable coordination, verified radio delivery and
+Runtime cable recovery, verified radio delivery and
 power-cycle persistence remain unfinished in the installable experimental application. Link faults are not
 automatically restarted, and disconnected-host transport recovery is not implemented.
 
@@ -807,7 +809,7 @@ does no further peripheral cleanup and keeps interrupts masked. There is no
 automatic retry, profile erase or factory-data write. Offline tests execute
 the composed HAL/application chain; profile I/O and hardware effects are modeled.
 Failures before USB startup remain debugger-only diagnostics. Runtime cable
-transitions, pairing and sleep/wake coordination and physical
+transitions, pairing and physical sleep/wake
 validation remain required.
 
 ### Development ELF and reset entry
@@ -843,13 +845,13 @@ already erased boot-flag page using the SRAM-resident SDK writer. It does not
 erase metadata or clear this flag during the trial. It establishes clocks/time and invokes
 `m1_boot`. PC13 external power selects USB; battery selects
 `M1_DEFAULT_WIRELESS_TRANSPORT` (BT1 by default). That wireless preference is
-not persisted yet. After handoff it polls `m1_live_service` using independent
+not persisted yet. After handoff it polls `m1_runtime_power_service` using independent
 millisecond/microsecond readings. Profile restore, gated autosave and parallel
 calibration saves are linked. Fn+F1–F5 uses the runtime transport owner; RESET
 remains disabled.
 
-The development loop does **not** implement battery idle/critical shutdown,
-pairing, cable recovery or wake restoration. A cable change
+The development loop implements battery idle/critical sleep and wake restoration
+as described below. It does **not** implement pairing or cable recovery. A cable change
 or device fault stops acquisition/radio/lighting, retains rails, and latches a
 terminal diagnostic. If USB and the timebase remain usable, it sends neutral
 keyboard/consumer HID and MIDI sustain-off/all-sound-off/all-notes-off, retains the SysEx recovery
@@ -866,6 +868,49 @@ and check exact data/code copies, BSS and untouched gaps. Main-loop tests stub
 component calls to check ordering and terminal branches; the separate cold
 handoff audit executes the actual HAL/application chain. Neither is physical
 startup, interrupt scheduling, full-runtime power or update-path validation.
+
+### Runtime battery sleep/wake
+
+`m1_runtime_power` is the sole foreground dispatcher after cold startup. It calls
+the live application while awake and draining; once parked, it owns the scanner,
+lighting, radio and sleep GPIO sequence. It never reloads application settings or
+writes flash. The caller refreshes both clocks after each service call, including WFI.
+
+1. Observe eligible live activity and battery state every
+   `M1_RUNTIME_POWER_PERIOD_MS` (10 ms). Sticky activity retains short presses and
+   encoder input between observations. USB/external power inhibits sleep. Ordinary
+   Bluetooth/2.4 GHz idle limits are 300 qualified policy steps, nominally about
+   five minutes; critical-battery policy can bypass activity. Delayed service
+   extends these intervals rather than synthesizing missed observations.
+2. Drain neutral reports, park the live owner and immediately pause acquisition.
+   Complete a black LED frame, send the policy's exact radio sleep command, then
+   stop lighting/scanning and reduce USB PHY power before changing sleep GPIOs.
+   Command 5 retains Bluetooth; command 3 also quiesces the radio pins.
+3. Wait 100 ms, then perform measured RTC sleeps of 30 **RTC ticks**, not 30 ms.
+   Between sleeps, raise sensor rails, settle for 100 µs and acquire one whole
+   frame. The wake filter retains acquisition sequence across checks. A key
+   movement or encoder-switch change requests restoration. Bluetooth retention
+   expires after 30 seconds and requires completed command 3 before deeper sleep.
+4. Restore GPIOs and rails in bounded stages, reinitialize scanning and lighting,
+   then resume the retained radio session or perform a full radio restart.
+   Require fresh status confirming the selected mode, not an already paired host.
+   Resume periodic scanning and the same RAM application/settings. Wake scans
+   never enter velocity processing; keys require release before rearming, so the
+   waking press is not replayed as a synthetic host event.
+
+All timings and limits are `M1_RUNTIME_*` defaults. They are custom policy values,
+not claims of recovered stock scheduler durations. Reference sequencing comes
+from the power-transition, periodic wake-scan and transport-state routines.
+Each handoff stage has a 3-second deadline; capture uses its HAL deadline.
+Failures latch without retrying rails, peripherals or flash. Clock/time failures
+trap immediately; ordinary failures use the retained diagnostic path where USB
+is still usable. Cable arrival/removal remains terminal, not hot-plug recovery.
+
+The installed-image controller audit executes the real state machine, power
+policy, wake filter and GPIO writes with scripted HAL completion and elapsed
+time. It covers all wireless selections, critical unpaired sleep, retained/deep
+radio wake and terminal failures. This is not physical battery, charging,
+current-draw, radio delivery or sleep/wake validation.
 
 ### Sleep/wake pin ownership
 
@@ -896,8 +941,8 @@ again after restoration. A failed restore retains sleep ownership.
 Restore samples PC10 and PC12 separately and returns their two-bit encoder
 baseline. The read-only switch helper samples PC10, PC12 and PC11 into bits
 0–2, requiring input configuration. These are raw sequential reads, not an
-atomic physical snapshot, debounced movement or a keyboard event. Encoder
-reporting remains separate integration work.
+atomic physical snapshot, debounced movement or a keyboard event. Normal encoder
+reporting uses the separate decoder and auxiliary-report owner, not these raw reads.
 
 Linked ARM audits check the ordered SDK writes, drive/pull modes, preserved
 PA11 latch, switch changes between reads, busy/context rejection, battery and
@@ -1052,11 +1097,11 @@ Native tests cover all 82 wake positions, simultaneous and disabled keys,
 strict threshold/refresh edges, frozen capture, duplicates, sequence wrap and
 invalid frames. Linked HAL tests cover repeated one-shot DMA chains,
 one-shot/periodic transitions, stale timer IRQs, unread-frame protection,
-timeouts and faults. Wake-to-host key restoration is not integrated yet.
+timeouts and faults. Runtime restoration requires release before rearming;
+it does not transmit the waking press.
 
-Complete power management still requires runtime radio pairing/sleep handshakes,
-integrating cable transitions with the USB
-lifecycle and power helpers, wake-check scheduling and full restoration of held keys. The
+Complete power management still requires radio pairing, integrating cable
+transitions with the USB lifecycle and power helpers, and physical qualification. The
 reference paths at `0x08016F68`, `0x0801754C` and `0x080168B0` distinguish light
 idle, longer sleep, periodic sensor wake checks and radio retention. They must
 not be replaced by an unconditional WFI or indiscriminate GPIO power-off.
@@ -1072,7 +1117,10 @@ behavior between revisions. Guarded factory entry and application IAP transfer
 have a physical checksum/readback success verdict. Custom USB enumerates at
 480 Mb/s and answers build and startup diagnostic queries. Power-cycle and
 software-requested reset-to-IAP recovery have been observed. Keyboard startup
-stops on factory-bound range validation; no working typing or musical output is claimed.
+uses provisional bounds when factory records are outside the accepted electrical
+domain, without changing those records. Released-key GUI snapshots and a
+continuous per-key capture are physically checked; pressed typing and musical
+output are not yet qualified. See [validation](VALIDATION.md) for measurement limits.
 The alternate application PID remains covered only offline.
 
 Offline tests exercise report framing, invalid replies, model rejection,
@@ -1092,3 +1140,5 @@ execute the linked Cortex-M4 code and official SDK under scripted register
 models. RTC readiness and the WFI wake boundary are scripted, not elapsed-time
 or architectural exception simulation. Neither category demonstrates radio delivery, charging behavior or
 actual sleep/wake operation on the connected keyboard.
+The runtime-controller audit additionally checks composed sleep/wake ordering
+with scripted HAL boundaries, not an electrical model of the complete keyboard.

@@ -55,6 +55,13 @@ Power-handoff tests also check scan consumption during prolonged output drain,
 never-linked neutral cancellation and a completed critical-sleep control packet
 without an RF host. Restore tests require fresh matching peer state, admit a
 searching peer, and reject replay of keys held through wake and host connection.
+The installed-image runtime-power audit executes the real controller, policy,
+wake filter and SDK GPIO writes with scripted live/HAL boundaries and elapsed
+time. It checks drain-before-pause, black-frame completion, command 5 retention
+and command 3 shutdown, GPIO/PHY ownership, periodic wake scans with continuous
+sequence, key/encoder wake, retained/full radio restoration, external-power and
+activity inhibition, and terminal stage/clock/time failures. This is sequencing
+evidence, not physical radio sleep, battery life or charger validation.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests

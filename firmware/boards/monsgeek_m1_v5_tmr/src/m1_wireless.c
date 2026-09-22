@@ -31,10 +31,8 @@ static void fail(void)
     ++errors;faulted=true;confirmed=false;pending=false;flight=NONE;
     m1_radio_stop();
 }
-bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
+static void begin_session(m1_transport_t mode,uint32_t tick)
 {
-    if(active || !released || !m1_transport_valid(mode) || mode==M1_TRANSPORT_USB ||
-       !m1_radio_ready() || !m1_radio_healthy())return false;
     target=mode;now=started=tick;errors=reports=0;
     last_mode=last_query=last_poll=last_report=status_at=tick;
     confirmed=have_status=mode_sent=query_sent=poll_sent=faulted=linked=false;
@@ -44,7 +42,19 @@ bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
     status=(m1_radio_status_t){0};flight=NONE;part=KEYS;
     pending=true; /* mandatory neutral baseline before accepting presses */
     consumer_committed=consumer_staged=0;consumer_pending=consumer_seen=false;consumer_at=tick;
-    active=true;return true;
+    active=true;
+}
+bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
+{
+    if(active || !released || !m1_transport_valid(mode) || mode==M1_TRANSPORT_USB ||
+       !m1_radio_ready() || !m1_radio_healthy())return false;
+    begin_session(mode,tick);return true;
+}
+bool m1_wireless_resume_retained(bool restored,uint32_t tick)
+{
+    if(!restored || sleep_command!=M1_RADIO_BT_RETAIN || !sleep_complete ||
+       !m1_wireless_local_idle())return false;
+    begin_session(target,tick);return true;
 }
 void m1_wireless_stop(void)
 {

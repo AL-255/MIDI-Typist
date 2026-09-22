@@ -96,7 +96,12 @@ class DefaultsTests(unittest.TestCase):
                         {'M1_WAKE_SCAN_TIMEOUT_US':0}, {'M1_WAKE_SCAN_TIMEOUT_US':0x80000000},
                         {'M1_WAKE_ACQUIRE_FRAMES':0}, {'M1_WAKE_ACQUIRE_FRAMES':256},
                         {'M1_WAKE_REFRESH_FRAMES':0}, {'M1_WAKE_REFRESH_FRAMES':256},
-                        {'M1_WAKE_DROP_COUNTS':0}, {'M1_WAKE_DROP_COUNTS':4096}):
+                        {'M1_WAKE_DROP_COUNTS':0}, {'M1_WAKE_DROP_COUNTS':4096},
+                        {'M1_RUNTIME_POWER_PERIOD_MS':0}, {'M1_RUNTIME_BT_IDLE_STEPS':65536},
+                        {'M1_RUNTIME_HANDOFF_MS':0}, {'M1_RUNTIME_SLEEP_SETTLE_MS':3000},
+                        {'M1_RUNTIME_SLEEP_TICKS':65537}, {'M1_RUNTIME_SCAN_SETTLE_US':0},
+                        {'M1_RUNTIME_BT_RETAIN_MS':0}, {'M1_RUNTIME_RESTORE_STAGE_MS':3000},
+                        {'M1_RUNTIME_RESTORE_SETTLE_MS':0}):
             with self.subTest(changes=changes):
                 self.compile(changes, run=False)
 

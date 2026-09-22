@@ -9,6 +9,7 @@
 #include "m1_wireless.h"
 #include "m1_usb_hal.h"
 #include "m1_transport.h"
+#include "m1_runtime_power.h"
 #include "defaults.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
@@ -90,13 +91,21 @@ void m1_main(void)
         /* Cable changes are terminal in the development runtime, not an
          * implicit cold reboot or an unverified physical transport change. */
         if(wired()!=external)stop_live(M1_MAIN_SOURCE_FAULT,external,now.ms);
-        m1_live_service(now.ms,now.us);
+        m1_runtime_power_service(now.ms,now.us,external);
+        m1_runtime_power_state_t power=m1_runtime_power_state();
+        if(power==M1_RUNTIME_CLOCK_FATAL)halted(M1_MAIN_CLOCK_FAULT,m1_runtime_power_error());
+        if(power==M1_RUNTIME_TIME_FATAL)halted(M1_MAIN_TIME_FAULT,m1_runtime_power_error());
+        if(power==M1_RUNTIME_FAILED)
+            stop_live(M1_MAIN_DEVICE_FAULT,M1_DEVICE_POWER|(m1_runtime_power_error()<<16),now.ms);
         if(m1_live_update_requested()) {
             __disable_irq();
             m1_live_stop(now.ms);(void)m1_usb_hw_stop();
             m1_hal_stop();m1_lighting_stop();m1_wireless_stop();m1_radio_stop();
             NVIC_SystemReset();
         }
+        /* The power owner deliberately stops these peripherals after park.
+         * Its stage-specific guards replace the awake health checks then. */
+        if(power!=M1_RUNTIME_AWAKE && power!=M1_RUNTIME_DRAIN)continue;
         uint32_t faults=(!m1_hal_healthy()?M1_DEVICE_SCAN:0u) |
             (!m1_lighting_healthy()?M1_DEVICE_LIGHT:0u) |
             (m1_live_transport_fault()?M1_DEVICE_TRANSPORT:0u) |

@@ -45,7 +45,11 @@ loss of the clock/timebase; those still require external recovery/debugging.
 
 M1 `Runtime failed: detail=0x…` reports a terminal runtime failure: the main
 loop retains its debugger-visible failure class, with device-fault bits scan=1,
-lighting=2, transport=4, storage=8 and radio=16. For a cable-source change the
+lighting=2, transport=4, storage=8, radio=16 and runtime power=32. A power failure
+also places the failed `m1_runtime_power_state_t` stage plus one in bits 16–31;
+the stage order is defined in `m1_runtime_power.h`. No clock/time-fatal log is
+promised, because those paths trap without further peripheral operations.
+For a cable-source change the
 detail is the previous external-power state. A working USB/timebase remains
 available for diagnostics and guarded IAP; no failed peripheral is restarted.
 Wired cleanup submits neutral HID and MIDI CC64/120/123=0 on all 16 channels.

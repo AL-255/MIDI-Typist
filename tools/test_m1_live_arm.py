@@ -273,6 +273,12 @@ def power_handoff(path):
         d.command('stream gui');return d.snapshot()
     for high in (False,True):
         d=Live(path,high,storage=True)
+        d.run(4);assert d.call('m1_live_power_activity',OUTPUT)
+        assert d.call('m1_live_power_activity',OUTPUT) and bytes(d.cpu.mem_read(OUTPUT,1))==b'\0'
+        d.samples[81]=3000;d.tick();d.samples[81]=3900;d.tick()
+        assert d.call('m1_live_power_activity',OUTPUT) and bytes(d.cpu.mem_read(OUTPUT,1))==b'\1'
+        d.run(D['RAW_VELOCITY_WINDOW']);d.call('m1_live_power_activity',OUTPUT)
+        assert d.call('m1_live_power_activity',OUTPUT) and bytes(d.cpu.mem_read(OUTPUT,1))==b'\0'
         d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
         d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100')
         d.command('cfg velocity 3 7');d.snapshot(3)
@@ -385,6 +391,30 @@ def power_handoff(path):
         d.samples[81]=3900;d.run(100);d.samples[81]=3000;d.run(200)
         assert d.radio_held(0x4f)
     print('PASS M1 unlinked power handoff: neutral cancellation, critical sleep packet, fresh searching-mode restore and no held-key replay on connect')
+    for mode in (0,1,2):
+        d=Live(path,True,mode=mode);d.run(400)
+        assert not d.call('m1_wireless_resume_retained',1,d.time)
+        assert d.call('m1_live_power_suspend',d.time//1000);park(d)
+        for _ in range(1000):
+            if d.call('m1_wireless_request_sleep',5,1):break
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+        else:raise AssertionError('retention request did not drain')
+        assert not d.call('m1_wireless_resume_retained',1,d.time)
+        for _ in range(100):
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+            if d.call('m1_wireless_sleep_sent')==5:break
+        assert d.call('m1_wireless_sleep_sent')==5
+        assert not d.call('m1_wireless_resume_retained',0,d.time)
+        writes=len(d.writes)
+        assert d.call('m1_wireless_resume_retained',1,d.time)
+        assert len(d.writes)==writes and not d.call('m1_wireless_selected',mode)
+        assert not d.call('m1_live_power_resume',d.time//1000,1)
+        for _ in range(400):
+            d.time+=125;d.call('m1_wireless_service',d.time);d.collect()
+            if d.call('m1_wireless_selected',mode):break
+        assert d.call('m1_wireless_selected',mode)
+        assert d.call('m1_live_power_resume',d.time//1000,1)
+    print('PASS retained BT resume: no GPIO reset pulse, explicit restoration, fresh mode handshake and neutral rearm')
 
 
 def calibration_persistence(path):

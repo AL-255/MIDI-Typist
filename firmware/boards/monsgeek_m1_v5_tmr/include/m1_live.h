@@ -77,6 +77,10 @@ void m1_live_stop(uint32_t now_ms);
 bool m1_live_power_suspend(uint32_t now_ms);
 bool m1_live_power_park(void);
 bool m1_live_power_resume(uint32_t now_ms,bool platform_restored);
+/* Awake policy observation. Activity is sticky between observations, including
+ * short presses/encoder actions; false means ownership/input is not eligible.
+ * No flash/peripheral writes. Called only by the serialized power owner. */
+bool m1_live_power_activity(bool *activity);
 uint32_t m1_live_scan_losses(void);
 m1_transport_t m1_live_transport(void);
 /* A timed-out physical selection leaves host ownership ambiguous. This is

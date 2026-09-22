@@ -54,4 +54,8 @@ bool m1_wireless_cancel_sleep(void);
  * host_drained. No power rails, sleep GPIO pattern, system clocks or RTC are
  * changed by this handoff; the ordinary SPI HAL still drives chip select. */
 uint8_t m1_wireless_sleep_sent(void);
+/* Restore a completed BT-retention handoff without a GPIO reset pulse. Caller
+ * has restored clocks/pins. Require a new mode/status handshake and neutral
+ * baseline before reports; never reuse pre-sleep link readiness. */
+bool m1_wireless_resume_retained(bool platform_restored,uint32_t now_us);
 #endif

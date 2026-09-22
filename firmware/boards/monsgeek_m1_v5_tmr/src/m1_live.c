@@ -36,6 +36,7 @@ static bool update_requested;
 static bool last_output_ready;
 static keyboard_aux_t auxiliary;
 static bool auxiliary_allowed;
+static bool power_activity;
 static const uint16_t auxiliary_mapping[3]={
 #define AUXMAP(index,usage) [index]=usage,
 #include "../config/auxmap.def"
@@ -100,6 +101,7 @@ static void service_auxiliary(bool allowed)
     m1_encoder_status_t input;
     if(!m1_encoder_status(&input))return;
     allowed=allowed && input.active && !input.fault;
+    if(input.pressed || input.queued)power_activity=true;
     if(!allowed || !auxiliary_allowed) {
         /* Never replay offline/menu movement or a partial turn to a new host. */
         if(auxiliary_allowed || allowed || input.queued)m1_encoder_discard();
@@ -249,7 +251,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
     memset(timing,0,sizeof(timing));
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
-    update_requested=false;
+    update_requested=power_activity=false;
     power_state=POWER_AWAKE;
     status=(keyboard_telemetry_status_t){.storage_slot=255,
                                       .calibration_saved=store.saved || factory_result==M1_FACTORY_OK,
@@ -294,6 +296,15 @@ bool m1_live_power_park(void)
         radio_mode(controls.current) && m1_wireless_switch_ready());
     if(ready)power_state=POWER_PARKED;
     unlock(mask);return ready;
+}
+bool m1_live_power_activity(bool *activity)
+{
+    if(!activity || !initialized || !enabled || power_state!=POWER_AWAKE ||
+       !source_healthy || !seen || !app.frame_valid || controls.switching ||
+       selection_attempted || storage_fault || transport_fault ||
+       (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS)return false;
+    *activity=power_activity || !raw.neutral_idle;
+    power_activity=false;return true;
 }
 bool m1_live_power_resume(uint32_t now_ms,bool platform_restored)
 {
@@ -448,6 +459,7 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
         seen=true;scan_sequence=sequence;
         keyboard_app_frame(&app,samples,M1_KEY_COUNT,M1_PROFILE,lower,upper,
                            true,now);
+        power_activity|=!raw.neutral_idle;
         /* The save callback has now finished publishing/discarding bounds.
          * Invalidation inside it would destroy the candidate prematurely. */
         if(publish_storage_gap()) { snapshot();timing_step(TIMING_FRAME,mark);timing_step(TIMING_LOOP,started);return; }

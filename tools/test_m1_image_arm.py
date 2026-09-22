@@ -186,12 +186,15 @@ def main_loop(image):
         (True,'clock',5),(True,'time_start',6),(True,'boot_begin',7),(True,'boot_service',7),
         (True,'time_now',6),(True,'source',8),(False,'source',8),(True,'device',9),
         (True,'lighting',9),(True,'transport',9),(True,'storage',9),(False,'radio',9),
-        (True,'recovery',11),(True,'boot_diagnostics',7)):
+        (True,'recovery',11),(True,'boot_diagnostics',7),(True,'power',9),
+        (False,'power_clock',5),(False,'power_time',6),(False,'sleeping',3)):
         d=Reset(image);d.reset();s=d.s;trace=[];live=0;times=[];diagnostic_calls=0
         d.cpu.mem_write(SIZE,struct.pack('<H',128 if failure=='geometry' else 256))
         d.put(GPIOC+0x10,0 if external else 1<<13)
         d.put(GPIOC,0) # input source pin, real SDK GPIO setup is allowed
         results={'m1_storage_arm_recovery':0x3100c if failure=='recovery' else 0,
+            'm1_runtime_power_state':{'power':16,'power_clock':17,'power_time':18,'sleeping':5}.get(failure,0),
+            'm1_runtime_power_error':6,
             'm1_live_update_requested':0,
             'm1_usb_hw_running':external and failure!='boot_service','m1_diagnostics_service':0,
             'm1_clock_init':6 if failure=='clock' else 0,
@@ -203,7 +206,7 @@ def main_loop(image):
             'm1_wireless_healthy':failure!='radio'}
         voids=('m1_boot_service','m1_live_stop','m1_usb_hw_stop','m1_hal_stop',
                'm1_lighting_stop','m1_wireless_stop','m1_radio_stop','m1_diagnostics_runtime_fault')
-        names=set(results)|set(voids)|{'m1_time_now','m1_live_service'}
+        names=set(results)|set(voids)|{'m1_time_now','m1_runtime_power_service'}
         by_address={s[name]&~1:name for name in names}
         def intercept(cpu,address,size,user):
             nonlocal live,diagnostic_calls
@@ -221,7 +224,8 @@ def main_loop(image):
                 point=(125,0xfffffffc);cpu.mem_write(args[0],struct.pack('<II',*point))
                 result=failure!='time_now'
                 if failure=='source':d.put(GPIOC+0x10,(1<<13) if external else 0)
-            if name=='m1_live_service':
+            if name=='m1_runtime_power_service':
+                assert args[2]==external
                 times.append(args[:2]);live+=1
                 if live==2:cpu.emu_stop();return
             cpu.reg_write(UC_ARM_REG_R0,int(result));cpu.reg_write(UC_ARM_REG_PC,cpu.reg_read(UC_ARM_REG_LR))
@@ -233,12 +237,13 @@ def main_loop(image):
         if expected==7:assert d.u32(s['m1_main_detail'])==5
         if expected==8:assert d.u32(s['m1_main_detail'])==external
         if expected==9:
-            assert d.u32(s['m1_main_detail'])=={'device':1,'lighting':2,'transport':4,'storage':8,'radio':16}[failure]
+            assert d.u32(s['m1_main_detail'])=={'device':1,'lighting':2,'transport':4,'storage':8,'radio':16,'power':32|(6<<16)}[failure]
         labels=[x[0] for x in trace]
         if expected==3:
             assert labels.index('m1_storage_arm_recovery')<labels.index('m1_clock_init')
             assert live==2 and times==[(0xfffffffc,125)]*2
-            assert labels.index('m1_boot_service')<labels.index('m1_live_service')
+            assert labels.index('m1_boot_service')<labels.index('m1_runtime_power_service')
+            if failure=='sleeping':assert 'm1_hal_healthy' not in labels
             begin=next(x for x in trace if x[0]=='m1_boot_begin')
             assert begin[1][0]==(6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'])
             assert begin[1][1] and begin[1][2]==1 # runtime Fn transport callbacks bound

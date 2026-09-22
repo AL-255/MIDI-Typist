@@ -18,7 +18,7 @@ typedef enum {
     M1_MAIN_EXCEPTION, M1_MAIN_RECOVERY_FAULT
 } m1_main_state_t;
 enum { M1_DEVICE_SCAN=1u, M1_DEVICE_LIGHT=2u, M1_DEVICE_TRANSPORT=4u,
-       M1_DEVICE_STORAGE=8u, M1_DEVICE_RADIO=16u };
+       M1_DEVICE_STORAGE=8u, M1_DEVICE_RADIO=16u, M1_DEVICE_POWER=32u };
 /* Debugger-visible diagnostics; not a host protocol or persistent record. */
 extern volatile m1_main_state_t m1_main_state;
 extern volatile uint32_t m1_main_detail;

@@ -78,7 +78,8 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_options(m1_hal PRIVATE -Wall -Wextra -Werror)
     target_link_options(m1_hal INTERFACE -Wl,--wrap=usbd_endpoint_request -Wl,--wrap=usbd_device_request
         -Wl,--wrap=usb_global_init -Wl,--wrap=usb_connect)
-    add_library(m1_live STATIC ${MT_BOARD_DIR}/src/m1_live.c ${MT_BOARD_DIR}/src/m1_transport.c)
+    add_library(m1_live STATIC ${MT_BOARD_DIR}/src/m1_live.c ${MT_BOARD_DIR}/src/m1_transport.c
+        ${MT_BOARD_DIR}/src/m1_runtime_power.c)
     add_library(m1_save STATIC ${MT_BOARD_DIR}/src/m1_save.c)
     target_link_libraries(m1_save PUBLIC m1_hal)
     target_compile_options(m1_save PRIVATE -Wall -Wextra -Werror)

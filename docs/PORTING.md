@@ -220,7 +220,7 @@ and tests a separate 2048-byte M1 format; neither permits borrowing factory
 pages. M1 reserves two application-tail slots and audits its SDK/SRAM writer,
 and gates foreground autosave through outer-owner safety callbacks. Its
 experimental application has verified flashing, recovery and live GUI telemetry;
-runtime power/transport integration remains incomplete. Follow the
+cable recovery, pairing and physical wireless/power qualification remain incomplete. Follow the
 [mapping contract](../AGENTS.md#physical-key-mapping-contract).
 
 Describe the board's supported editor keys even if their physical arrangement
@@ -467,6 +467,12 @@ loading the profile and binding the application. Only then does scanning resume.
 Radio startup uses a fresh timestamp after any blocking USB work.
 Keep cold ownership separate from runtime reconnect/wake: initialization success
 does not establish host readiness or permission to abandon an existing host.
+The [M1 runtime controller](MONSGEEK_M1.md#runtime-battery-sleepwake) drains and
+parks the application before taking sole peripheral ownership. It preserves RAM
+settings through sleep, uses fresh post-WFI timestamps, and requires fresh radio
+mode confirmation and neutral input before rearming. A new board must provide
+its own verified rail/GPIO and source-change sequence; do not transplant M1 pin
+writes or treat its terminal cable-change guard as general hot-plug support.
 Never write more than capacity into the arrays. Establish fallback bounds
 at layout discovery; preserve successful calibration loads instead of
 overwriting them on every frame. The state and ops table must outlive all calls.

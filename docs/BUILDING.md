@@ -112,6 +112,7 @@ python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
 python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
 python tools/test_m1_boot_arm.py build-m1-hal/m1_boot_audit.elf
 python tools/test_m1_image_arm.py build-m1-hal/m1_development.elf
+python tools/test_m1_runtime_power_arm.py build-m1-hal/m1_development.elf
 python tools/test_monsgeek_identity.py
 python tools/test_monsgeek_iap.py
 ```
@@ -129,6 +130,9 @@ link includes a reset/vector table, SRAM-code/data initialization and a basic
 foreground loop. Its separate image audit checks all load ranges, executes the
 reset code and tests main-loop ordering with component calls stubbed. This is
 not end-to-end execution or hardware qualification. The build never flashes.
+The runtime-power audit executes the installed controller, power policy, wake
+filter and SDK GPIO writes. HAL completion, radio status and elapsed sleep time
+are scripted; it does not replace the separate HAL audits or physical power tests.
 The USB audit covers the composite class/GUI path and guarded hardware startup,
 reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
 The cold-handoff audit composes actual startup, scan pause/resume, USB/radio
