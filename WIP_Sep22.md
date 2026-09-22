@@ -7,14 +7,17 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 
 - Last user-confirmed installed firmware: `ab4b048`. The user confirms MIDI
   notes, Jankó and Fn+V now work. This is not a worst-case timing qualification.
-- Latest firmware-code checkpoint: `9c6db9b` plus the M1 profile-RESET work on
-  top of it. It includes system-menu observation ownership, directional battery
-  filtering, safe cancellation of an Fn transport selection that has not yet
-  called the hardware adapter, a fix for Fn+Tab/Fn+Caps editor entry that the
+- Latest firmware-code checkpoint: `9c6db9b` (Fn+Tab/Fn+Caps editor entry) and
+  `fd0e6df` (M1 custom-profile RESET) on top of the handoff commit. Together with
+  the earlier work they include system-menu observation ownership, directional
+  battery filtering, safe cancellation of an Fn transport selection that has not
+  yet called the hardware adapter, the editor-entry fix for what the
   observation-only change had silently broken, and M1 custom-profile RESET.
   None of it has been flashed to the confirmed working keyboard.
 - The observation-only change also left two audits red and one M1 HAL guard set
   stale at handoff; both are corrected and the whole offline suite passes again.
+  The runtime-power audit additionally reports its Unicorn IT-state recoveries in
+  the verdict (see [validation limits](docs/VALIDATION.md)).
 - The incomplete broader cable-bounce experiment was discarded at handoff.
   No experimental changes from it remain in the source.
 - The previously used USB path `3-2.1` was absent at handoff. Rediscover and
@@ -56,8 +59,10 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 4. Cable edges after a transport hardware callback or during PHY transition
    can still fail closed. Handle these ownership transitions without hiding
    genuine peripheral faults, retrying ambiguous operations or losing RAM state.
+   This needs a physical cable session; there is no offline model of PHY timing.
 5. GUI knob remapping and transport-selection persistence are not implemented.
-   Do not describe the port as feature-complete.
+   Both need a board-owned persisted field in the shared journal, so start them
+   as their own checkpoints. Do not describe the port as feature-complete.
 
 ## Safety and continuation
 
