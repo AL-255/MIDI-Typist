@@ -7,6 +7,9 @@
 void keyboard_raw_invalidate(keyboard_raw_t *s)
 {
     s->armed = s->valid = s->neutral_idle = false;
+    s->changed_count=0;
+    /* First valid frame must observe release arming for every real key. */
+    memset(s->velocity_work,255,sizeof(s->velocity_work));
     memset(s->down, 0, sizeof(s->down));
     for (unsigned i = 0; i < RAW_KEY_COUNT; ++i) {
         keyboard_velocity_t *v = &s->velocity[i];
@@ -195,10 +198,14 @@ static int observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
         keyboard_raw_invalidate(s);
     }
     bool neutral = true;
+    memset(s->nonneutral,0,sizeof(s->nonneutral));
     for (unsigned i = 0; i < count; ++i) {
         s->raw[i] = raw[i];
         if (!raw[i] || raw[i] > 4096u) valid = false;
-        if (raw[i] <= s->release[i]) neutral = false;
+        if (raw[i] <= s->release[i]) {
+            neutral = false;
+            s->nonneutral[i/32u]|=1u<<(i%32u);
+        }
     }
     if (!valid) { keyboard_raw_invalidate(s); return -1; }
     s->valid = true;
@@ -208,6 +215,7 @@ static int observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
 void keyboard_raw_observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
                           uint8_t profile, bool valid)
 {
+    s->changed_count=0;
     /* Calibration owns input until completion/abort. Keep live samples and
      * neutrality, but never arm outputs or spend scan time fitting velocities. */
     if(s->armed)keyboard_raw_invalidate(s);
@@ -217,6 +225,7 @@ void keyboard_raw_observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
 void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
                         uint8_t profile, bool valid)
 {
+    s->changed_count=0;
     int neutral=observe(s,raw,count,profile,valid);
     if(neutral<0)return;
     const keyboard_layout_t *layout=keyboard_layout(profile);
@@ -239,22 +248,35 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
      * Never take this path during a press, release edge or pending fit. */
     if (neutral && s->neutral_idle) return;
     bool pending=false;
-    bool changed[RAW_KEY_COUNT]={false};
     unsigned fn=RAW_KEY_COUNT;
-    for (unsigned i = 0; i < count; ++i) {
+    /* Current non-neutral keys need Schmitt detection; previous owners need
+     * their release edge or remaining velocity samples. Released, armed keys
+     * without a fit have no state transition to process. Word/bit order keeps
+     * simultaneous edges in physical sensor order, with Fn dispatched first. */
+    for(unsigned word=0;word<MT_KEY_BITMAP_WORDS;++word) {
+      uint32_t work=s->nonneutral[word] | s->velocity_work[word];
+      s->velocity_work[word]=0;
+      while(work) {
+        unsigned bit=(unsigned)__builtin_ctz(work);
+        work&=work-1u;
+        unsigned i=word*32u+bit;
+        if(i>=count)continue;
         const bool next = s->down[i] ? raw[i] <= s->release[i] : raw[i] < s->press[i];
         const bool released=raw[i]>s->release[i];
         /* Other held keys must not force idle keys through velocity work.
          * A stable down state has nothing to update once its fit is closed;
          * a released state may skip only after release arming was recorded. */
-        if(next==s->down[i] && !s->velocity[i].pending &&
-           (!released || s->velocity[i].ready))continue;
-        velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], released,layout->sample_hz);
+        if(next!=s->down[i] || s->velocity[i].pending ||
+           (released && !s->velocity[i].ready))
+            velocity_frame(&s->velocity[i], raw[i], next && !s->down[i], released,layout->sample_hz);
         pending |= s->velocity[i].pending!=0u;
+        if(!released || s->velocity[i].pending)
+            s->velocity_work[word]|=1u<<bit;
         if (next == s->down[i]) continue;
         s->down[i] = next;
-        changed[i]=true;
+        s->changed_keys[s->changed_count++]=(uint8_t)i;
         if (keyboard_key_for_sensor(profile,i)==layout->fn) fn=i;
+      }
     }
     s->neutral_idle=neutral && !pending;
     if (s->armed && !s->midi_mode) {
@@ -263,13 +285,15 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
             if(s->menu_managed)(void)keyboard_application_event(&s->engine,layout->fn,s->down[fn]);
             else (void)keyboard_engine_event(&s->engine,layout->fn,s->down[fn]);
         }
-        for (unsigned i=0; i<count; ++i)
-            if (changed[i] && i!=fn && !(s->menu_managed && !s->engine.config.mode &&
+        for (unsigned edge=0; edge<s->changed_count; ++edge) {
+            unsigned i=s->changed_keys[edge];
+            if (i!=fn && !(s->menu_managed && !s->engine.config.mode &&
                 s->engine.config.fn && keyboard_menu_control(profile,keyboard_key_for_sensor(profile,i))))
                 {
                     const uint8_t key=keyboard_key_for_sensor(profile,i);
                     if(s->menu_managed)(void)keyboard_application_mapped_event(&s->engine,key,s->down[i],s->keycode[i]);
                     else (void)keyboard_engine_event(&s->engine,key,s->down[i]);
                 }
+        }
     }
 }

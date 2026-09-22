@@ -38,6 +38,12 @@ main loop → queued note/pedal events first → latest wheels → changed press
 ```
 
 MIDI state uses fixed capacities and no dynamic allocation.
+Every frame validates all sensors and identifies non-neutral keys. A bitmap
+tracks held keys and unfinished velocity fits; an edge list feeds HID and MIDI
+in sensor order. MIDI's separate bitmap retains delayed strikes and sounding
+voices until their release work completes. Released idle keys do not enter
+either state-processing pass. Physical controller indices are cached per layout;
+analog wheels still update every scan, independently of Schmitt edges.
 Other boards select their sensor, light-frame and HID capacities at build time.
 The board has separate 24 KiB SRAMX, 16 KiB USB SRAM and 8 KiB stack budgets;
 the linker reports current usage. Calibration and persistence state use

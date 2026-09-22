@@ -276,7 +276,7 @@ def integration(path):
     print('PASS M1 foreground: independent clock/scan wrap, duplicate rejection and explicit restart after release drain')
 
 
-def midi_idle_work(path):
+def midi_scan_work(path):
     """Instruction-work regression, NOT a real-time or hardware timing test."""
     from unicorn import UC_HOOK_CODE
     d=Live(path,True,storage=True);d.run(20)
@@ -292,19 +292,29 @@ def midi_idle_work(path):
     keyboard=measure()
     d.chord(56);d.run(160) # real menu release, cleanup, neutral rearm
     midi=measure()
+    d.samples[45]=3000
+    strike=measure()
+    d.run(20)
+    held=measure()
+    for sensor in range(29,42):d.samples[sensor]=3000
+    d.run(20)
+    chord=measure()
     d.cpu.hook_del(handle)
     # Inactive MIDI should not add another full keyboard's worth of work.
     # This regression allowance is not a cycle budget or an 8 kHz guarantee.
     assert midi*100 < keyboard*135,(keyboard,midi)
+    # One held key must not reactivate full-board velocity/note passes.
+    assert max(strike,held)*100 < midi*120,(midi,strike,held)
+    assert chord*100 < midi*140,(midi,chord)
     assert not d.call('m1_live_scan_losses')
-    print(f'PASS idle instruction-work regression: keyboard={keyboard//3}, MIDI={midi//3}; physical cadence unmodeled')
+    print(f'PASS scan instruction-work regression: keyboard={keyboard//3}, MIDI={midi//3}, strike={strike//3}, held={held//3}, chord={chord//3}; physical cadence unmodeled')
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     recovery_preflight(args.elf)
     integration(args.elf)
-    midi_idle_work(args.elf)
+    midi_scan_work(args.elf)
     knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)

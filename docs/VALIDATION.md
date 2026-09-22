@@ -254,10 +254,12 @@ keys released, control readings 3961–4096, and no light errors. This is a boun
 idle-input check, not qualification of pressed-key/polyphonic load, worst-case
 latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
 and guarded recovery remain available after a runtime scan fault.
-MIDI mode is not yet physically qualified: switching modes has produced a
-scan-queue overflow on the connected M1. The shared MIDI path caches physical
-controller indices and skips inactive note state without dropping scan samples.
-A compiled instruction-count regression limits idle MIDI overhead; it does not
+MIDI mode is not yet physically qualified: pressing keys in MIDI mode has
+produced a scan-queue overflow on the connected M1. Shared raw/MIDI work bitmaps
+and per-frame edge lists avoid repeated idle-key state processing without
+dropping scan samples; physical controller indices are cached per layout.
+A compiled instruction-count regression covers idle, strikes, held keys and
+chords; it does not
 model elapsed time or interrupt load. Acceptance requires a physical Fn+Enter
 transition followed by sustained idle, note/chord, wheel and sustain operation,
 with advancing scan sequences, no new scan/lighting faults and measured runtime

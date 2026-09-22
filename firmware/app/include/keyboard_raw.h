@@ -21,6 +21,10 @@ typedef struct {
     uint8_t count, profile, keymap_profile;
     bool enabled, armed, valid, midi_mode;
     bool menu_managed, neutral_idle;
+    /* Per-frame edges plus unfinished/held velocity owners. Observation still
+     * validates every sensor at the board's exact acquisition cadence. */
+    uint8_t changed_keys[RAW_KEY_COUNT], changed_count;
+    uint32_t nonneutral[MT_KEY_BITMAP_WORDS], velocity_work[MT_KEY_BITMAP_WORDS];
     uint32_t revision;
     keyboard_velocity_t velocity[RAW_KEY_COUNT];
     uint8_t keycode[RAW_KEY_COUNT]; /* base keyboard outputs; physical/Fn/MIDI unchanged */

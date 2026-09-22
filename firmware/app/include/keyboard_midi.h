@@ -12,6 +12,7 @@ typedef struct {
     /* Physical controller list built once per layout, including duplicate
      * roles. Avoid full-keyboard searches for each controller every scan. */
     uint8_t controls[RAW_KEY_COUNT], control_count;
+    uint32_t note_work[MT_KEY_BITMAP_WORDS]; /* edges, delayed strikes and active voices */
     bool previous[RAW_KEY_COUNT];
     uint8_t refs[128], pressure[128], sent_pressure[128];
     uint8_t queue[MIDI_QUEUE][3];

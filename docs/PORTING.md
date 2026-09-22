@@ -261,6 +261,9 @@ lighting and aftertouch. `NULL` retains electrical-domain controls, as on Huntsm
 The application always passes unmodified electrical samples to calibration and
 stores its electrical endpoints. Send `app.raw->raw`, not board ADC frames, to
 capture when these domains differ; GUI telemetry already uses control samples.
+Use the shared frame lifecycle instead of mutating `raw.down` directly: it
+publishes a per-frame edge list and maintains velocity/MIDI work bitmaps. These
+skip idle state processing, never acquisition or sample validation.
 During calibration the application observes every frame without running key
 edges or velocity fits. Keep calling the shared frame/service functions; do not
 implement this scheduling distinction in board code or drop calibration frames.

@@ -53,6 +53,8 @@ static void step(void)
         for(unsigned slot=0;slot<MIDI_PENDING_STRIKES;++slot)
             if(midi.pending[i][slot]!=MIDI_UNMAPPED)occupied|=1u<<slot;
         assert(midi.pending_mask[i]==occupied);
+        assert(!!(midi.note_work[i/32u] & (1u<<(i%32u)))==
+               !!(occupied || midi.active[i]!=MIDI_UNMAPPED));
     }
 }
 static void drain(void)

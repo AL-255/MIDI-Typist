@@ -17,6 +17,7 @@ static void clear_voices(keyboard_midi_t *s)
     memset(s->current, 255, sizeof(s->current));
     memset(s->released, 0, sizeof(s->released));
     memset(s->previous, 0, sizeof(s->previous));
+    memset(s->note_work,0,sizeof(s->note_work));
     memset(s->refs, 0, sizeof(s->refs));
     memset(s->pressure, 0, sizeof(s->pressure));
     memset(s->sent_pressure, 255, sizeof(s->sent_pressure));
@@ -292,12 +293,16 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
         s->bend=bend<0 ? 8192-((-bend*8192+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW) :
                          8192+((bend*8191+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW);
         memset(s->pressure, 0, sizeof(s->pressure));
-        for (unsigned i = 0; i < raw->count; ++i) {
-            /* No edge, delayed velocity fit or sounding voice: nothing to
-             * update. Controllers above still use every analog readback,
-             * including travel that has not crossed a key threshold. */
-            if(!raw->down[i] && !s->previous[i] && !s->pending_mask[i] &&
-               s->active[i]==MIDI_UNMAPPED) continue;
+        for(unsigned edge=0;edge<raw->changed_count;++edge) {
+            unsigned i=raw->changed_keys[edge];
+            s->note_work[i/32u]|=1u<<(i%32u);
+        }
+        for(unsigned word=0;word<MT_KEY_BITMAP_WORDS;++word) {
+          uint32_t work=s->note_work[word];
+          while(work) {
+            unsigned bit=(unsigned)__builtin_ctz(work);
+            work&=work-1u;
+            unsigned i=word*32u+bit;
             if (s->previous[i] && !raw->down[i]) {
                 if (s->current[i] < MIDI_PENDING_STRIKES) s->released[i] |= 1u << s->current[i];
                 if (s->active[i] != MIDI_UNMAPPED) {
@@ -360,6 +365,9 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                 const uint8_t note = s->active[i];
                 if (pressure > s->pressure[note]) s->pressure[note] = pressure;
             }
+            if(!s->pending_mask[i] && s->active[i]==MIDI_UNMAPPED)
+                s->note_work[word]&=~(1u<<bit);
+          }
         }
     }
     memcpy(s->previous, raw->down, sizeof(s->previous));
