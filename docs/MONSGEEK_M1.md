@@ -504,9 +504,20 @@ retained vendor-command byte. Peer compatibility still needs physical validation
 
 A matching mode byte confirms only mode selection. Reports additionally require
 the reference's eligible state 3 and fresh status; LED flags are kept separate.
-An initial neutral pair precedes keyboard input. Lost status, changed mode/state
-after eligibility, or a HAL fault stops output and requires an explicit stop and
-restart, never replays queued keys automatically. Mode negotiation and status
+An initial neutral pair precedes keyboard input. Same-mode transitions from
+state 3 to states 0, 1, 2 or 4 discard queued/committed keyboard and consumer
+input, including a partially sent list/bitmap pair, while retaining the healthy
+radio session. This follows the reference's bounded state tables at
+`0x08017A82` / `0x08017AFE`; it does not issue another mode or pairing command.
+The GUI shows waiting/searching and Fn transport selection remains available.
+When fresh state 3 returns, a new neutral keyboard pair precedes reports. The
+application cancels held keys, modifiers and knob movement on both readiness
+edges, releases consumer controls and requires physical release before rearming.
+It cannot acknowledge a release to an already disconnected host.
+
+Lost/stale status, an unsolicited mode change after confirmation, unsupported
+wireless states outside 0–4, or a HAL fault still stops output and requires an
+explicit stop and restart. Mode negotiation and status
 freshness have bounded deadlines. Poll/query/report intervals and deadlines are
 custom tunables in `defaults.h`, not inferred stock timer units.
 
@@ -713,8 +724,10 @@ both scripted callbacks and the runtime selection owner. Radio status and DMA
 completion remain scripted, not proof of host delivery, physical scans or
 measured 8 kHz operation.
 Verified radio delivery, physical cable/sleep qualification and
-power-cycle persistence remain unfinished in the installable experimental application. Link faults are not
-automatically restarted, and disconnected-host transport recovery is not implemented.
+power-cycle persistence remain unfinished in the installable experimental application.
+Normal peer-reported disconnect/reconnect is supported with release-before-rearm;
+hardware/protocol faults are not automatically restarted. Physical wireless
+reconnection remains unverified.
 
 ### USB hardware lifecycle
 

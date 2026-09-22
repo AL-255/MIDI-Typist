@@ -15,7 +15,11 @@ bool m1_wireless_healthy(void);
  * This is not confirmation of the received mode or link readiness. */
 bool m1_wireless_mode(m1_transport_t *mode);
 /* True only for a fresh matching mode/state-3 status received by polling. This
- * is the reference's report-eligibility state, NOT proof of host delivery. */
+ * is the reference's report-eligibility state, NOT proof of host delivery.
+ * Same-mode offline/search states discard prior keyboard/consumer input and
+ * remain healthy. The caller must invalidate held physical inputs on both
+ * readiness edges and release consumer controls before accepting new input.
+ * Returning state 3 sends a neutral keyboard baseline before new offers. */
 bool m1_wireless_ready(void);
 bool m1_wireless_offer(const keyboard_report_t *report);
 /* Consumer usage (zero releases), copied into an independent pending slot.

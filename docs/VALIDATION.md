@@ -52,7 +52,13 @@ Pairing tests cover the long-hold/release gesture, timer wrap, same-slot pairing
 one-shot radio requests, GUI searching status and neutral rearm. Native codec
 tests check each slot's name, payload length, zero fill and checksum. ARM tests
 check both-DMA completion, fresh-status gates, held-key rejection, sleep/selection
-exclusion, timeout without retry and unchanged spontaneous-disconnect faults.
+exclusion, timeout without retry and unsolicited mode-change faults.
+Reconnect tests cover states 0/1/2/4 in all wireless modes, queued/committed and
+partially transmitted keyboard input, consumer cleanup, held-key/modifier/knob
+suppression, fresh neutral baselines, GUI waiting/searching/ready status and
+escape to USB. Peer liveness remains required while the host is absent;
+unsupported states, unexpected modes, stale status and HAL faults still stop
+output. These tests do not establish physical Bluetooth/2.4 GHz reconnection.
 Peer responses and transfer completion are scripted; local drain is not proof
 that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.

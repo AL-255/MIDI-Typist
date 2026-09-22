@@ -146,6 +146,10 @@ connection does not imply that keyboard output is routed to USB. Select the
 transport with Fn+F1–F5; MIDI remains USB-only. Holding Fn+F1–F4 for three
 seconds changes the preview to a pairing request, issued on release; see the
 [M1 transport controls](MONSGEEK_M1.md#power-and-transport-components).
+On an ordinary wireless host disconnect the GUI remains usable over USB. When
+the host returns, release all keys before typing; offline key holds and knob
+movement are discarded rather than replayed. Radio faults remain distinct from
+waiting for a host and may require the documented recovery workflow.
 If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
 the failure and leaves configuration disabled. This is not a connected keyboard
 snapshot; recovery must use the flashing workflow supported by that backend.

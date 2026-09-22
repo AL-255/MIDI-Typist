@@ -1302,8 +1302,8 @@ def wireless_pairing(elf):
         assert not d.call('m1_wireless_request_pair',1,d.now) # queued non-neutral report
         d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
         assert not d.call('m1_wireless_request_pair',1,d.now) # committed held key
-        d.poll(state=4)
-        assert not d.call('m1_wireless_healthy') # unsolicited discontinuity still faults
+        d.poll(mode=(mode+1)%3)
+        assert not d.call('m1_wireless_healthy') # unsolicited slot change still faults
     for after_dma in (False,True):
         d=WirelessArm(elf);d.baseline()
         assert d.call('m1_wireless_request_pair',1,d.now)
@@ -1312,6 +1312,50 @@ def wireless_pairing(elf):
         assert not d.call('m1_wireless_healthy') and not d.call('m1_wireless_pair_complete')
         writes=len(d.writes);d.step();assert len(d.writes)==writes # no autonomous retry
     print('PASS M1 pairing: explicit neutral request, all slots, DMA/status gates, neutral reconnect and fail-closed timeout')
+
+
+def wireless_reconnect(elf):
+    for mode in (0,1,2,5):
+        for state in (0,1,2,4):
+            d=WirelessArm(elf,mode);d.baseline()
+            # Test abandoning an accepted but not yet transmitted press.
+            assert d.offer((4,135),0x22)
+            d.poll(state=state)
+            assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
+            assert not d.call('m1_wireless_errors') and not d.offer((4,))
+            assert not d.call('m1_wireless_consumer',0xe9)
+            assert d.offer(()) and d.call('m1_wireless_switch_ready')
+            d.baseline() # no old list, bitmap or modifiers in either packet
+            assert d.offer((5,))
+            d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
+            assert d.call('m1_wireless_consumer',0xe9)
+            d.step();d.finish()
+            d.poll(state=state) # abandon committed keys and consumer usage too
+            assert d.call('m1_wireless_switch_ready')
+            d.baseline();assert d.call('m1_wireless_consumer',0)
+            d.step();assert d.packet()[:5]==bytes((0x81,3,3,0,0));d.finish()
+            assert d.call('m1_wireless_errors')==0
+    # A peer status poll can split the two keyboard subtypes. Never finish an
+    # old bitmap on a newly eligible host after its list was sent pre-loss.
+    d=WirelessArm(elf);d.baseline();assert d.offer(range(4,13),0x80)
+    d.step(D['M1_RADIO_BT_REPORT_US'])
+    d.put(GPIO+0xc10,0);d.finish();assert d.packet()[0]==9
+    d.put(GPIO+0xc10,4);d.finish(bytes((0,4,0x10,0,1,0,0x11)))
+    d.baseline();assert d.call('m1_wireless_errors')==0
+    # Waiting remains healthy as long as the peer answers; absence of a host
+    # is distinct from a silent/corrupt peer or an unsolicited slot change.
+    d.poll(state=1)
+    for _ in range(D['M1_RADIO_STATUS_TIMEOUT_US']//D['M1_RADIO_QUERY_US']+2):
+        d.step(D['M1_RADIO_QUERY_US']);assert d.packet()[0]==0x92
+        d.finish();d.poll(state=1)
+    assert d.call('m1_wireless_healthy')
+    d.poll(mode=1);assert not d.call('m1_wireless_healthy')
+    for state in (5,255):
+        d=WirelessArm(elf);d.baseline();d.poll(state=state)
+        assert not d.call('m1_wireless_healthy')
+    d=WirelessArm(elf);d.baseline();d.poll(state=0)
+    d.step(D['M1_RADIO_STATUS_TIMEOUT_US']);assert not d.call('m1_wireless_healthy')
+    print('PASS M1 reconnect: normal offline states, dropped queued/committed/partial input, neutral baselines, peer liveness and fault gates')
 
 
 def wireless_power(elf):
@@ -1852,6 +1896,7 @@ def main():
     radio(args.elf)
     wireless(args.elf)
     wireless_pairing(args.elf)
+    wireless_reconnect(args.elf)
     wireless_power(args.elf)
     usb_power(args.elf)
     power_gpio(args.elf)

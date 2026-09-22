@@ -437,6 +437,12 @@ completion means local command completion plus fresh matching mode status, not
 a paired host. An absent callback disables the long-hold gesture. Do not infer
 failure merely because the selected transport did not change; use the transition
 result. Reconnection still requires a neutral report and released physical keys.
+Distinguish an awake peer reporting no host from a silent or failed peripheral.
+M1 continues polling normal same-mode offline/search states, discards old queued
+and committed input, and starts a fresh neutral baseline on reconnect. The live
+owner invalidates physical key/modifier and auxiliary-control state on both
+readiness edges. Never replay keys or knob motion collected while offline,
+automatically re-pair, or reinterpret an unsolicited mode change as user intent.
 For GUI power readback, register `midi_control_power_handler` with a nonblocking
 cached-state provider and enable `Board.power_status` in the GUI board catalog.
 Populate the portable `keyboard_power_status_t`; the shared service returns its

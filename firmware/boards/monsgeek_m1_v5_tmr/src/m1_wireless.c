@@ -35,6 +35,13 @@ static void fail(void)
     ++errors;faulted=true;confirmed=false;pending=false;flight=NONE;
     m1_radio_stop();
 }
+static void neutral_baseline(void)
+{
+    committed=(m1_radio_keyboard_t){0};staged=committed;
+    reports=0;pending=true;part=KEYS;
+    consumer_committed=consumer_staged=0;
+    consumer_pending=consumer_seen=false;consumer_at=now;
+}
 static void begin_session(m1_transport_t mode,uint32_t tick)
 {
     target=mode;now=started=tick;errors=reports=0;
@@ -101,8 +108,8 @@ bool m1_wireless_request_pair(bool released,uint32_t tick)
     if(!released || target==M1_TRANSPORT_USB || !m1_wireless_selected(target) ||
        !m1_wireless_switch_ready() || m1_radio_data_pending())return false;
     pair_state=PAIR_QUEUED;pair_complete=false;pair_at=tick;
-    /* Only explicit neutral pairing may discard old link eligibility. A
-     * spontaneous discontinuity still follows the normal fault policy. */
+    /* Pairing is explicit and requires the old neutral handoff. Normal
+     * same-mode disconnect/reconnect never emits this control command. */
     linked=confirmed=have_status=false;
     battery_known=battery_sent=false;
     pending=false;return true;
@@ -187,16 +194,26 @@ static void receive(const uint8_t *bytes,size_t length)
     m1_radio_reply_t reply;m1_radio_status_t received;
     if(!m1_radio_decode(bytes,length,&reply)) { ++errors;return; }
     if(!m1_radio_status(&reply,&received))return;
-    status=received;status_at=now;have_status=true;
-    if(linked && (received.mode!=target || received.state!=M1_RADIO_STATE_REPORTS)) {
-        /* A peer discontinuity cannot silently replay an old held report. */
+    if((confirmed && received.mode!=target) || (received.mode==target &&
+       target!=M1_TRANSPORT_USB && received.state>M1_RADIO_STATE_PAIRING)) {
+        /* Do not follow unsolicited slot changes or invent handling for
+         * states outside the reference's 0..4 state tables. */
         fail();return;
     }
+    status=received;status_at=now;have_status=true;
     confirmed=mode_sent && received.mode==target;
+    if(linked && received.state!=M1_RADIO_STATE_REPORTS) {
+        /* Reference 0x08017a82/0x08017afe keeps servicing normal offline/search
+         * states. No report DMA is active here: this is a completed poll.
+         * Abandon all prior input, including a half-transmitted report pair.
+         * Live observes the readiness edge and requires physical release;
+         * this scheduler owns the fresh neutral keyboard baseline. */
+        linked=false;pair_complete=false;battery_sent=false;
+        neutral_baseline();
+    }
     if(confirmed && pair_state==PAIR_REFRESH) {
         pair_state=PAIR_NONE;pair_complete=true;
-        committed=(m1_radio_keyboard_t){0};staged=committed;
-        reports=0;pending=true;part=KEYS; /* fresh neutral before any press */
+        neutral_baseline(); /* fresh neutral before any press */
     }
     if(confirmed && target!=M1_TRANSPORT_USB && received.state==M1_RADIO_STATE_REPORTS)linked=true;
 }

@@ -265,6 +265,7 @@ def main():
     wireless_integration(args.elf)
     runtime_transports(args.elf)
     runtime_pairing(args.elf)
+    runtime_reconnect(args.elf)
     persistence(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
@@ -834,6 +835,43 @@ def runtime_pairing(path):
         assert len([p for p in d.radio_packets if p[0]==0x94])==1
         assert not d.call('m1_live_transport_fault')
     print('PASS M1 runtime pairing: long-hold/release, same-slot success, single command, GUI state and neutral rearm')
+
+
+def runtime_reconnect(path):
+    for mode,state,wire in ((0,0,2),(1,1,3),(2,2,4),(5,4,5)):
+        d=Live(path,True,mode=mode,transports='runtime');d.run(300)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.put(GPIO+0x810,0x800);d.call('m1_encoder_start');d.run(20)
+        d.samples[45]=d.samples[46]=d.samples[72]=3000;d.run(250)
+        assert d.radio_held(4) and d.radio_held(22) and d.radio_modifiers==1
+        d.peer_state=state;d.peer_pending=True;d.put(GPIO+0xc10,0);d.run(300)
+        assert d.call('m1_wireless_healthy') and not d.call('m1_live_transport_fault')
+        assert not d.call('m1_wireless_ready') and not d.call('m1_live_scan_losses')
+        d.messages.clear();s=d.snapshot()
+        assert s.transport==wire and s.transport_flags==(4 if state==4 else 0)
+        assert not s.flags&2 and s.raw[45]<s.press[45]
+        # Offline knob motion must not become a volume pulse on reconnect.
+        for phase in (1,3,2,0):
+            d.put(GPIO+0x810,((phase&1)<<10)|((phase>>1)<<12)|0x800)
+            for _ in range(D['ENCODER_PHASE_STABLE_SAMPLES']):d.call('m1_encoder_irq');d.tick()
+        d.radio_packets.clear();d.radio_consumer.clear();d.run(300)
+        assert not any(p[0]==0x81 for p in d.radio_packets)
+        d.peer_state=3;d.run(1000)
+        assert d.call('m1_wireless_ready') and not d.call('m1_live_transport_fault')
+        assert not d.radio_held(4) and not d.radio_held(22) and not d.radio_modifiers
+        assert d.radio_consumer and all(v==0 for v in d.radio_consumer)
+        assert not any(p[0] in (0x93,0x94) for p in d.radio_packets) # no reselect/re-pair
+        d.messages.clear();s=d.snapshot();assert s.transport_flags==1 and not s.flags&2
+        d.samples[45]=d.samples[46]=d.samples[72]=3900;d.run(200)
+        d.samples[45]=3000;d.run(200);assert d.radio_held(4)
+        d.samples[45]=3900;d.run(200);assert not d.radio_held(4)
+        # Another disconnect is recoverable; the user can still choose USB.
+        d.peer_state=1;d.run(1000);assert not d.call('m1_wireless_ready')
+        d.chord(56);assert not d.snapshot().performance_mode
+        d.chord(5);d.run(200)
+        assert d.call('m1_live_transport')==6 and not d.call('m1_live_transport_fault')
+        d.samples[45]=3000;d.run(200);assert d.held(4)
+    print('PASS M1 live reconnect: all wireless modes, GUI status, held-key/modifier/knob suppression, neutral rearm and USB escape')
 
 
 if __name__=='__main__':main()
