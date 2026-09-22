@@ -564,8 +564,8 @@ condition. The shared MIDI SysEx parser requires a valid scan younger than 100 m
 
 Callbacks are synchronous with no context argument; the board supplies its
 single-owner storage context. A deferred calibration save is retried on fresh
-frames in `CAL_SAVE`, without refreshing its inactivity deadline. Cancellation,
-invalid input, stale scans and the normal inactivity timeout discard the pending
+frames in `CAL_SAVE`, without a user-inactivity deadline after collection. Cancellation,
+invalid input and stale scans discard the pending
 candidate without changing active bounds. Do not invalidate the application or
 mutate its calibration state inside the save callback: it still owns that
 candidate. Publish any acquisition gap after `keyboard_app_frame` returns,

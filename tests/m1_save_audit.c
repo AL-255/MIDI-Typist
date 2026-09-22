@@ -19,8 +19,9 @@ void m1_test_save_transport(unsigned selected,unsigned configured,unsigned state
 { mode=selected;radio=configured;flags=state; }
 unsigned m1_test_save_begin(void) { return m1_save_ops()->begin(NULL); }
 bool m1_test_save_end(void) { return m1_save_ops()->end(NULL); }
+uint32_t m1_test_save_blocked(void) { return m1_save_ops()->blocked(NULL); }
 __attribute__((used,section(".test_exports")))
-const void *const exports[]={m1_test_save_begin,m1_test_save_end,m1_test_save_transport,m1_save_fault,
+const void *const exports[]={m1_test_save_begin,m1_test_save_end,m1_test_save_transport,m1_save_fault,m1_test_save_blocked,
     m1_hal_init,m1_hal_start,m1_hal_timer_irq,m1_hal_dma_irq,m1_hal_periodic_active,m1_hal_healthy,
     m1_hal_frame,m1_hal_battery,m1_hal_pause,m1_hal_resume,m1_hal_stop,
     m1_time_start,m1_time_now,m1_time_stop,m1_battery_hal_init,m1_battery_hal_service,

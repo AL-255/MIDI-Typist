@@ -34,7 +34,11 @@ void calibration_tick(keyboard_calibration_t *s, bool healthy, uint32_t now)
 {
     if (!calibration_active(s)) return;
     if (!healthy) calibration_abort(s,CAL_INVALID,now);
-    else if ((uint32_t)(now-s->activity) >= CALIBRATION_IDLE_MS) calibration_abort(s,CAL_TIMEOUT,now);
+    /* Once all keys are collected there is no further user action to time
+     * out. Retain the candidate while the board waits for safe flash access.
+     * Explicit cancellation and invalid acquisition still discard it. */
+    else if (s->state!=CAL_SAVE && (uint32_t)(now-s->activity) >= CALIBRATION_IDLE_MS)
+        calibration_abort(s,CAL_TIMEOUT,now);
 }
 bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo, const uint16_t *hi)
 {

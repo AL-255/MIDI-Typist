@@ -544,6 +544,14 @@ def calibration_persistence(path):
         return d
     for high in (False,True):
         d=start(high,fn=high)
+        advance(d,D['CALIBRATION_IDLE_MS']+20)
+        s=state(d,lambda s:s.calibration_state==5)
+        assert s.calibration_completed==82 and not s.calibration_idle
+        d.command('stream off');d.run(50)
+        d.command('runtime storage');gate=d.wait(sx.DUMP)[3]
+        assert gate[:8]==b'M1SG\x01\x00\x24\x00' and gate[32:]==bytes((82,5,82,0))
+        assert struct.unpack_from('<I',gate,16)[0]>0
+        d.command('stream gui')
         # The explicit save does not require held calibrated keys to release,
         # but LED backpressure and host output completion still gate it.
         d.call('m1_test_live_led',0);d.call('m1_test_live_storage_gate',1,1,0)
@@ -585,7 +593,7 @@ def calibration_persistence(path):
         assert not any(d.radio_slots) and not any(d.radio_bitmap) and not d.events
         assert d.call('m1_live_scan_losses')==1 and d.call('m1_test_live_storage_count',2)==1
     print('PASS M1 BT/2.4GHz calibration: local neutral-output gate, retained transport and no performance MIDI')
-    for failure in ('write','begin','resume','cancel','timeout','scan','usb'):
+    for failure in ('write','begin','resume','cancel','scan','usb'):
         d=start()
         if failure in ('write','begin','resume'):
             d.call('m1_test_live_storage_gate',2 if failure=='begin' else 1,
@@ -601,18 +609,17 @@ def calibration_persistence(path):
         else:
             if failure=='cancel':
                 d.command('cfg calcancel 5');assert d.snapshot(5).result==1
-            if failure=='timeout':advance(d,D['CALIBRATION_IDLE_MS']+20)
             if failure=='scan':d.sequence+=1;d.tick()
             if failure=='usb':
                 d.call('m1_test_usb_event',2);d.tick();d.call('m1_test_usb_event',3);d.tick()
                 d.messages.clear();d.send(sx.HELLO);d.wait(sx.READY);d.commands=0;d.command('stream gui')
             s=state(d,lambda s:s.calibration_state==7)
-            assert s.calibration_reason=={'cancel':3,'timeout':1,'scan':2,'usb':2}[failure]
+            assert s.calibration_reason=={'cancel':3,'scan':2,'usb':2}[failure]
             assert not d.call('m1_test_live_storage_count',2)
         assert bounds(d,'lower')==(1000,)*82 and bounds(d,'upper')==(4000,)*82
         writes=d.call('m1_test_live_storage_count',2);advance(d,200)
         assert d.call('m1_test_live_storage_count',2)==writes
-    print('PASS M1 calibration faults: no active-bound publication on failed write/gate/resume, cancellation, timeout, acquisition gap or USB epoch; no automatic retry')
+    print('PASS M1 calibration faults: no active-bound publication on failed write/gate/resume, cancellation, acquisition gap or USB epoch; no automatic retry')
 
 
 def persistence(path):

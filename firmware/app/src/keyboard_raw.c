@@ -225,6 +225,15 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
         memset(s->down, 0, sizeof(s->down));
         s->armed = true;
     }
+    /* Application-owned previews deliberately disarm after each held frame.
+     * Until neutral, their input is read directly from raw[] by the menu; no
+     * suppressed key edge or velocity fit can be used. Rebuilding all fits
+     * here at scan rate can starve acquisition while Fn+key is held. Disabled
+     * keyboard diagnostics retain their existing detection behavior. */
+    if(s->menu_managed && s->enabled && !s->armed) {
+        s->neutral_idle=neutral;
+        return;
+    }
     /* Samples still get copied and validated above. A previous fully released
      * frame with no unfinished velocity fits has no edges or fits to service.
      * Never take this path during a press, release edge or pending fit. */

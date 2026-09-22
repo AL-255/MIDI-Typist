@@ -37,6 +37,8 @@ typedef struct {
     m1_save_result_t (*begin)(void *context);
     bool (*end)(void *context);
     void *context;
+    /* Optional read-only hardware preflight bitmap, never acquires ownership. */
+    uint32_t (*blocked)(void *context);
 } m1_live_storage_ops_t;
 /* Restore is unconditional; NULL storage ops disable writes, not reads. Pending
  * edits remain explicitly unsaved. No physical power/drain proof is fabricated. */

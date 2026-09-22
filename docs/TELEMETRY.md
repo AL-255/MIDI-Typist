@@ -178,6 +178,22 @@ no sample or timer is synthesized for the measurement.
 
 ## M1 digital encoder
 
+`runtime storage` queues a read-only 36-byte `DUMP` (`M1SG`, version 1) under
+the same response-slot rules. It never pauses scanning or writes flash.
+Bytes 5, 6–7 are reserved zero and total size (u16 LE). Offsets 8/12 are u32
+foreground/hardware blocker masks. Foreground bits 0–8 mean unavailable writer,
+retry spacing, transport transition, unconfirmed/non-neutral HID, lighting busy,
+auxiliary/knob busy, USB busy, MIDI cleanup busy, and radio busy. Hardware bits
+0–7 mean invalid clock, inactive scan, lighting busy, unqualified supply,
+transport busy, peripheral bus busy, invalid power pins, and unhealthy scan/LED.
+An unavailable hardware diagnostic returns `0xffffffff`.
+Offsets 16/20/24/28 are u32 calibration-save callback count, hardware begin count,
+last begin result (0 deferred, 1 ready, 2 fault), and last attempt time in ms.
+Bytes 32–35 are last candidate count, current calibration state, current completed
+count and reason. Counters wrap and describe attempts, not verified saves; use
+MTG4's saved generation for confirmation. Blocker masks are instantaneous,
+non-atomic diagnostics, never permission to bypass the real save gate.
+
 `runtime encoder` queues a read-only 32-byte `DUMP` (`M1EN`, version 1) during
 normal M1 operation. The same single-response-slot rule as `runtime stats`
 applies. It neither consumes queued input events nor resets counters/faults.
@@ -309,7 +325,7 @@ received and decoded on the connected high-speed USB device.
 | 45 | u8 | calibration reason: none=0, timeout=1, invalid scan/USB=2, cancelled=3, storage=4 |
 | 46, 47 | u8 each | storage flags (valid=1, pending=2, fault=4), slot (0/1/255 none) |
 | 48, 52 | u32 each | MIDI overflow/error count, performance-mode change count |
-| 56, 58 | u16 each | selected calibration hold elapsed ms, inactivity remaining ms |
+| 56, 58 | u16 each | selected calibration hold elapsed ms, inactivity remaining ms (zero/no input deadline in save state) |
 | 60, 62 | u16 each | selected electrical calibration candidate upper/lower endpoints, zero if absent |
 | 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
 | 76 | u16 | header size, 80 |

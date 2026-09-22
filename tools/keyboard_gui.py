@@ -722,12 +722,13 @@ class App:
         self.cancel_calibration_button.configure(state='normal' if active else 'disabled')
         if s:
             names = ('Idle','Release all keys','Settling: keep all keys released','Fully hold blue keys for 1 s (parallel)',
-                     'Reserved','Saving','Complete: saved to device','Aborted: discarded','Save failed: check storage status')
+                     'Reserved','Waiting for safe flash access (all readings retained)','Complete: saved to device','Aborted: discarded','Save failed: check storage status')
             reasons = ('','inactivity timeout','invalid/stale scan or USB reset','cancelled','storage failure')
             label = next((k.label for k in self.keys if k.sensor == s.calibration_selected),'—')
             holding = sum(bool(v & 8) for v in s.velocity_state)
+            deadline = 'no input deadline while saving' if s.calibration_state==5 else f'idle limit {s.calibration_idle/1000:.1f} s'
             calibration_text = (f'Calibration: {names[s.calibration_state]} | '
-                f'{s.calibration_completed}/{s.count} | holding {holding} | key {label}, hold {s.calibration_hold}/{D["CALIBRATION_HOLD_MS"]} ms | idle limit {s.calibration_idle/1000:.1f} s | '
+                f'{s.calibration_completed}/{s.count} | holding {holding} | key {label}, hold {s.calibration_hold}/{D["CALIBRATION_HOLD_MS"]} ms | {deadline} | '
                 f'flash generation {s.calibration_generation} ({"stored bounds" if s.calibration_flags & 2 else "unsaved bounds"})')
             if not s.calibration_flags & 4:
                 calibration_text = 'Calibration: ' + ('stored bounds (read-only)' if s.calibration_flags & 2 else 'unavailable')

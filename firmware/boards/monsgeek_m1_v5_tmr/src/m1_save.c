@@ -62,6 +62,19 @@ static bool transports(void)
     if(m1_usb_ready() && !m1_usb_drained())return false;
     return !m1_wireless_healthy() || m1_wireless_local_idle();
 }
+static uint32_t blocked(void *unused)
+{
+    (void)unused;
+    m1_time_point_t time;
+    if(!m1_time_now(&time))return 1u;
+    return (!m1_hal_periodic_active()?2u:0u) |
+           (!m1_lighting_ready()?4u:0u) |
+           (!supply(time.ms)?8u:0u) |
+           (!transports()?16u:0u) |
+           (!idle_bus(true)?32u:0u) |
+           (!power_pins()?64u:0u) |
+           ((!m1_hal_healthy() || !m1_lighting_healthy())?128u:0u);
+}
 static m1_save_result_t begin(void *unused)
 {
     (void)unused;
@@ -112,5 +125,5 @@ static bool end(void *unused)
     __DMB();__set_PRIMASK(saved_mask);return valid;
 }
 const m1_live_storage_ops_t *m1_save_ops(void)
-{ static const m1_live_storage_ops_t ops={begin,end,NULL};return &ops; }
+{ static const m1_live_storage_ops_t ops={begin,end,NULL,blocked};return &ops; }
 bool m1_save_fault(void) { return faulted; }

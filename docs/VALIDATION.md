@@ -161,7 +161,9 @@ Artery SDK. Ordinary builds and native tests do not need that reference.
 Shared application tests cover deferred calibration saves: retries preserve
 active bounds and suppress keyboard output; only verified completion publishes
 the candidate. Failure, invalid readings, stale scans, cancellation, layout
-changes and inactivity timeout discard it without further save attempts.
+changes discard it without further save attempts. The input-inactivity timeout
+applies only before collection finishes; completed candidates survive deferred
+flash access beyond that deadline without publishing uncommitted bounds.
 
 Storage tests cover all supported layouts, settings/calibration preservation,
 keyboard mappings including disabled/international/modifier destinations,

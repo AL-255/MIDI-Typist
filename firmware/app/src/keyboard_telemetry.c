@@ -76,7 +76,7 @@ size_t keyboard_telemetry_encode(const keyboard_app_t *app,
     uint32_t idle=s->now-cal->activity;
     u16(out+56,cal->state==CAL_COLLECT && cal->selected!=255?
         (elapsed<CALIBRATION_HOLD_MS?elapsed:CALIBRATION_HOLD_MS):0);
-    u16(out+58,calibration_active(cal) && idle<CALIBRATION_IDLE_MS?CALIBRATION_IDLE_MS-idle:0);
+    u16(out+58,calibration_active(cal) && cal->state!=CAL_SAVE && idle<CALIBRATION_IDLE_MS?CALIBRATION_IDLE_MS-idle:0);
     if(cal->selected<cal->count) {
         u16(out+60,cal->upper[cal->selected]); u16(out+62,cal->lower[cal->selected]);
     }

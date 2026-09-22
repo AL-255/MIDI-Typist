@@ -648,7 +648,7 @@ parallel calibration routine for all 82 keys. RESET remains disabled.
 Calibration completion saves the entire profile through the same power,
 output-drain and pause/resume gate as autosave. Completed physical keys may
 remain held: calibration suppresses their host output. Busy gates retain the
-candidate, without extending the five-second inactivity deadline; cancellation,
+complete candidate without a user-inactivity timeout; cancellation,
 invalid scans and loss still discard it. Active bounds change only after
 verified storage and successful scan resume. Gap publication follows that
 decision and requires fresh neutral input before rearming. A failed resume is

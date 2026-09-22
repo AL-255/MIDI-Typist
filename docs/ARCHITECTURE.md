@@ -144,6 +144,8 @@ every sample is validated, normalized for display and copied to readback, but
 key edges and velocity fits are suppressed. Electrical samples still feed each
 key's independent calibration hold. Output stays disarmed until calibration
 finishes or aborts and a fresh neutral frame is observed.
+Held application-menu previews likewise skip unusable key events/velocity fits
+while output is disarmed; their menu logic still observes every fresh sample.
 
 Every acquisition is passed once. Neither repeating the most recent scan nor
 silently discarding a scan preserves velocity semantics. The board invalidates

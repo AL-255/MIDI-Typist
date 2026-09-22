@@ -65,6 +65,9 @@ def run(elf):
     for external in (False,True):
         for mask in (0,1):
             d=Save(elf,external);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
+            assert d.call('m1_test_save_blocked')==0
+            assert d.call('m1_hal_periodic_active') and d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
+            assert not d.writes # diagnostics must not pause or alter any peripheral
             assert d.call('m1_test_save_begin')==1
             assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==1
             assert not d.call('m1_hal_periodic_active') and d.call('m1_hal_healthy')

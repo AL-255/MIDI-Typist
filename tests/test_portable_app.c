@@ -229,7 +229,11 @@ static void deferred_calibration(void)
             frame();
             assert(app_cal.state==CAL_ERROR && app_cal.reason==CAL_STORAGE && saved==2);
         } else {
-            if(scenario==2) { now=app_cal.activity+CALIBRATION_IDLE_MS; frame(); }
+            if(scenario==2) {
+                now=app_cal.activity+CALIBRATION_IDLE_MS*2; frame();
+                assert(app_cal.state==CAL_SAVE && app_cal.completed==SYN_COUNT && saved==2);
+                assert(keyboard_app_command(&app,"cfg calcancel 1",now,true,&ack,&result));
+            }
             if(scenario==3) { samples[103]=0; frame(); }
             if(scenario==4) { samples[103]=4097; frame(); }
             if(scenario==5) {
@@ -239,8 +243,8 @@ static void deferred_calibration(void)
             if(scenario==6) keyboard_app_service(&app,app.last_frame+SCAN_STALE_MS,true,send_hid,send);
             if(scenario==7) keyboard_app_frame(&app,samples,SYN_COUNT,SYN_PROFILE,lo,hi,false,now++);
             if(scenario==8) keyboard_app_invalidate(&app,now);
-            assert(app_cal.state==CAL_ABORTED && saved==1);
-            assert(app_cal.reason==(scenario==2?CAL_TIMEOUT:scenario==5?CAL_CANCELLED:CAL_INVALID));
+            assert(app_cal.state==CAL_ABORTED && saved==(scenario==2?2u:1u));
+            assert(app_cal.reason==(scenario==2 || scenario==5?CAL_CANCELLED:CAL_INVALID));
         }
         assert(!app_cal.completed && !calibration_active(&app_cal));
         for(unsigned i=0;i<SYN_COUNT;++i) {
@@ -396,8 +400,20 @@ static void calibration_observation(void)
     samples[10]=3900;frame();assert(raw.armed);
     samples[100]=3000;frame();assert(keyboard_report_get_usage(&raw.engine.report,4));
 }
+static void held_preview_observation(void)
+{
+    init();samples[SYN_FN]=samples[SYN_ENTER]=3000;frame();
+    assert(menu.pending==MENU_MODE && !raw.armed);
+    for(unsigned i=0;i<1000;++i) {
+        frame();assert(menu.pending==MENU_MODE && !raw.armed && app.frame_valid);
+        for(unsigned k=0;k<SYN_COUNT;++k)assert(!raw.velocity[k].pending && !raw.velocity[k].captures);
+    }
+    samples[SYN_FN]=samples[SYN_ENTER]=3900;frame();frame();
+    assert(midi.mode==1 && raw.armed && !menu.pending);
+}
 int main(void)
 {
+    held_preview_observation();
     calibration_observation();
     sensor_readback();
     normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();

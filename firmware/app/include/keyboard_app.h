@@ -11,8 +11,8 @@ typedef struct {
      * addresses, erase geometry, current schema and bootloader boundaries. */
     bool (*load_calibration)(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t *hi);
     /* DEFER makes no storage changes and retains the completed candidate.
-     * Retried on fresh frames while CAL_SAVE; normal inactivity/cancellation
-     * rules still apply. COMPLETE means verified durable storage, not queued.
+     * Retried on fresh frames while CAL_SAVE without a user-input timeout;
+     * cancellation/scan validation still apply. COMPLETE means verified storage.
      * Do not invalidate app/calibration state inside this callback. */
     keyboard_save_result_t (*save_calibration)(const keyboard_calibration_t *cal);
     bool (*clear_profile)(void);

@@ -22,13 +22,13 @@ requires keyboard output enabled and armed; GUI entry also works when disabled.
    are released. Green remains briefly as confirmation. The GUI reports the
    saved generation. Red indicates cancellation, timeout or failure.
 
-Five seconds without progress aborts and discards the staged result. **Cancel
+While collecting keys, five seconds without progress aborts and discards the staged result. **Cancel
 calibration** in the GUI also discards it. Scan/USB failure aborts. Existing
 active calibration remains unchanged on failure; no partial result is saved.
 Configuration edits are rejected while the routine is active.
 The shared save callback can defer while its board's storage gate is busy.
-This retains the complete candidate in the save state, but does not extend the
-five-second inactivity deadline or change active bounds. Cancellation and scan
+This retains the complete candidate in the save state without an input timeout;
+all user input is already complete. Active bounds do not change until saved. Cancellation and scan
 validation still apply before each retry. Board storage capabilities and safety
 gates are specified in the [porting guide](PORTING.md).
 

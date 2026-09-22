@@ -198,8 +198,11 @@ Release all → 0.5 s settle → blue keys → hold 1 s → green
 ```
 
 Moving or releasing an unfinished key restarts only its hold. Five seconds
-without progress, GUI cancellation or scan/USB failure discards the staged
+without progress while collecting, GUI cancellation or scan/USB failure discards the staged
 run; previous calibration remains. No partial calibration is saved.
+Once every key is registered, readings remain staged while waiting for safe
+flash access; no more key presses are required. Wait for the GUI's saved
+confirmation before unplugging. Green keys alone mean registered, not saved.
 Wait for completion and saved generation, not just the start acknowledgment.
 
 To inspect the result, select a key in the GUI. Compare **Sensor input** with

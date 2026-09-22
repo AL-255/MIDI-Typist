@@ -45,6 +45,9 @@ static const uint16_t auxiliary_mapping[3]={
 };
 bool m1_live_update_requested(void) { return update_requested; }
 static uint32_t last_save_attempt;
+static uint32_t save_requests,save_begins,save_last_result;
+static uint8_t save_candidate_count;
+static uint32_t storage_blocked(void);
 /* Foreground wall-time, including interrupt preemption. Read the already owned
  * 1 MHz TMR2 through the SDK; never reset/reconfigure a peripheral for profiling.
  * Unsigned totals/counters wrap. MAX is since live initialization. */
@@ -219,6 +222,17 @@ static bool command(const char *line)
         return midi_control_publish(MT_DUMP,payload,sizeof(payload));
     }
     if(!strcmp(line,"runtime stats"))return m1_live_publish_stats();
+    if(!strcmp(line,"runtime storage")) {
+        uint8_t payload[36]={'M','1','S','G',1,0,36,0};
+        put32(payload+8,storage_blocked());
+        put32(payload+12,storage_ops && storage_ops->blocked?
+            storage_ops->blocked(storage_ops->context):UINT32_MAX);
+        put32(payload+16,save_requests);put32(payload+20,save_begins);
+        put32(payload+24,save_last_result);put32(payload+28,last_save_attempt);
+        payload[32]=save_candidate_count;payload[33]=calibration.state;
+        payload[34]=calibration.completed;payload[35]=calibration.reason;
+        return midi_control_publish(MT_DUMP,payload,sizeof(payload));
+    }
     if(!strcmp(line,"factory read")) {
         uint8_t payload[M1_FACTORY_DUMP_BYTES];
         return m1_factory_read_dump(payload)==M1_FACTORY_OK &&
@@ -390,27 +404,31 @@ bool m1_live_storage_fault(void) { return storage_fault; }
 uint32_t m1_live_storage_error(void) { return store.error; }
 static uint32_t write_profile(unsigned slot,const uint8_t *page)
 { return m1_storage_write(slot,page,true); }
-static bool storage_idle(void)
+static uint32_t storage_blocked(void)
 {
-    if(!enabled || store.fault || !storage_ops ||
-       (uint32_t)(now-last_save_attempt)<SETTINGS_CHECK_PERIOD_MS ||
-       controls.switching || controls.pending || selection_attempted || !app.sent_valid ||
-       !m1_lighting_ready())return false;
+    uint32_t blocked=(!enabled || store.fault || !storage_ops?1u:0u) |
+        ((uint32_t)(now-last_save_attempt)<SETTINGS_CHECK_PERIOD_MS?2u:0u) |
+        (controls.switching || controls.pending || selection_attempted?4u:0u) |
+        (!app.sent_valid?8u:0u) | (!m1_lighting_ready()?16u:0u);
     m1_encoder_status_t input;
-    if(!keyboard_aux_idle(&auxiliary) || !m1_encoder_status(&input) || input.queued || input.pressed)return false;
+    if(!keyboard_aux_idle(&auxiliary) || !m1_encoder_status(&input) || input.queued || input.pressed)blocked|=32u;
     const keyboard_report_t neutral={0};
-    if(memcmp(&app.sent,&neutral,sizeof(neutral)))return false;
+    if(memcmp(&app.sent,&neutral,sizeof(neutral)))blocked|=8u;
     if(controls.current==M1_TRANSPORT_USB) {
-        if(!usb_ready() || !m1_usb_drained() || midi.panic || midi.count)return false;
-    } else if(!radio_mode(controls.current) || !m1_wireless_local_idle())return false;
-    return true;
+        if(!usb_ready() || !m1_usb_drained())blocked|=64u;
+        if(midi.panic || midi.count)blocked|=128u;
+    } else if(!radio_mode(controls.current) || !m1_wireless_local_idle())blocked|=256u;
+    return blocked;
 }
+static bool storage_idle(void) { return storage_blocked()==0; }
 static void storage_failure(uint32_t error)
 { storage_fault=true;enabled=false;store.fault=true;store.error=error; }
 static keyboard_save_result_t commit_profile(const keyboard_calibration_t *cal)
 {
     last_save_attempt=now;
+    ++save_begins;
     m1_save_result_t started=storage_ops->begin(storage_ops->context);
+    save_last_result=started;
     if(started==M1_SAVE_DEFER)return KEYBOARD_SAVE_DEFER;
     storage_gap=true;
     if(started!=M1_SAVE_READY) {
@@ -423,12 +441,13 @@ static keyboard_save_result_t commit_profile(const keyboard_calibration_t *cal)
 }
 static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal)
 {
+    ++save_requests;save_candidate_count=cal->completed;
     if(!enabled || !source_healthy || !seen || !app.frame_valid || store.fault ||
        !storage_ops || (uint32_t)(now-app.last_frame)>=SCAN_STALE_MS)
         return KEYBOARD_SAVE_FAILED;
     /* Completed keys may stay held. Only host outputs, not physical samples,
      * must be neutral. Shared CAL_SAVE retains and validates the candidate
-     * during bounded deferral; no application mutation inside this callback. */
+     * during deferral; no application mutation inside this callback. */
     if(!storage_idle())return KEYBOARD_SAVE_DEFER;
     return commit_profile(cal);
 }
