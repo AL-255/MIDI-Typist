@@ -45,6 +45,9 @@ typedef struct keyboard_app {
      * before the shared Fn menu; true consumes this frame's menu input.
      * Lighting runs last. Serialized with every other application method. */
     bool (*system_input)(struct keyboard_app *app,void *context,uint32_t now);
+    /* Pure ownership query, before observation and after system_input. While
+     * true, read samples/neutrality without arming performance. */
+    bool (*system_observing)(const struct keyboard_app *app,const void *context);
     void (*system_lights)(struct keyboard_app *app,void *context,uint8_t *frame,uint32_t now);
     void *system_context;
 } keyboard_app_t;

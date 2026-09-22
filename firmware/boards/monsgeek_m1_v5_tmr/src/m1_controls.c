@@ -21,7 +21,17 @@ static void keyboard_only(keyboard_app_t *app,uint32_t now)
     if(app->midi->mode)keyboard_midi_toggle(app->midi,app->raw,now);
 }
 static void consume(keyboard_app_t *app)
-{ keyboard_menu_cancel(app->menu); keyboard_raw_invalidate(app->raw); }
+{
+    keyboard_menu_cancel(app->menu);
+    if(app->raw->armed || app->raw->changed_count)keyboard_raw_invalidate(app->raw);
+    else app->raw->valid=false;
+}
+static bool system_observing(const keyboard_app_t *app,const void *context)
+{
+    (void)app;
+    const m1_controls_t *s=context;
+    return s->pending || s->switching || s->neutral_required;
+}
 static bool system_input(keyboard_app_t *app,void *context,uint32_t now)
 {
     m1_controls_t *s=context;
@@ -37,9 +47,7 @@ static bool system_input(keyboard_app_t *app,void *context,uint32_t now)
     }
     if(s->switching) { consume(app); return true; }
     if(s->neutral_required) {
-        bool neutral=true;
-        for(unsigned i=0;i<raw->count;++i)if(raw->raw[i]<=raw->release[i])neutral=false;
-        if(neutral)s->neutral_required=false;
+        if(raw->neutral_idle)s->neutral_required=false;
         consume(app); return true;
     }
     uint8_t held=0;
@@ -106,6 +114,7 @@ bool m1_controls_bind(m1_controls_t *s,keyboard_app_t *app,m1_transport_t curren
     if(!s || !app || !m1_transport_valid(current))return false;
     *s=(m1_controls_t){.current=current,.target=current,.ops=ops,.battery=battery};
     app->system_input=system_input; app->system_lights=system_lights; app->system_context=s;
+    app->system_observing=system_observing;
     app->menu->midi_blocked=current!=M1_TRANSPORT_USB;
     if(app->menu->midi_blocked)keyboard_only(app,app->last_frame);
     return true;

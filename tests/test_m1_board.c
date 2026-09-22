@@ -396,7 +396,12 @@ static void controls(void)
     keyboard_midi_toggle(&midi,&raw,now); frame(); assert(midi.mode);
     samples[M1_FN_SENSOR]=samples[1]=3000; frame();
     assert(s.pending==1 && midi.mode && !s.switching);
-    frame(); assert(s.pending==1);
+    for(unsigned repeat=0;repeat<32;++repeat) {
+        frame();assert(s.pending==1 && !raw.armed && app.frame_valid);
+        assert(app.system_observing(&app,app.system_context));
+        for(unsigned key=0;key<M1_KEY_COUNT;++key)
+            assert(!raw.velocity[key].ready && !raw.velocity[key].pending);
+    }
     samples[1]=3900; frame();
     assert(s.switching && !midi.mode && s.current==M1_TRANSPORT_USB);
     for(unsigned i=0;i<MIDI_CLEANUP_EVENTS+5;++i) {
@@ -418,10 +423,12 @@ static void controls(void)
     frame();
     samples[M1_FN_SENSOR]=samples[75]=3000; frame();
     assert(s.battery_show && !raw.armed);
+    assert(app.system_observing(&app,app.system_context));
     uint8_t rgb[M1_LED_BYTES]; keyboard_app_lights(&app,lo,hi,rgb,now);
     assert(rgb[m1_led_index(75)*3]);
     samples[75]=3900; frame(); assert(!s.battery_show && s.neutral_required);
     samples[M1_FN_SENSOR]=3900; frame(); frame();
+    assert(!app.system_observing(&app,app.system_context) && raw.armed);
     /* Mode table includes exactly three BT slots, RF and USB. */
     const m1_transport_t expected[]={0,1,2,5,6};
     for(unsigned f=2;f<=5;++f) {

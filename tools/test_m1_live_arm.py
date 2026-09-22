@@ -347,12 +347,38 @@ def modal_scan_work(path):
         print(f'PASS M1 Fn+{selector}: held/release entry, stable modal observation ({work[0]//16} instructions/loop), choice, exit/rearm; cadence unmodeled')
 
 
+def system_menu_work(path):
+    from unicorn import UC_HOOK_CODE
+    for selector in (1,2,3,4,5,75): # Fn+F1..F5 and Fn+Space
+        d=Live(path,True,transports=True);d.run(20)
+        d.samples[77]=d.samples[selector]=3000;d.tick()
+        forbidden={d.symbols[name]&~1 for name in
+                   ('keyboard_raw_invalidate','keyboard_engine_init','keyboard_engine_release_all')}
+        calls=[0]
+        def hook(cpu,pc,size,user):
+            if pc in forbidden:calls[0]+=1
+        handle=d.cpu.hook_add(UC_HOOK_CODE,hook);d.cpu.ctl_flush_tb()
+        d.run(32)
+        assert calls[0]==0,(selector,'held',calls[0])
+        d.cpu.hook_del(handle)
+        d.samples[77]=d.samples[selector]=3900;d.run(4)
+        if selector<5: # deliberately stalled host-drain, all keys neutral
+            handle=d.cpu.hook_add(UC_HOOK_CODE,hook);d.cpu.ctl_flush_tb();calls[0]=0
+            d.run(32)
+            assert calls[0]==0,(selector,'draining',calls[0])
+            d.cpu.hook_del(handle)
+            assert not d.call('m1_test_live_selection',1)
+        assert not d.call('m1_live_scan_losses') and d.hid==bytes(30)
+    print('PASS M1 system input ownership: held Fn+F1..F5/Space and neutral host-drain wait do not reset/rearm per scan')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     recovery_preflight(args.elf)
     integration(args.elf)
     midi_scan_work(args.elf)
     modal_scan_work(args.elf)
+    system_menu_work(args.elf)
     knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)

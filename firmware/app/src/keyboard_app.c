@@ -14,6 +14,11 @@ static void defaults(keyboard_app_t *s)
     s->loaded=s->reset_pending=false;
 }
 static void log_message(keyboard_app_t *s,const char *message);
+static bool input_owned(const keyboard_app_t *s)
+{
+    return keyboard_menu_observing(s->menu) ||
+        (s->system_observing && s->system_observing(s,s->system_context));
+}
 bool keyboard_app_reset_profile(keyboard_app_t *s)
 {
     if(!s->ops || !s->ops->clear_profile || !s->ops->clear_profile()) {
@@ -71,7 +76,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         s->loaded=s->reset_pending=false;
     }
     bool calibrating=calibration_active(s->cal);
-    bool observing=calibrating || keyboard_menu_observing(s->menu);
+    bool observing=calibrating || input_owned(s);
     raw->midi_mode=s->midi->mode || calibrating;
     const keyboard_config_t before=raw->engine.config;
     const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
@@ -138,7 +143,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }
     if((active || observing) && !calibration_active(s->cal) &&
-       !keyboard_menu_observing(s->menu)) keyboard_raw_invalidate(raw);
+       !input_owned(s)) keyboard_raw_invalidate(raw);
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
     if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,input_lo,input_hi,now);
 }

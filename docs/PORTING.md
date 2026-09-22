@@ -407,10 +407,16 @@ void application_poll(void)
 Call start after board initialization and poll from the single owner.
 
 Boards with additional system controls may bind `keyboard_app_t.system_input`,
-`system_lights` and `system_context` after initialization. The input hook runs
+`system_lights`, `system_observing` and `system_context` after initialization. The input hook runs
 after raw-frame processing and before the shared Fn menu; return true to consume
-that frame's shared menu input. Invalidate raw output when consuming a chord,
-and require neutral keys before rearming. The lighting hook runs after shared
+that frame's shared menu input. Invalidate raw output once when consuming a chord,
+and require neutral keys before rearming. The optional pure `system_observing`
+query returns true while board controls own input (preview, host-drain or
+neutral-release wait). It runs before acquisition processing and after the
+input hook; the application observes samples without performance rearming
+while owned, and invalidates once on exit. The input hook uses `neutral_idle`
+for release detection and must not repeat full invalidation each scan.
+The lighting hook runs after shared
 menu rendering. Both hooks must be nonblocking and use the same owner context;
 their context objects must outlive the application. The M1 transport menu is an
 example, not a dependency of USB-only boards.
