@@ -175,6 +175,7 @@ static void layout(keyboard_midi_t *s, const keyboard_raw_t *raw)
     memset(s->mapping, 255, sizeof(s->mapping));
     memset(s->role, 0, sizeof(s->role));
     memset(s->lower_rows,0,sizeof(s->lower_rows));
+    s->control_count=0;
     for (unsigned i = 0; i < raw->count; ++i) {
         const uint8_t key = keyboard_key_for_sensor(raw->profile, i);
         if (keyboard_lower_group(raw->profile,key)) s->lower_rows[i/8u]|=1u<<(i%8u);
@@ -191,6 +192,8 @@ static void layout(keyboard_midi_t *s, const keyboard_raw_t *raw)
             if (a->arg0 == 2) s->mapping[i] = DEFAULT_MIDI_LEFT_SHIFT_NOTE; /* left Shift: C4 in MIDI only */
             else if (!a->arg0) s->mapping[i] = default_note(a->arg1);
         }
+        if(s->role[i]==ROLE_FN || s->role[i]>=ROLE_DOWN)
+            s->controls[s->control_count++]=(uint8_t)i;
     }
 }
 
@@ -248,7 +251,8 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
     }
     bool fn = false;
     int shift = 0;
-    for (unsigned i = 0; i < raw->count; ++i) {
+    for (unsigned c = 0; c < s->control_count; ++c) {
+        const unsigned i=s->controls[c];
         if (s->role[i] == ROLE_FN && raw->down[i]) fn = true;
         if (raw->down[i] && !s->previous[i]) {
             if (s->role[i] == ROLE_UP) ++shift;
@@ -261,9 +265,11 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
     }
     if (s->mode) {
         bool sustain=false;
-        for(unsigned i=0;i<raw->count;++i)
+        for(unsigned c=0;c<s->control_count;++c) {
+            const unsigned i=s->controls[c];
             if(s->role[i]==ROLE_SUSTAIN && raw->down[i] && !fn &&
                (s->sustain || !s->previous[i])) sustain=true;
+        }
         if(sustain!=s->sustain) {
             /* Ordered with note edges, never coalesced like analog wheels.
              * Same-scan pedal changes precede Note Off/On processing. */
@@ -272,7 +278,8 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
         }
         int bend=0;
         s->modulation=0;
-        if (!fn) for (unsigned i=0; i<raw->count; ++i) {
+        if (!fn) for (unsigned c=0; c<s->control_count; ++c) {
+            const unsigned i=s->controls[c];
             if(s->role[i]!=ROLE_MODULATION && s->role[i]!=ROLE_BEND_DOWN &&
                s->role[i]!=ROLE_BEND_UP)continue;
             unsigned depth=wheel_depth(raw->raw[i]);
@@ -286,6 +293,11 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                          8192+((bend*8191+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW);
         memset(s->pressure, 0, sizeof(s->pressure));
         for (unsigned i = 0; i < raw->count; ++i) {
+            /* No edge, delayed velocity fit or sounding voice: nothing to
+             * update. Controllers above still use every analog readback,
+             * including travel that has not crossed a key threshold. */
+            if(!raw->down[i] && !s->previous[i] && !s->pending_mask[i] &&
+               s->active[i]==MIDI_UNMAPPED) continue;
             if (s->previous[i] && !raw->down[i]) {
                 if (s->current[i] < MIDI_PENDING_STRIKES) s->released[i] |= 1u << s->current[i];
                 if (s->active[i] != MIDI_UNMAPPED) {

@@ -276,10 +276,35 @@ def integration(path):
     print('PASS M1 foreground: independent clock/scan wrap, duplicate rejection and explicit restart after release drain')
 
 
+def midi_idle_work(path):
+    """Instruction-work regression, NOT a real-time or hardware timing test."""
+    from unicorn import UC_HOOK_CODE
+    d=Live(path,True,storage=True);d.run(20)
+    instructions=[0]
+    def count(*args):instructions[0]+=1
+    handle=d.cpu.hook_add(UC_HOOK_CODE,count)
+    # Hooks must also instrument blocks translated during initialization.
+    d.cpu.ctl_flush_tb()
+    def measure():
+        instructions[0]=0
+        for _ in range(3):d.tick()
+        return instructions[0]
+    keyboard=measure()
+    d.chord(56);d.run(160) # real menu release, cleanup, neutral rearm
+    midi=measure()
+    d.cpu.hook_del(handle)
+    # Inactive MIDI should not add another full keyboard's worth of work.
+    # This regression allowance is not a cycle budget or an 8 kHz guarantee.
+    assert midi*100 < keyboard*135,(keyboard,midi)
+    assert not d.call('m1_live_scan_losses')
+    print(f'PASS idle instruction-work regression: keyboard={keyboard//3}, MIDI={midi//3}; physical cadence unmodeled')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('elf');args=p.parse_args()
     recovery_preflight(args.elf)
     integration(args.elf)
+    midi_idle_work(args.elf)
     knob_integration(args.elf)
     wireless_integration(args.elf)
     runtime_transports(args.elf)

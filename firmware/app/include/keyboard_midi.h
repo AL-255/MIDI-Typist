@@ -9,6 +9,9 @@ typedef struct {
     uint8_t mapping[RAW_KEY_COUNT], role[RAW_KEY_COUNT], active[RAW_KEY_COUNT], current[RAW_KEY_COUNT], released[RAW_KEY_COUNT];
     uint8_t pending[RAW_KEY_COUNT][MIDI_PENDING_STRIKES];
     uint8_t pending_mask[RAW_KEY_COUNT]; /* occupied strike slots; zero is the common case */
+    /* Physical controller list built once per layout, including duplicate
+     * roles. Avoid full-keyboard searches for each controller every scan. */
+    uint8_t controls[RAW_KEY_COUNT], control_count;
     bool previous[RAW_KEY_COUNT];
     uint8_t refs[128], pressure[128], sent_pressure[128];
     uint8_t queue[MIDI_QUEUE][3];
