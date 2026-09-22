@@ -70,7 +70,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         calibration_init(s->cal);
         s->loaded=s->reset_pending=false;
     }
-    raw->midi_mode=s->midi->mode || calibration_active(s->cal);
+    bool observing=calibration_active(s->cal);
+    raw->midi_mode=s->midi->mode || observing;
     const keyboard_config_t before=raw->engine.config;
     const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
     uint16_t normalized[MT_KEY_CAPACITY];
@@ -83,7 +84,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         input=normalized;
         input_lo=s->input_lower;input_hi=s->input_upper;
     }
-    keyboard_raw_frame(raw,input,count,profile,valid);
+    if(observing)keyboard_raw_observe(raw,input,count,profile,valid);
+    else keyboard_raw_frame(raw,input,count,profile,valid);
     s->frame_valid=valid && raw->valid;
     s->readback_valid=s->frame_valid;
     if(s->readback_valid) {
@@ -121,7 +123,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         s->loaded=true;
     }
     bool active=calibration_active(s->cal),neutral=true;
-    if(active) for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
+    if(active && observing)neutral=raw->neutral_idle;
+    else if(active) for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
     calibration_frame(s->cal,samples,s->frame_valid,neutral,now);
     if(s->cal->state==CAL_SAVE) {
         keyboard_save_result_t result=s->ops && s->ops->save_calibration?

@@ -286,6 +286,11 @@ physical-key bindings and firmware report contents, not every acquisition sample
 OS input delivery, electrical calibration or measured velocity accuracy. Mapping
 of the remaining keys, full calibration, LED appearance and wireless behavior
 still require hardware checks.
+Calibration's observation-only input path is tested with parallel holds,
+continuous readback, suppressed key/velocity output, invalid-input abort and
+fresh-neutral rearming. M1 compiled integration covers all 82 candidates and
+deferred persistence. These scripted tests do not establish physical calibration
+throughput; that requires a held-key run with no scan-queue overflow.
 The live encoder diagnostic reports phase 3 (both phases high), button released,
 and zero movement, invalid transitions or queue overflows with the knob untouched.
 Its sampling counter advances alongside periodic acquisition. Rotation/button

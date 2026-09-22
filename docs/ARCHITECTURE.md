@@ -139,6 +139,12 @@ owner loop/task
   → board watchdog refresh / wait
 ```
 
+During calibration, the shared application takes an observation-only path:
+every sample is validated, normalized for display and copied to readback, but
+key edges and velocity fits are suppressed. Electrical samples still feed each
+key's independent calibration hold. Output stays disarmed until calibration
+finishes or aborts and a fresh neutral frame is observed.
+
 Every acquisition is passed once. Neither repeating the most recent scan nor
 silently discarding a scan preserves velocity semantics. The board invalidates
 the application on missed/invalid acquisitions or USB reset and supplies fresh

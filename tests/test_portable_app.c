@@ -375,8 +375,30 @@ static void sensor_readback(void)
     assert(keyboard_bounds_encode(&app,now,out,sizeof(out)) && !(out[7]&1));
     frame();assert(app.readback[103].sample==1234 && app.readback[103].lower==999);
 }
+static void calibration_observation(void)
+{
+    init();assert(keyboard_app_calibrate(&app,now,true));
+    frame();now+=CALIBRATION_SETTLE_MS;frame();
+    assert(app_cal.state==CAL_COLLECT && raw.valid && !raw.armed && raw.neutral_idle);
+    samples[100]=samples[103]=1000;
+    for(unsigned i=0;i<=CALIBRATION_HOLD_MS;++i) {
+        frame();keyboard_app_service(&app,now,true,send_hid,send);
+        assert(raw.valid && !raw.armed && !raw.neutral_idle);
+        assert(app.readback[100].sample==1000 && app.readback[103].control==1000);
+        for(unsigned k=0;k<SYN_COUNT;++k)
+            assert(!raw.down[k] && !raw.velocity[k].captures && !raw.velocity[k].pending);
+        assert(!keyboard_report_get_usage(&hid,4));
+    }
+    assert(app_cal.completed==2 && app_cal.lower[100]==1000 && app_cal.lower[103]==1000);
+    samples[100]=samples[103]=3900;frame();assert(raw.neutral_idle && !raw.armed);
+    samples[10]=0;frame();
+    assert(app_cal.state==CAL_ABORTED && !raw.valid && !raw.armed && !saved);
+    samples[10]=3900;frame();assert(raw.armed);
+    samples[100]=3000;frame();assert(keyboard_report_get_usage(&raw.engine.report,4));
+}
 int main(void)
 {
+    calibration_observation();
     sensor_readback();
     normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");

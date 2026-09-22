@@ -179,11 +179,12 @@ static void velocity_frame(keyboard_velocity_t *v, uint16_t raw, bool trigger, b
     }
 }
 
-void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
-                        uint8_t profile, bool valid)
+/* Shared sample validation: -1 invalid, 0 held, 1 all released. */
+static int observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
+                   uint8_t profile, bool valid)
 {
-    if (!keyboard_layout_valid(profile,count)) {
-        keyboard_raw_invalidate(s); return;
+    if (!raw || !keyboard_layout_valid(profile,count)) {
+        keyboard_raw_invalidate(s); return -1;
     }
     const keyboard_layout_t *layout=keyboard_layout(profile);
     if (s->profile != profile || s->count != count || s->keymap_profile != profile) {
@@ -199,8 +200,26 @@ void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
         if (!raw[i] || raw[i] > 4096u) valid = false;
         if (raw[i] <= s->release[i]) neutral = false;
     }
-    if (!valid) { keyboard_raw_invalidate(s); return; }
+    if (!valid) { keyboard_raw_invalidate(s); return -1; }
     s->valid = true;
+    return neutral;
+}
+
+void keyboard_raw_observe(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
+                          uint8_t profile, bool valid)
+{
+    /* Calibration owns input until completion/abort. Keep live samples and
+     * neutrality, but never arm outputs or spend scan time fitting velocities. */
+    if(s->armed)keyboard_raw_invalidate(s);
+    s->neutral_idle=observe(s,raw,count,profile,valid)>0;
+}
+
+void keyboard_raw_frame(keyboard_raw_t *s, const uint16_t *raw, uint8_t count,
+                        uint8_t profile, bool valid)
+{
+    int neutral=observe(s,raw,count,profile,valid);
+    if(neutral<0)return;
+    const keyboard_layout_t *layout=keyboard_layout(profile);
     if (!s->armed && s->enabled && neutral) {
         keyboard_engine_release_all(&s->engine);
         memset(s->down, 0, sizeof(s->down));
