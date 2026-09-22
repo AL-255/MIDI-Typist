@@ -199,6 +199,22 @@ class Tests(unittest.TestCase):
             self.assertFalse(connection.connected)
         finally:self.cleanup(*resources)
 
+    def test_disconnect_during_power_query(self):
+        resources=self.transport(board_target=M1_TARGET);_,_,device,connection=resources
+        try:
+            until(lambda:connection.power_snapshot())
+            previous=connection.power_snapshot();queries=device.power_queries
+            device.silent=True
+            until(lambda:device.power_queries>queries)
+            connection.stop();connection.join(1)
+            self.assertFalse(connection.is_alive())
+            self.assertIsNone(connection.release_error)
+            self.assertEqual(connection.power_snapshot(),previous)
+            messages=[]
+            while not connection.events.empty():messages.append(connection.events.get_nowait())
+            self.assertFalse(any(message.startswith('ERROR:') for message in messages),messages)
+        finally:self.cleanup(*resources)
+
     def test_transport_status(self):
         from keyboard_gui_model import transport_text
         for transport in range(6):

@@ -79,7 +79,11 @@ class Connection(threading.Thread):
         with self.lock: return self.latest_power
 
     def read_power(self):
-        power=decode_power(self.command('power status'))
+        payload=self.command('power status')
+        # Disconnect may cancel the ACK wait. That is not a malformed device
+        # reply and must not publish a new reading or report a protocol error.
+        if self.stop_event.is_set():return
+        power=decode_power(payload)
         with self.lock: self.latest_power=(time.monotonic(),power)
 
     def stop(self): self.stop_event.set()

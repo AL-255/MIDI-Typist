@@ -56,6 +56,8 @@ streaming, with unknown and critical-battery fixtures. Python/Tk tests cover
 field validation, raw charger labels, capable-board polling, stale status,
 capture-time exclusion and malformed-reply disconnection. These tests do not
 establish electrical charger polarity or battery-percentage accuracy.
+Cancelling an in-flight power query on disconnect leaves the previous reading
+unchanged and closes without a false malformed-reply error.
 Power-handoff tests also check scan consumption during prolonged output drain,
 never-linked neutral cancellation and a completed critical-sleep control packet
 without an RF host. Restore tests require fresh matching peer state, admit a
@@ -203,7 +205,7 @@ The real Tk GUI has displayed the M1's 82-key layout alongside repeated
 power-status replies on USB: external source, estimated percentage and explicitly
 unverified raw charger state. Full-rate capture excludes power polling and
 returns to fresh GUI/power readback without new scanner or lighting errors;
-a five-second check delivered 39,968 consecutive selected-key samples. These
+a five-second check delivered approximately 40,000 consecutive selected-key samples. These
 checks validate the readback path, not battery capacity, charger polarity or
 battery-powered sleep. Factory calibration-field readback remains unchanged.
 Released-key M1 capture delivered approximately 80,000 consecutive samples over
