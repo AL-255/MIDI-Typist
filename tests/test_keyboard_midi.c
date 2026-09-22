@@ -1092,8 +1092,24 @@ static void pending_strike_overflow(void)
     values[key]=3900; step(); assert(raw.armed);
 }
 
+static void cleanup_ownership(void)
+{
+    init();blocked=true;
+    keyboard_midi_abort(&midi);drain();
+    assert(!midi.panic && !midi.host_dirty && !logged);
+    /* A port-accepted performance packet remains our responsibility even
+     * after the mode changes and before its endpoint completes. */
+    midi.queue[0][0]=0x90;midi.queue[0][1]=60;midi.queue[0][2]=100;midi.count=1;
+    blocked=false;keyboard_midi_service(&midi,0,send_event);
+    assert(midi.host_dirty && !midi.count && logged==1);
+    keyboard_midi_abort(&midi);assert(midi.panic==MIDI_CLEANUP_EVENTS);
+    blocked=true;drain();assert(midi.panic==MIDI_CLEANUP_EVENTS && midi.host_dirty);
+    blocked=false;drain();assert(!midi.panic && !midi.host_dirty);
+    unsigned prior=logged;keyboard_midi_abort(&midi);drain();assert(logged==prior);
+}
 int main(void)
 {
+    cleanup_ownership();
     default_mapping(); velocity_pressure_and_modes(); short_taps_and_overlap(); janko_mode();
     velocity_start_mode(); midi_trigger_page(); pending_strike_overflow();
     octave_and_duplicates(); faults_and_backpressure(); polyphony(); shift_and_filtered_strike(); octave_lights();

@@ -392,6 +392,7 @@ static void calibration_observation(void)
         for(unsigned k=0;k<SYN_COUNT;++k)
             assert(!raw.down[k] && !raw.velocity[k].captures && !raw.velocity[k].pending);
         assert(!keyboard_report_get_usage(&hid,4));
+        assert(!midi.panic && !midi.host_dirty && !logged);
     }
     assert(app_cal.completed==2 && app_cal.lower[100]==1000 && app_cal.lower[103]==1000);
     samples[100]=samples[103]=3900;frame();assert(raw.neutral_idle && !raw.armed);

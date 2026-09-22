@@ -279,7 +279,12 @@ invalidates raw arming, and enters cleanup. This is an explicit fail-safe, not
 an unlimited lossless guarantee. Do not ignore a nonzero MIDI error count.
 
 Mode changes, mapping edits, threshold/enable invalidation, scan faults/staleness
-and USB resets also clear voice state and request cleanup. Cleanup sends
+and USB resets also clear voice state. Cleanup is requested when MIDI mode is
+active, a performance packet has been accepted since the last completed cleanup,
+or cleanup is already pending. Keyboard-only menus/calibration therefore do not
+emit unnecessary MIDI traffic or require a MIDI reader before flash saving.
+Accepted packets remain tracked across mode changes; endpoint backpressure never
+discards required cleanup. Cleanup sends
 CC64=0 first, Note Off for all 128 pitches, then CC120 (All Sound Off), CC123 (All Notes Off),
 CC1=0 and centered pitch bend on
 channel 1. It is outside the ordinary queue and retries each packet when the

@@ -164,6 +164,8 @@ the candidate. Failure, invalid readings, stale scans, cancellation, layout
 changes discard it without further save attempts. The input-inactivity timeout
 applies only before collection finishes; completed candidates survive deferred
 flash access beyond that deadline without publishing uncommitted bounds.
+MIDI cleanup tests distinguish keyboard-only invalidation from port-accepted
+performance state, including a blocked endpoint and subsequent mode changes.
 
 Storage tests cover all supported layouts, settings/calibration preservation,
 keyboard mappings including disabled/international/modifier destinations,

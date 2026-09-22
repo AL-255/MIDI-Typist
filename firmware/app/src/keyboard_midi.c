@@ -41,11 +41,16 @@ void keyboard_midi_init(keyboard_midi_t *s)
 
 void keyboard_midi_abort(keyboard_midi_t *s)
 {
+    bool cleanup=s->mode || s->host_dirty || s->panic;
     clear_voices(s);
     /* Sustain off first, individual Note Offs, All Sound Off/All Notes Off.
      * Also covers an IN packet already accepted before reset/mode change.
      * Never restart an in-progress sweep on repeated invalid frames. */
-    if (!s->panic) s->panic = MIDI_CLEANUP_EVENTS;
+    /* Keyboard-only menus/calibration have no MIDI host state to release.
+     * Sending a needless burst can wedge flash handoff when no MIDI reader
+     * has opened the USB endpoint. Never drop an existing cleanup or actual
+     * performance state, including a packet already accepted by the port. */
+    if (cleanup && !s->panic) s->panic = MIDI_CLEANUP_EVENTS;
 }
 
 void keyboard_midi_guard(keyboard_midi_t *s, keyboard_raw_t *raw)
@@ -363,12 +368,14 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
             if (index==131) s->sent_modulation=0;
             if (index==132) s->sent_bend=8192;
             --s->panic;
+            if(!s->panic)s->host_dirty=false;
         }
         return;
     }
     if (s->count) {
         const uint8_t *p = s->queue[s->head];
         if (send(p[0] >> 4u, p[0], p[1], p[2])) {
+            s->host_dirty=true;
             s->head = (s->head + 1u) % MIDI_QUEUE;
             --s->count;
         }
@@ -382,6 +389,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     if (s->wheel_sweep & 1u) {
         if (s->modulation!=s->sent_modulation) {
             if (!send(11,0xb0,1,s->modulation)) return;
+            s->host_dirty=true;
             s->sent_modulation=s->modulation;
         }
         s->wheel_sweep &= ~1u;
@@ -389,6 +397,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     if (s->wheel_sweep & 2u) {
         if (s->bend!=s->sent_bend) {
             if (!send(14,0xe0,s->bend & 127u,s->bend>>7u)) return;
+            s->host_dirty=true;
             s->sent_bend=s->bend;
         }
         s->wheel_sweep &= ~2u;
@@ -400,6 +409,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
         const unsigned note = s->pressure_cursor;
         if (s->refs[note] && s->pressure[note] != s->sent_pressure[note]) {
             if (!send(10, 0xa0, note, s->pressure[note])) return;
+            s->host_dirty=true;
             s->sent_pressure[note] = s->pressure[note];
         }
         if (++s->pressure_cursor == 128) s->pressure_sweep = false;

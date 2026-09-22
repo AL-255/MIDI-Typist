@@ -21,7 +21,7 @@ typedef struct {
     uint8_t velocity_start; /* 1..10: transmitted-velocity start, 1 = 0%, 10 = 100% */
     midi_music_config_t music;
     int8_t octave;
-    bool was_armed, pressure_sweep;
+    bool was_armed, pressure_sweep, host_dirty;
     uint32_t changes, changed_at, errors, pressure_at;
     uint32_t wheel_at;
 } keyboard_midi_t;
