@@ -163,6 +163,11 @@
 #define MIDI_CONTROL_COMMAND_TIMEOUT_MS 3000u
 #define GUI_POWER_POLL_MS 1000u
 #define GUI_POWER_STALE_MS 3000u
+#define GUI_BOUNDS_POLL_MS 1000u
+#define GUI_BOUNDS_STALE_MS 3000u
+#if GUI_BOUNDS_POLL_MS < 100u || GUI_BOUNDS_POLL_MS >= GUI_BOUNDS_STALE_MS || GUI_BOUNDS_STALE_MS > 60000u
+#error Invalid GUI calibration readback defaults
+#endif
 #if GUI_POWER_POLL_MS < 100u || GUI_POWER_POLL_MS >= GUI_POWER_STALE_MS || GUI_POWER_STALE_MS > 60000u
 #error Invalid GUI power status defaults
 #endif

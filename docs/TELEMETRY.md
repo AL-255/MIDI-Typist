@@ -21,6 +21,46 @@ snapshots. Released-key validity is hardware-checked with GUI telemetry active;
 the declared scan rate is 8 kHz. See [validation limits](VALIDATION.md) for what
 is measured; pressed-key performance remains unverified.
 
+## Sensor and calibration bounds (`calibration read`)
+
+All application ports bind their shared `keyboard_app_t` to the SysEx service.
+This read-only command returns an **ACK payload** containing `MTB1`; it does not
+change streaming mode, calibration, settings or flash. It publishes a coherent
+copy of the last application input frame and the active bounds used for that
+frame, never a partial calibration candidate. Ordinary framing/session/sequence
+checks and the SysEx CRC apply; there is no extra payload checksum.
+
+All integers are little-endian. Length is exactly `20 + count × 8` bytes.
+
+| Offset | Field |
+| --- | --- |
+| 0–3 | ASCII `MTB1` |
+| 4 | Version 1 |
+| 5 / 6 | Layout profile / sensor count, both zero before the first valid frame |
+| 7 | Bit 0: fresh valid acquisition; bit 1: per-key travel normalization enabled |
+| 8 / 12 | Acquisition time in milliseconds / application readback sequence, uint32 with wrap |
+| 16 | Current calibration state, as in MTG4 |
+| 17–19 | Reserved, zero |
+| 20 + sensor × 8 | Four uint16 values: pre-travel input, active lower/bottom-out bound, active upper/released bound, control reading |
+
+Input units are the canonical sensor coordinates supplied to `keyboard_app_frame`,
+not necessarily a platform's native ADC bit encoding. M1 supplies 12-bit ADC
+readings; Huntsman supplies optical readbacks; a port may convert its native
+encoding before calling the application. Bounds remain in these input units.
+The control value is the value used by thresholds/velocity, after optional travel
+normalization. `VALID` indicates acquisition freshness, independently of keyboard
+output arming; a held Fn menu does not invalidate healthy sensor diagnostics.
+Stale/invalid input retains the last coherent data but clears `VALID`. A completed
+calibration or restored bounds require a new frame before `VALID` is published.
+An unbound/failing application rejects the command rather than fabricating data.
+
+The GUI polls at `GUI_BOUNDS_POLL_MS` outside full-rate capture, rejects foreign
+layouts and marks replies stale after `GUI_BOUNDS_STALE_MS`. Its diagnostic JSON
+export includes all key labels, samples, bounds, spans and control readings. It
+is not a restorable profile or proof of flash persistence: check the separate
+MTG4 calibration generation/storage flags. Do not substitute the normalized
+4096/1 endpoints for measured sensor bounds.
+
 ## Cold-start failure reporting
 
 `LOG` payloads beginning with `Boot failed: ` or `Runtime failed: ` indicate

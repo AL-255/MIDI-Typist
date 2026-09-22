@@ -18,7 +18,9 @@ static size_t s_tx_size,s_tx_at;
 static uint32_t s_session,s_sequence,s_activity;
 static bool (*s_command)(const char *);
 static bool (*s_power)(keyboard_power_status_t *);
-static uint8_t s_reply_kind,s_reply[128];
+static const keyboard_app_t *s_app;
+static uint8_t s_reply_kind,s_reply[MT_BOUNDS_SIZE(MT_KEY_CAPACITY)];
+_Static_assert(sizeof(s_reply)<=SCAN_STREAM_PAYLOAD_SIZE,"readback must fit SysEx TX");
 _Static_assert(sizeof("build=" MT_BUILD_INFO)-1 <= sizeof(s_reply), "build identity exceeds READY payload");
 static size_t s_reply_size;
 static uint32_t s_reply_sequence;
@@ -31,7 +33,7 @@ bool midi_control_init(const midi_control_port_t *port)
 {
     s_rx_used=s_rx_ready=s_tx_size=s_tx_at=0;
     s_receiving=s_reset=s_active=false;s_session=s_sequence=s_activity=0;
-    s_reply_kind=0;s_command=NULL;s_power=NULL;
+    s_reply_kind=0;s_command=NULL;s_power=NULL;s_app=NULL;
     s_port=NULL;
     if(!port || !port->millis || !port->ready || !port->write_events ||
        !port->lock || !port->unlock)return false;
@@ -39,6 +41,7 @@ bool midi_control_init(const midi_control_port_t *port)
     return true;
 }
 void midi_control_command_handler(bool (*handler)(const char *)) { s_command=handler; }
+void midi_control_bind_application(const keyboard_app_t *app) { s_app=app; }
 void midi_control_power_handler(bool (*handler)(keyboard_power_status_t *)) { s_power=handler; }
 void midi_control_usb_reset(void)
 {
@@ -113,6 +116,11 @@ static void receive_command(uint32_t now)
         keyboard_power_status_t status;
         size_t n=s_power && s_power(&status)?keyboard_power_encode(&status,s_reply,sizeof(s_reply)):0;
         if(!n) { reply(MT_ERROR,info.sequence,"power status unavailable");return; }
+        s_reply_kind=MT_ACK;s_reply_sequence=info.sequence;s_reply_size=n;return;
+    }
+    if(!strcmp((const char *)payload,"calibration read")) {
+        size_t n=keyboard_bounds_encode(s_app,now,s_reply,sizeof(s_reply));
+        if(!n) { reply(MT_ERROR,info.sequence,"application readback unavailable");return; }
         s_reply_kind=MT_ACK;s_reply_sequence=info.sequence;s_reply_size=n;return;
     }
     bool ok=s_command && s_command((const char *)payload);

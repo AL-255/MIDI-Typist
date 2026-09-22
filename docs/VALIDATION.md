@@ -209,6 +209,14 @@ Remapping tests exercise every accepted usage, duplicate-source ownership,
 held-key edits, immutable Fn shortcuts, GUI dropdown/ACK/readback, and compiled
 ARM save/reboot. These are offline tests, not a physical unplug/replug check.
 
+Shared sensor/bounds readback has native 104-key cache/freshness tests, an
+82-key real SysEx-service fixture, and compiled M1 FS/HS checks before, during
+and after parallel calibration. Staged endpoints are not published; committed
+electrical bounds remain separate from normalized control readings. GUI tests
+cover strict MTB1 decoding, all-platform polling, capture exclusion, stale-data
+rejection and 82-key diagnostic export. Both complete hardware images build;
+physical readback timing and a user calibration run remain to be checked.
+
 M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
 per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;

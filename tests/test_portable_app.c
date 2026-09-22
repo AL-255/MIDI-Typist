@@ -5,6 +5,7 @@
 #include "keyboard_calibration.h"
 #include "keyboard_sample.h"
 #include "keyboard_layout.h"
+#include "keyboard_telemetry.h"
 #include "synthetic_board.h"
 #include <assert.h>
 #include <math.h>
@@ -359,8 +360,24 @@ static void unavailable_storage(void)
     /* Restore callbacks: capability filtering must not leak across init. */
     init();assert(!menu.disabled_options && keyboard_app_calibrate(&app,now,true));
 }
+static void sensor_readback(void)
+{
+    init();frame();
+    uint8_t out[MT_BOUNDS_SIZE(SYN_COUNT)];
+    assert(keyboard_bounds_encode(&app,now,out,sizeof(out))==sizeof(out));
+    assert(!memcmp(out,"MTB1",4) && out[5]==SYN_PROFILE && out[6]==SYN_COUNT && out[7]==1);
+    assert(app.readback[103].sample==3900 && app.readback[103].control==3900);
+    samples[103]=1234;lo[103]=999;hi[103]=3999;
+    assert(app.readback[103].sample==3900 && app.readback[103].lower==1000 && app.readback[103].upper==4000);
+    assert(!keyboard_bounds_encode(&app,now,out,sizeof(out)-1));
+    assert(keyboard_bounds_encode(&app,now+SCAN_STALE_MS,out,sizeof(out)) && !(out[7]&1));
+    keyboard_app_invalidate(&app,now);
+    assert(keyboard_bounds_encode(&app,now,out,sizeof(out)) && !(out[7]&1));
+    frame();assert(app.readback[103].sample==1234 && app.readback[103].lower==999);
+}
 int main(void)
 {
+    sensor_readback();
     normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

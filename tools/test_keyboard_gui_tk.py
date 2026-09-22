@@ -274,9 +274,18 @@ def main():
                 with patch('keyboard_gui.messagebox.askyesno',return_value=True):
                     app.apply_all_button.invoke()
                 m1_until(lambda:app.snapshot.press==(2500,)*82 and app.snapshot.release==(2800,)*82)
+                m1_until(lambda:app.current_bounds() is not None)
+                assert 'Released bound: 4000' in app.bounds_status.get()
+                with patch('keyboard_gui.filedialog.asksaveasfilename',return_value='readback.device-dump.json'), \
+                     patch('keyboard_gui.Path.write_text') as output:
+                    app.bounds_button.invoke()
+                    report=json.loads(output.call_args.args[0])
+                    assert len(report['keys'])==82 and report['keys'][45]['key']=='A'
+                    assert report['keys'][81]['sample']==3900 and report['keys'][81]['span']==3000
                 app.hold_button.invoke()
                 m1_until(lambda:app.connection.stream_mode=='key' and app.capture.armed)
                 m1_until(lambda:'paused' in app.power_status.get())
+                assert 'paused' in app.bounds_status.get() and str(app.bounds_button['state'])=='disabled'
                 assert app.connection.key_sensor==81
                 device.key_raw=2000
                 m1_until(lambda:app.capture.done)

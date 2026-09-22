@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from keyboard_gui_model import Snapshot, ansi_geometry, profile_from_snapshot, validate_pair, validate_profile, note_name, parse_note, MIDI_CONTROLS, CAPTURE_POINTS, KeystrokeCapture, FLAG_JANKO, JANKO_NOTES, KNOWN_TARGETS
 from keyboard_gui_transport import Connection, find_midi_device
-from keyboard_gui_model import transport_text, power_text, board_help, storage_notice, settings_text, calibration_prompt
+from keyboard_gui_model import transport_text, power_text, bounds_text, bounds_report, board_help, storage_notice, settings_text, calibration_prompt
 from midi_backend import control_ports
 from keyboard_keycodes import CHOICES, keycode_name, parse_keycode
 from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
@@ -147,6 +147,11 @@ class App:
         self.details = tk.StringVar(value='Waiting for device telemetry')
         self.details_label = ttk.Label(panel,textvariable=self.details,justify='left',wraplength=355)
         self.details_label.pack(anchor='w',pady=10)
+        self.bounds_status=tk.StringVar(value='Sensor/bounds readback: connect to a keyboard')
+        self.bounds_label=ttk.Label(panel,textvariable=self.bounds_status,justify='left',wraplength=355)
+        self.bounds_label.pack(anchor='w',pady=(0,5))
+        self.bounds_button=ttk.Button(panel,text='Export all sensor readings and bounds…',command=self.export_bounds)
+        self.bounds_button.pack(anchor='w',pady=(0,10))
         self.press = tk.StringVar(value=str(D['RAW_DEFAULT_PRESS'])); self.release = tk.StringVar(value=str(D['RAW_DEFAULT_RELEASE']))
         for title,var in (('Press when raw <',self.press),('Release when raw >',self.release)):
             row = ttk.Frame(panel); row.pack(fill='x',pady=3)
@@ -224,6 +229,7 @@ class App:
         self.details_label.configure(wraplength=width)
         self.help_label.configure(wraplength=width)
         self.power_label.configure(wraplength=width)
+        self.bounds_label.configure(wraplength=width)
 
     def draw(self):
         self.canvas.delete('all'); self.items.clear(); self.titles.clear()
@@ -560,6 +566,26 @@ class App:
             self.message.set(f'All-key thresholds queued; waiting for ACK and all {self.board.count} readbacks…')
         except (ValueError,queue.Full) as error: messagebox.showerror('Thresholds',str(error))
 
+    def current_bounds(self):
+        if not self.usable(allow_calibration=True):return None
+        reading=self.connection.bounds_snapshot()
+        if not reading or time.monotonic()-reading[0]>=D['GUI_BOUNDS_STALE_MS']/1000:return None
+        bounds=reading[1]
+        return bounds if (bounds.flags & 1 and self.snapshot and
+            (bounds.profile,bounds.count)==(self.snapshot.profile,self.snapshot.count)) else None
+
+    def export_bounds(self):
+        try:
+            bounds=self.current_bounds()
+            if not bounds:raise ValueError('Wait for fresh sensor/bounds readback in normal telemetry mode.')
+            report=bounds_report(bounds,self.board,self.connection.build)
+            path=filedialog.asksaveasfilename(defaultextension='.device-dump.json',
+                initialfile='calibration-readback.device-dump.json',filetypes=[('Sensor/bounds report','*.json')])
+            if path:
+                Path(path).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+                self.message.set('Exported read-only sensor/bounds report to '+path)
+        except (ValueError,OSError) as error:messagebox.showerror('Calibration readback',str(error))
+
     def save_profile(self):
         try:
             if not self.snapshot: raise ValueError('No device configuration to save.')
@@ -630,6 +656,11 @@ class App:
         s = self.snapshot
         self.sync_hold_stream()
         self.key_capture = not self.demo and bool(self.connection and self.connection.is_alive() and self.connection.stream_mode == 'key')
+        bounds=self.current_bounds()
+        self.bounds_button.configure(state='normal' if bounds else 'disabled')
+        self.bounds_status.set(bounds_text(bounds,self.selected) if bounds else
+            'Sensor/bounds readback paused during full-rate capture.' if self.key_capture else
+            'Sensor/bounds readback: waiting for a fresh device frame (not simulated in demo).')
         if not self.board.power_status:
             self.power_status.set('Power telemetry is not provided by this board.')
         elif self.demo:

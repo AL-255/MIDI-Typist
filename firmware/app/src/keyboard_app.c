@@ -40,7 +40,7 @@ void keyboard_app_invalidate(keyboard_app_t *s,uint32_t now)
 {
     keyboard_raw_invalidate(s->raw); keyboard_menu_cancel(s->menu);
     calibration_abort(s->cal,CAL_INVALID,now);
-    s->frame_valid=s->sent_valid=false;
+    s->frame_valid=s->sent_valid=s->readback_valid=false;
 }
 bool keyboard_app_calibrate(keyboard_app_t *s,uint32_t now,bool healthy)
 {
@@ -85,6 +85,14 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     }
     keyboard_raw_frame(raw,input,count,profile,valid);
     s->frame_valid=valid && raw->valid;
+    s->readback_valid=s->frame_valid;
+    if(s->readback_valid) {
+        s->readback_profile=profile;s->readback_count=count;
+        s->readback_time=now;++s->readback_sequence;
+        s->readback_normalized=policy && policy->normalize_travel;
+        for(unsigned i=0;i<count;++i)
+            s->readback[i]=(keyboard_readback_key_t){samples[i],lo[i],hi[i],raw->raw[i]};
+    }
     if(s->reset_pending && s->frame_valid) {
         bool neutral=true;
         for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
@@ -108,7 +116,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     if(action==MENU_CALIBRATION) (void)keyboard_app_calibrate(s,now,s->frame_valid);
     if(action==MENU_RESET) (void)keyboard_app_reset_profile(s);
     if(!s->loaded && s->frame_valid) {
-        if(s->ops && s->ops->load_calibration) (void)s->ops->load_calibration(profile,count,lo,hi);
+        if(s->ops && s->ops->load_calibration && s->ops->load_calibration(profile,count,lo,hi))
+            s->readback_valid=false; /* wait for a frame using the restored bounds */
         s->loaded=true;
     }
     bool active=calibration_active(s->cal),neutral=true;
@@ -120,6 +129,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         if(result==KEYBOARD_SAVE_COMPLETE) {
             memcpy(lo,s->cal->lower,count*sizeof(*lo));
             memcpy(hi,s->cal->upper,count*sizeof(*hi));
+            s->readback_valid=false; /* candidate is active only in the next frame */
         }
         if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }

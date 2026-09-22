@@ -32,7 +32,7 @@ static keyboard_menu_t s_menu;
  * keyboard_live_init explicitly initializes the complete state before use. */
 static keyboard_calibration_t s_cal __attribute__((section(".calibration_state")));
 static device_store_t s_cal_store __attribute__((section(".calibration_state")));
-static keyboard_app_t s_app;
+static keyboard_app_t s_app __attribute__((section(".calibration_state")));
 #define s_sent s_app.sent
 #define s_sent_valid s_app.sent_valid
 static uint32_t s_gui_sequence, s_gui_ack, s_last_gui;
@@ -150,6 +150,11 @@ void keyboard_live_init(void)
     release_host();
 }
 
+void keyboard_live_control_bind(void)
+{
+    midi_control_command_handler(keyboard_live_command);
+    midi_control_bind_application(&s_app);
+}
 void keyboard_live_usb_reset(void) { s_usb_reset = true; scan_stream_usb_reset(); }
 
 void keyboard_live_service(void)

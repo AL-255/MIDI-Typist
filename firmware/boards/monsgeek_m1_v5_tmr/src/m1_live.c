@@ -288,6 +288,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     epoch=m1_usb_generation();scan_stream_init();
     if(!midi_control_init(&port))return false;
     midi_control_command_handler(command);midi_control_power_handler(power_status);
+    midi_control_bind_application(&app);
     initialized=enabled=true;
     last_output_ready=output_ready();return true;
 }

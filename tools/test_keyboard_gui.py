@@ -16,6 +16,12 @@ import unittest
 from keyboard_gui_model import MAGIC, parse_build, frame_size, HEADER_SIZE, RECORD_SIZE, CAPTURE_POINTS, KeystrokeCapture, Decoder, decode, decode_power, power_text, ansi_geometry, profile_from_snapshot, validate_profile, note_name, parse_note, FLAG_JANKO, JANKO_NOTES
 from keyboard_boards import get_board, DEFAULT_TARGET, M1_TARGET
 from keyboard_gui_transport import Connection, SAMPLE_CAPACITY
+from keyboard_gui_model import decode_bounds, bounds_text, bounds_report
+
+
+def bounds_packet(count=61,profile=1,flags=1,state=0):
+    header=struct.pack('<4s4BIIB3x',b'MTB1',1,profile,count,flags,100,1,state)
+    return header+struct.pack('<4H',3900,1000,4000,3959 if flags & 2 else 3900)*count
 
 
 def packet(ack=1, result=1, press=None, release=None, flags=7, sequence=0, velocity_start=1,
@@ -73,6 +79,9 @@ class Device(threading.Thread):
         self.key_cb = None             # optional callable(seq) -> raw override
         self.power = struct.pack('<4sBBBBHHI',b'MTP1',1,7,87,5,1635,0,12)
         self.power_queries = 0
+        self.silent_power = False
+        self.bounds_queries = 0
+        self.bounds = None
 
     def send(self, data): self.inbox.put(data)
     def receive(self, timeout):
@@ -125,9 +134,14 @@ class Device(threading.Thread):
                             elif fields[1] == 'calibrate': self.calibration_state=3
                             elif fields[1] == 'calcancel': self.calibration_state=7
 
-                        if fields==['power','status']:
+                        if fields==['calibration','read']:
+                            self.bounds_queries+=1
+                            data=self.bounds if self.bounds is not None else bounds_packet(
+                                self.board.count,self.board.profile,3 if self.board.target==M1_TARGET else 1,self.calibration_state)
+                            if not self.silent:self.emit(sx.ACK,data,sequence)
+                        elif fields==['power','status']:
                             self.power_queries+=1
-                            if not self.silent:self.emit(sx.ACK,self.power,sequence)
+                            if not self.silent and not self.silent_power:self.emit(sx.ACK,self.power,sequence)
                         elif not self.silent: self.emit(sx.ACK, sequence=sequence)
                 if streaming and not self.silent:
                     if self.stream_mode == 'key' and time.monotonic()-last > self.key_rate:
@@ -160,6 +174,46 @@ def until(predicate,seconds=3):
 
 
 class Tests(unittest.TestCase):
+    def test_bounds_codec_and_export(self):
+        for count in (61,82,104,128):
+            s=decode_bounds(bounds_packet(count=count,flags=3))
+            self.assertEqual(s.count,count)
+            self.assertEqual(s.samples,(3900,)*count)
+            self.assertEqual(s.control,(3959,)*count)
+            self.assertIn('Released bound: 4000',bounds_text(s,count-1))
+        s=decode_bounds(bounds_packet(count=82,flags=3))
+        report=bounds_report(s,get_board(M1_TARGET),'test build')
+        self.assertEqual(len(report['keys']),82)
+        self.assertEqual(report['keys'][45]['key'],'A')
+        self.assertEqual(report['keys'][45]['span'],3000)
+        self.assertIn('not a restorable',report['notice'])
+        for data in (b'',bounds_packet()[:-1],b'MTB0'+bounds_packet()[4:],
+                     bounds_packet(flags=4),bounds_packet(state=9),bounds_packet(state=4),
+                     bounds_packet(profile=0),bounds_packet()+b'\0'):
+            with self.assertRaises(ValueError):decode_bounds(data)
+        for at,value in ((17,1),(20,0),(26,0)):
+            data=bytearray(bounds_packet());data[at:at+(1 if at==17 else 2)]=bytes((value,)) if at==17 else struct.pack('<H',value)
+            with self.assertRaises(ValueError):decode_bounds(data)
+        stale=decode_bounds(bounds_packet(flags=0))
+        self.assertIn('no fresh',bounds_text(stale,0))
+        with self.assertRaises(ValueError):bounds_report(stale,get_board(DEFAULT_TARGET),'test')
+
+    def test_shared_bounds_polling_and_capture_exclusion(self):
+        for target in (DEFAULT_TARGET,M1_TARGET):
+            resources=self.transport(board_target=target);_,_,device,connection=resources
+            try:
+                until(lambda:connection.bounds_snapshot())
+                self.assertEqual(connection.bounds_snapshot()[1].count,device.board.count)
+                connection.stream_key(3500,0)
+                until(lambda:connection.stream_mode=='key')
+                count=device.bounds_queries;time.sleep(1.1)
+                self.assertEqual(device.bounds_queries,count)
+                connection.stream_gui();until(lambda:device.bounds_queries>count)
+                device.bounds=b'MTB0'
+                until(lambda:not connection.is_alive())
+                self.assertFalse(connection.connected)
+            finally:self.cleanup(*resources)
+
     def test_power_codec(self):
         def wire(flags=7,percent=87,charger=5,adc=1635,reserved=0):
             return struct.pack('<4sBBBBHHI',b'MTP1',1,flags,percent,charger,adc,reserved,12)
@@ -204,7 +258,7 @@ class Tests(unittest.TestCase):
         try:
             until(lambda:connection.power_snapshot())
             previous=connection.power_snapshot();queries=device.power_queries
-            device.silent=True
+            device.silent_power=True
             until(lambda:device.power_queries>queries)
             connection.stop();connection.join(1)
             self.assertFalse(connection.is_alive())

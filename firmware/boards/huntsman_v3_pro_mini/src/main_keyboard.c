@@ -14,7 +14,7 @@ int main(void)
     debug_init();
     keyboard_live_init();
     usb_composite_init();
-    midi_control_command_handler(keyboard_live_command);
+    keyboard_live_control_bind();
     debug_write("MIDI-Typist SysEx control ready\r\n");
     for (;;)
     {

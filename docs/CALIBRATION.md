@@ -32,6 +32,21 @@ five-second inactivity deadline or change active bounds. Cancellation and scan
 validation still apply before each retry. Board storage capabilities and safety
 gates are specified in the [porting guide](PORTING.md).
 
+## Inspect a completed run
+
+The GUI's selected-key panel shows **Sensor input**, **Released bound**,
+**Bottom-out bound**, **Active span** and **Control reading** on every platform.
+These are shared-application readbacks, not factory-page dumps. After calibration
+reports completion and a saved generation, release all keys to check resting
+inputs; hold individual keys fully down to compare them with their saved lower
+bounds. Normalized control readings alone cannot reveal the electrical range.
+
+**Export all sensor readings and bounds…** writes a read-only diagnostic JSON
+report for every key. It is separate from threshold/mapping profiles and cannot
+restore calibration. The default `.device-dump.json` extension is Git-ignored;
+keep real device reports private. Polling pauses during full-rate waveform capture.
+See the [shared readback protocol](TELEMETRY.md#sensor-and-calibration-bounds-calibration-read).
+
 ## Measurement choices
 
 Readback decreases with force. Rest values must be at least 2048. Each candidate

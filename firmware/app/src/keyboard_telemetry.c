@@ -5,6 +5,30 @@
 
 static void u16(uint8_t *p,uint16_t v) { p[0]=v; p[1]=v>>8; }
 static void u32(uint8_t *p,uint32_t v) { u16(p,v); u16(p+2,v>>16); }
+size_t keyboard_bounds_encode(const keyboard_app_t *app,uint32_t now,
+                              uint8_t *out,size_t capacity)
+{
+    if(!app || !app->raw || !app->cal || !out)return 0;
+    unsigned count=app->readback_count;
+    if(count>MT_KEY_CAPACITY || (count && !keyboard_layout_valid(app->readback_profile,count)))return 0;
+    size_t size=MT_BOUNDS_SIZE(count);
+    if(capacity<size)return 0;
+    /* Menus can invalidate keyboard output while the sensor frame remains
+     * healthy. Readback freshness must not depend on host-output arming. */
+    bool fresh=count && app->readback_valid && app->frame_valid &&
+        (uint32_t)(now-app->readback_time)<SCAN_STALE_MS;
+    memset(out,0,size);memcpy(out,"MTB1",4);out[4]=1;
+    out[5]=app->readback_profile;out[6]=count;
+    out[7]=(fresh?MT_BOUNDS_VALID:0u) | (app->readback_normalized?MT_BOUNDS_NORMALIZED:0u);
+    u32(out+8,app->readback_time);u32(out+12,app->readback_sequence);
+    out[16]=app->cal->state;
+    for(unsigned i=0;i<count;++i) {
+        const keyboard_readback_key_t *key=&app->readback[i];
+        uint8_t *p=out+MT_BOUNDS_HEADER_SIZE+i*MT_BOUNDS_RECORD_SIZE;
+        u16(p,key->sample);u16(p+2,key->lower);u16(p+4,key->upper);u16(p+6,key->control);
+    }
+    return size;
+}
 size_t keyboard_power_encode(const keyboard_power_status_t *s,uint8_t *out,size_t capacity)
 {
     if(!s || !out || capacity<MT_POWER_SIZE || s->flags>31u || s->percent>100u ||

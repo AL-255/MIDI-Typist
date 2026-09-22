@@ -624,6 +624,16 @@ lease, command mailbox and stream queues. Initialize `midi_control` with a
 persistent `midi_control_port_t`: monotonic millisecond clock, USB-ready query,
 copy-on-accept USB event writer, interrupt lock and prior-state restore.
 Only framing runs in the receive ISR; call service from the application owner.
+After `midi_control_init`, call `midi_control_bind_application(&app)` on every
+platform. The shared service then implements `calibration read`; do not create
+a board-specific bounds command or expose arbitrary flash to obtain endpoints.
+`keyboard_app_frame` copies pre-travel input, active bounds and control values
+into its owned readback cache. Size RAM for eight additional bytes per configured
+sensor plus metadata; no caller buffer is retained. Measure scan-loop headroom
+after adding this copy. Non-USB ports can use `keyboard_bounds_encode` directly.
+See [MTB1](TELEMETRY.md#sensor-and-calibration-bounds-calibration-read) for freshness,
+units and active-versus-candidate semantics. GUI support is unconditional for the
+current application protocol, not selected by a board name or legacy fallback.
 On disconnect/reset, notify both services and invalidate the application.
 Endpoint ownership and descriptors remain platform responsibilities.
 The Huntsman additionally retains its updater HID at interface 3.

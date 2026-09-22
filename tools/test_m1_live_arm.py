@@ -8,7 +8,7 @@ import zlib
 from test_m1_usb_arm import Device, INPUT, OUTPUT, USB
 from test_m1_hal_arm import RadioArm, DMA, GPIO, RADIO_SPI, factory_memory, FACTORY_UPPER
 import midi_sysex as sx
-from keyboard_gui_model import decode,decode_power
+from keyboard_gui_model import decode,decode_power,decode_bounds
 from keyboard_capture import KeyDecoder, StreamError
 from firmware_defaults import DEFAULTS as D
 
@@ -176,6 +176,9 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3959,)*82
+        b=decode_bounds(d.command('calibration read')[3])
+        assert b.flags==3 and b.samples==(3900,)*82 and b.control==(3959,)*82
+        assert b.lower==(1000,)*82 and b.upper==(4000,)*82
         power=decode_power(d.command('power status')[3])
         assert power.flags==0 and power.percent==0 and power.adc==65535
         d.call('m1_test_live_battery',3,1)
@@ -534,6 +537,8 @@ def calibration_persistence(path):
         advance(d,D['CALIBRATION_HOLD_MS']+20)
         s=state(d,lambda s:s.calibration_state==5)
         assert s.calibration_completed==82 and s.calibration_flags==7
+        b=decode_bounds(d.command('calibration read')[3])
+        assert b.lower==(1000,)*82 and b.upper==(4000,)*82 # never publish uncommitted candidates
         assert bounds(d,'lower')==(1000,)*82 and bounds(d,'upper')==(4000,)*82
         assert not d.call('m1_test_live_storage_count',2) and d.hid==bytes(30)
         return d
@@ -555,6 +560,9 @@ def calibration_persistence(path):
         assert d.call('m1_test_live_storage_count',1)==1 and d.call('m1_test_live_storage_count',2)==1
         assert d.call('m1_live_scan_losses')==1 and d.hid==bytes(30) and not s.flags&2
         advance(d,200);assert d.hid==bytes(30) # held samples cannot rearm
+        b=decode_bounds(d.command('calibration read')[3])
+        assert b.flags==3 and b.samples==b.lower==tuple(range(1000,1082)),(b.flags,b.samples[:4],b.lower[:4],b.control[:4])
+        assert b.upper==(3900,)*82 and b.control==(1,)*82
         d.samples=[3900]*82;d.run(5);d.samples[81]=2500;d.tick();assert d.held(135)
         d.samples[81]=3900;d.tick()
         # Restoring a fully saved run must not depend on factory validity.

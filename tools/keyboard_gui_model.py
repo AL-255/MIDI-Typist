@@ -90,6 +90,62 @@ class PowerStatus:
     age_ms: int
 
 
+@dataclass(frozen=True)
+class BoundsSnapshot:
+    profile: int
+    count: int
+    flags: int
+    time_ms: int
+    sequence: int
+    calibration_state: int
+    samples: tuple
+    lower: tuple
+    upper: tuple
+    control: tuple
+
+
+def decode_bounds(payload):
+    if len(payload)<20 or payload[:5]!=b'MTB1\x01':
+        raise ValueError('Unsupported calibration readback')
+    profile,count,flags,stamp,sequence,state=struct.unpack_from('<BBB I I B',payload,5)
+    if (count>MAX_KEYS or flags & ~3 or state>8 or state==4 or any(payload[17:20]) or
+        len(payload)!=20+8*count or bool(profile)!=bool(count) or
+        (not count and (flags or stamp or sequence))):
+        raise ValueError('Invalid calibration readback header')
+    records=tuple(struct.iter_unpack('<4H',payload[20:]))
+    samples,lower,upper,control=tuple(zip(*records)) if count else ((),)*4
+    if flags & 1 and (any(not 1<=v<=4096 for v in samples+control) or
+                      (not flags & 2 and samples!=control)):
+        raise ValueError('Invalid calibration readback samples')
+    return BoundsSnapshot(profile,count,flags,stamp,sequence,state,samples,lower,upper,control)
+
+
+def bounds_text(bounds,index):
+    if not bounds.flags & 1 or not 0<=index<bounds.count:
+        return 'Sensor/bounds readback: no fresh valid frame'
+    span=bounds.upper[index]-bounds.lower[index]
+    return (f'Sensor input: {bounds.samples[index]} (before travel normalization)\n'
+            f'Released bound: {bounds.upper[index]} | Bottom-out bound: {bounds.lower[index]}\n'
+            f'Active span: {span} | Control reading: {bounds.control[index]}\n'
+            'Active bounds only; calibration candidates are not published.')
+
+
+def bounds_report(bounds,board,build):
+    if not bounds.flags & 1 or (bounds.profile,bounds.count) not in board.wire_layouts:
+        raise ValueError('No fresh board-matched calibration readback to export')
+    labels=board.labels()
+    if len(labels)!=bounds.count:raise ValueError('Readback geometry differs from selected board')
+    return {'format':'Midi-Typist sensor/bounds report','version':1,'target':board.target,
+            'build':build,'profile':bounds.profile,'frame_sequence':bounds.sequence,
+            'device_time_ms':bounds.time_ms,'travel_normalized':bool(bounds.flags & 2),
+            'calibration_state':bounds.calibration_state,
+            'notice':'Diagnostic report of active bounds, not a restorable profile or proof of flash persistence.',
+            'keys':[{'sensor':i,'key':labels[i],'sample':bounds.samples[i],
+                     'released':bounds.upper[i],'bottom_out':bounds.lower[i],
+                     'span':bounds.upper[i]-bounds.lower[i],'control':bounds.control[i]}
+                    for i in range(bounds.count)]}
+
+
 def decode_power(payload):
     if len(payload)!=16 or payload[:5]!=b'MTP1\x01':
         raise ValueError('Unsupported power status reply')

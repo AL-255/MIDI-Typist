@@ -46,6 +46,13 @@ Tiles show control-domain readings, down state and latest velocity; M1 readings
 use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
+The selected-key panel also shows pre-travel sensor input, active released and
+bottom-out bounds, their span and the corresponding control value. This shared
+readback works on every application platform and refreshes once per second by
+default. It is independent of keyboard-output arming and pauses during full-rate
+capture. **Export all sensor readings and bounds…** saves a diagnostic JSON for
+all keys, not an importable calibration backup. See [calibration inspection](CALIBRATION.md#inspect-a-completed-run).
+
 Board guidance comes from the verified build target, not the key count. The M1
 configuration page distinguishes normal reset, which retains firmware/settings,
 from explicit factory-bootloader entry, which erases them. The warning states that

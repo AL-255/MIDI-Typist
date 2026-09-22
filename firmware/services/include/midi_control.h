@@ -13,6 +13,9 @@ typedef struct {
 } midi_control_port_t;
 bool midi_control_init(const midi_control_port_t *port);
 void midi_control_command_handler(bool (*handler)(const char *));
+/* Every platform binds its shared app after midi_control_init. The service
+ * implements calibration read uniformly; no peripheral/flash callback needed. */
+void midi_control_bind_application(const keyboard_app_t *app);
 /* Optional foreground-only readback. Must not poll peripherals or mutate
  * settings; omitted providers reject power status instead of inventing data. */
 void midi_control_power_handler(bool (*handler)(keyboard_power_status_t *));

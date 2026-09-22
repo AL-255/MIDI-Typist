@@ -78,8 +78,8 @@ read-only M1 discovery does not imply a working custom USB application.
 | `keyboard_sample` | Optional ascending/descending ADC conversion to canonical units |
 
 Application state is supplied by the board as separate allocations. This lets
-the Huntsman keep calibration registers in its application-image RAM while
-other state remains in SRAMX, without device-specific section attributes in
+the Huntsman keep calibration registers and the shared app/readback cache in
+its application-image RAM while other state remains in SRAMX, without device-specific section attributes in
 shared code. There is no heap allocation in the application.
 
 ## Board contracts

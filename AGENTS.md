@@ -147,6 +147,12 @@
   electrical endpoints, publish/capture control-domain samples, and validate
   thresholds, wheels and calibration against real readings. Provisional startup
   bounds must remain explicitly unsaved and must never repair factory pages.
+- Sensor/bounds readback is an application feature for every platform. Bind the
+  shared app to the SysEx service and use its `calibration read` protocol/GUI,
+  rather than inventing board-specific endpoint queries. Keep pre-travel sensor
+  input, active bounds and control coordinates distinguishable and coherent.
+  Never publish partial calibration candidates as saved results. Device reports
+  are private diagnostic artifacts, not importable profiles or repository assets.
 - Preserve build-time Git provenance: refresh it on incremental builds, mark
   dirty/unversioned sources honestly, and never substitute the host checkout's
   current commit for the connected firmware's identity.

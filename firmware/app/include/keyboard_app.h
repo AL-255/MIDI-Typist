@@ -20,6 +20,10 @@ typedef struct {
     void (*log)(const char *message);
 } keyboard_app_ops_t;
 typedef bool (*keyboard_send_fn)(const keyboard_report_t *report);
+/* Application input coordinates, before optional travel normalization. These
+ * are not necessarily a board's native ADC encoding. All four values belong
+ * to the same frame/bounds pair; never retain pointers into a caller's buffers. */
+typedef struct { uint16_t sample,lower,upper,control; } keyboard_readback_key_t;
 typedef struct keyboard_app {
     /* Separate allocations permit MCU-specific RAM placement without adding
      * section attributes or device headers to shared application code. */
@@ -30,6 +34,10 @@ typedef struct keyboard_app {
     const keyboard_app_ops_t *ops;
     /* Control-domain bounds; separate from board-owned electrical calibration. */
     uint16_t input_lower[MT_KEY_CAPACITY],input_upper[MT_KEY_CAPACITY];
+    keyboard_readback_key_t readback[MT_KEY_CAPACITY];
+    uint32_t readback_sequence,readback_time;
+    uint8_t readback_profile,readback_count;
+    bool readback_valid,readback_normalized;
     keyboard_report_t sent;
     uint32_t last_frame,last_report;
     bool sent_valid,loaded,reset_pending,frame_valid;

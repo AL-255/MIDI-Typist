@@ -12,6 +12,15 @@
 #define MT_GUI_MAX_HID 32u
 #define MT_GUI_SIZE(count,hid) (((MT_GUI_HEADER_SIZE + (count)*MT_GUI_RECORD_SIZE + (hid)+3u)&~3u) + 4u)
 #define MT_GUI_MAX_SIZE MT_GUI_SIZE(MT_GUI_MAX_KEYS,MT_GUI_MAX_HID)
+/* MTB1, shared calibration/input readback. Records are sample/lower/upper/
+ * control uint16 values. This reads active bounds, never staged candidates or
+ * arbitrary flash. The accompanying MTG4 storage status proves persistence. */
+#define MT_BOUNDS_HEADER_SIZE 20u
+#define MT_BOUNDS_RECORD_SIZE 8u
+#define MT_BOUNDS_SIZE(count) (MT_BOUNDS_HEADER_SIZE+(count)*MT_BOUNDS_RECORD_SIZE)
+enum { MT_BOUNDS_VALID=1u,MT_BOUNDS_NORMALIZED=2u };
+size_t keyboard_bounds_encode(const keyboard_app_t *app,uint32_t now,
+                              uint8_t *out,size_t capacity);
 enum { MT_TRANSPORT_UNKNOWN,MT_TRANSPORT_USB,MT_TRANSPORT_BT1,
        MT_TRANSPORT_BT2,MT_TRANSPORT_BT3,MT_TRANSPORT_RADIO };
 enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u,MT_TRANSPORT_PAIRING=4u };

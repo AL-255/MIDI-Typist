@@ -202,6 +202,13 @@ without progress, GUI cancellation or scan/USB failure discards the staged
 run; previous calibration remains. No partial calibration is saved.
 Wait for completion and saved generation, not just the start acknowledgment.
 
+To inspect the result, select a key in the GUI. Compare **Sensor input** with
+its **Released bound** while untouched and its **Bottom-out bound** while fully
+held down. The separate **Control reading** may be normalized; 4096/1 there does
+not tell you the sensor's actual range. **Export all sensor readings and bounds…**
+captures the complete keyboard in a diagnostic JSON report. This feature is
+shared across platforms; the report is not an importable calibration backup.
+
 New bounds affect lighting and aftertouch. They do not prove calibrated force,
 millimeters or velocity. See [calibration design](docs/CALIBRATION.md).
 
