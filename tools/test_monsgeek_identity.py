@@ -240,6 +240,22 @@ class IdentityTests(unittest.TestCase):
                              [sx.HELLO,sx.COMMAND if boot else sx.CLOSE])
             if boot:self.assertEqual(peer.sent[-1][2:],(1,b'bootloader'))
 
+    def test_native_owner_release_failure_is_not_ignored_after_boot_request(self):
+        import midi_sysex as sx
+        device=self.custom_device();sent=[]
+        class Peer:
+            def send(self,wire):sent.append(sx.decode(wire))
+            def receive(self,timeout):
+                return sx.encode(sx.READY,sent[0][1],0,
+                    ('build=v0.1.0-MG-M1V5TMR git='+'a'*40+' state=clean').encode())
+            def close(self):raise OSError('native owner not released')
+        with patch('midi_backend.control_port_for_usb',return_value='control'), \
+             patch('midi_backend.MidiBackend',return_value=Peer()):
+            with self.assertRaisesRegex(OSError,'not released'):
+                with self.adapter.custom_session(device.token,enter_boot=True):pass
+        self.assertEqual([entry[0] for entry in sent],[sx.HELLO,sx.COMMAND])
+        self.assertEqual(sent[-1][3],b'bootloader') # one request, no cancellation/retry
+
     def test_wrong_build_or_changed_midi_binding_never_enters_bootloader(self):
         import midi_sysex as sx
         device=self.custom_device()

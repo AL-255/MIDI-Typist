@@ -163,6 +163,12 @@ For `cfg`, the GUI additionally requires matching MTG4 request ID, accepted
 result and applicable readback checks. Timeout is 3000 ms, with no automatic
 retry. Settings may already have applied when a response is lost.
 
+The GUI's private MIDI-process completion means only that the native send call
+returned; it is not a COMMAND ACK or device readback. Native and IPC receive
+queues are bounded. Either overflowing fails the capture through a separate
+error signal, even if data is already queued. Disconnect reaps that MIDI owner
+before flashing may acquire the control port. This changes no USB wire fields.
+
 USB event CIN 4 carries continuing three-byte groups; CIN 5/6/7 terminates with
 one/two/three bytes ending F7. Cable-0 notes are serviced before control traffic.
 A complete encoded outbound message remains immutable; each up-to-16-event

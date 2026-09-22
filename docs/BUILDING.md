@@ -192,12 +192,15 @@ alternate defaults, rejects invalid combinations and checks host consistency.
 
 ## Tests that need no original firmware or device
 
-The 15 CTest suites run in parallel and cover application portability and architecture boundaries,
+The CTest suites run in parallel and cover application portability and architecture boundaries,
 core logic, raw keyboard/velocity, MIDI state and
 interruptible text lighting,
 Fn menu/threshold conversion, parallel calibration/storage, GUI model/MIDI mock transport, image reservation,
 strict capture framing, offline device-flashing validation, build-time Git
 provenance (including incremental rebuilds) and the current-only repository rule.
+Every native board build also runs `tools/test_midi_backend.py`: process-isolated
+MIDI ownership, bounded capture queues, no-retry failures and stuck-child cleanup.
+It opens no physical MIDI ports; its optional widget guard check requires Tk.
 Neither the updater EXE nor proprietary extracted firmware is needed for
 these tests or the application build.
 

@@ -244,10 +244,7 @@ class MonsGeekAdapter:
                 if not boot_requested:
                     try:connection.send(sx.encode(sx.CLOSE,session))
                     except Exception:pass  # preserve original identity/USB error
-                try:connection.close()
-                except Exception:
-                    if not boot_requested:raise
-                    status('MIDI port closed during boot entry; checking USB transition.')
+                connection.close() # must release the native owner, including after boot entry
 
     def enter_factory(self, token, status):
         import fcntl

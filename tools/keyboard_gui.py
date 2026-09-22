@@ -446,6 +446,9 @@ class App:
     def toggle_connection(self):
         if self.connection and self.connection.is_alive():
             self.connection.stop(); self.message.set('Disconnecting…'); return
+        if getattr(self.connection,'release_error',None):
+            messagebox.showerror('MIDI control','The previous MIDI owner did not release its ports. Close the GUI before reconnecting.')
+            return
         path = self.device.get().strip()
         if not path or path.lower() == 'auto':
             try: path = find_midi_device()

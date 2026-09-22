@@ -30,6 +30,7 @@ class Connection(threading.Thread):
         self.build = None        # build identity from `version`, e.g. v0.1.0-RZ03-0499
         self.build_target = None # its board target, e.g. RZ03-0499
         self.connected = False
+        self.release_error = None  # a stopped thread alone does not prove port release
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = deque(maxlen=1)  # latest requested display mode wins
         self.stream_mode = 'gui'  # 'gui' (MTG4 telemetry) or 'key' (HKL1 samples)
@@ -224,6 +225,10 @@ class Connection(threading.Thread):
             if self.backend is not None:
                 try: self.backend.send(sx.encode(sx.CLOSE, self.session))
                 except Exception: pass
-                self.backend.close()
+                try:self.backend.close()
+                except Exception as error:
+                    self.release_error=str(error)
+                    self.notify(f'ERROR: MIDI port release failed: {error}')
             if self.stop_event.is_set():
-                self.notify('Disconnected; keyboard operation does not depend on the GUI')
+                if not self.release_error:
+                    self.notify('Disconnected; keyboard operation does not depend on the GUI')

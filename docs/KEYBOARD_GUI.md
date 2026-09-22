@@ -1,9 +1,9 @@
 # Keyboard configuration GUI
 
 The Linux/POSIX Tk GUI selects board geometry from the device's build target.
-Live configuration supports the complete Huntsman ANSI firmware; the M1's
-82-key 75% layout is available as an offline preview with
-`--demo --board MG-M1V5TMR`. It edits thresholds/mappings, displays per-key velocity,
+Live configuration supports Huntsman ANSI and the experimental M1's 82-key 75%
+layout. Preview M1 without hardware using `--demo --board MG-M1V5TMR`.
+The GUI edits thresholds/mappings, displays per-key velocity,
 starts parallel calibration, exports JSON profiles and can explicitly flash
 an application. ISO/JIS editing is rejected rather than mislabelling keys.
 
@@ -27,12 +27,23 @@ cable. Use the first, performance cable in the DAW. No serial node is exposed.
 Only one GUI owner is supported; a fresh handshake replaces the previous
 session. MIDI access does not normally need root on a desktop session.
 Confirmed flashing uses raw USB and may request PolicyKit authorization.
-Current GUI/firmware integration is tested offline on Linux; physical USB and
-other RtMidi backends are not qualified. See [validation limits](VALIDATION.md).
+M1 live telemetry and control-owner handoff are checked on Linux hardware;
+Huntsman integration and other RtMidi backends have separate
+[validation limits](VALIDATION.md).
+
+An internal child process owns the open native MIDI ports. It runs only while
+the GUI or its flashing worker needs a control connection; it is not a service
+or another user application. Capture queues are bounded and overflow terminates
+the capture. Native open/send failures do not cause automatic command retries.
+Disconnect has a bounded shutdown window, then terminates and reaps a stuck
+MIDI child before permitting another owner. It never terminates a flash worker
+or resets the keyboard. Failure to release the owner blocks reconnect/flashing.
+Host queue, polling and shutdown limits come from `defaults.h`.
 
 Connect and select a key. The drawing uses recovered sensor identities and
-60% key geometry, with Fn immediately right of Space and Right Alt next.
-Tiles show raw values, down state and latest velocity. The panel shows
+the selected board's geometry (60% Huntsman or 75% M1).
+Tiles show control-domain readings, down state and latest velocity; M1 readings
+use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
 

@@ -153,6 +153,11 @@ and hardware persistence remain unverified.
 
 ## Physical checks
 
+Host MIDI lifecycle tests inject open/send failure, process exit, a hung send,
+a hung close, and native/IPC queue overflow. They verify no command retry,
+error-before-queued-data handling, child reaping, reconnect and the flashing
+release guard. They do not model USB device behavior.
+
 The current Huntsman image builds and passes linked ARM execution audits, but
 the remapping, 30-byte HID and MTG4/SysEx version 3 integration has not been flashed or tested
 on physical hardware. Offline USB tests are not evidence of physical
@@ -166,6 +171,12 @@ M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
 per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;
 the control port returns the embedded Git identity and live 82-key GUI snapshots.
+The process-isolated GUI transport has completed repeated live connect/stream/
+disconnect cycles without retaining native workers. The GUI flasher's read-only
+USB-bound identity handshake also completes and releases its MIDI owner.
+Full-rate M1 capture is not yet qualified: capture load can fill the acquisition
+FIFO and stop runtime with scan fault 7. Diagnostic USB and guarded recovery
+remain available; a short capture is not evidence of sustained operation.
 Power-cycle and software-requested recovery return to the factory bootloader.
 Read-only factory diagnostics return valid markers but resting values outside
 the 12-bit import domain. The complete 518-byte calibration-field readback remains

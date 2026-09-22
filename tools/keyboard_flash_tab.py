@@ -203,6 +203,9 @@ class FlashTab(ttk.Frame):
             if self.app.connection.is_alive():
                 self.status.set('Configuration connection did not close; no device operation started.')
                 return False
+        if getattr(self.app.connection,'release_error',None):
+            self.status.set('MIDI port release failed; no device operation started.')
+            return False
         return True
 
     def flash(self):
