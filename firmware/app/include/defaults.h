@@ -65,6 +65,13 @@
 #define CALIBRATION_MIN_RELEASE_RAW 2048u
 #define CALIBRATION_PRESS_DIVISOR 2u /* accept at/below upper / divisor */
 #define CALIBRATION_MOTION_RAW 64
+/* A board with a non-zero press_drop commits the user to a deep press: the
+ * hold requirement is that drop or this fraction of the key's recorded travel
+ * span, whichever is deeper. A shallow requirement lets a resting finger or a
+ * mid-travel hold register, and the reading then tracks the finger instead of
+ * the bottom stop. Keys with the smallest recorded span keep real margin. */
+#define CALIBRATION_PRESS_DEPTH_NUM 5u
+#define CALIBRATION_PRESS_DEPTH_DEN 8u
 
 /* Runtime scheduling and deferred flash writes (milliseconds). */
 #define SCAN_STALE_MS 100u
@@ -192,6 +199,12 @@
 /* Native ADC baseline range admitted by the factory sample-startup path. */
 #define M1_FACTORY_RELEASE_MIN_RAW 1000u
 #define M1_FACTORY_RELEASE_MAX_RAW 4000u
+/* The reference calibration pages store released and bottom counts with three
+ * extra low bits: eight times the 12-bit acquisition domain this port samples,
+ * so reading them as native counts rejects every record. Measured on hardware:
+ * after this shift all 82 released records agree with a live released frame
+ * within 26 counts, and the recorded travel spans 129..930 counts per key. */
+#define M1_FACTORY_VALUE_SHIFT 3u
 /* Provisional cold-start travel when stock records cannot be interpreted.
  * The reference startup uses current ADC - 700 in RAM, never in flash. */
 #define M1_STARTUP_TRAVEL_RAW 700u
@@ -342,6 +355,9 @@
 #if M1_FACTORY_RELEASE_MIN_RAW < 1 || M1_FACTORY_RELEASE_MAX_RAW > 4095u || M1_FACTORY_RELEASE_MIN_RAW > M1_FACTORY_RELEASE_MAX_RAW
 #error "invalid M1 factory baseline range"
 #endif
+#if M1_FACTORY_VALUE_SHIFT < 1 || M1_FACTORY_VALUE_SHIFT > 8 || (M1_FACTORY_RELEASE_MAX_RAW << M1_FACTORY_VALUE_SHIFT) > 0xffffu
+#error "invalid M1 factory record scaling"
+#endif
 #if M1_STARTUP_TRAVEL_RAW >= M1_FACTORY_RELEASE_MIN_RAW || M1_STARTUP_TRAVEL_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_MIN_SPAN_RAW < 1 || M1_CALIBRATION_PRESS_DROP_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_PRESS_DROP_RAW >= M1_CALIBRATION_MIN_RELEASE_RAW || M1_CALIBRATION_MIN_RELEASE_RAW > 4096u
 #error "invalid M1 electrical calibration policy"
 #endif
@@ -365,6 +381,9 @@
 #endif
 #if CALIBRATION_HOLD_MS < 1 || CALIBRATION_HOLD_MS >= CALIBRATION_IDLE_MS || CALIBRATION_IDLE_MS > 65535
 #error "Calibration durations must fit telemetry and allow a hold before timeout"
+#endif
+#if CALIBRATION_PRESS_DEPTH_NUM < 1 || CALIBRATION_PRESS_DEPTH_NUM >= CALIBRATION_PRESS_DEPTH_DEN || CALIBRATION_PRESS_DEPTH_DEN > 16u
+#error "Calibration depth fraction must be a proper fraction below one"
 #endif
 #if CALIBRATION_PRESS_DIVISOR < 1 || TEXT_LETTER_MS < 1 || MIDI_OCTAVE_BLINK_STEP_MS < 1
 #error "Divisors and animation periods must be positive"

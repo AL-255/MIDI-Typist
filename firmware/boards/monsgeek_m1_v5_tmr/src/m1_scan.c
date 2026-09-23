@@ -17,8 +17,17 @@ bool m1_scan_bank(m1_scan_t *scan,unsigned bank,const uint16_t *values)
     memcpy(scan->rows[bank],values,sizeof(scan->rows[bank]));
     if(++scan->next_bank!=M1_BANK_COUNT) return true;
     scan->next_bank=0;
-    if(scan->pending==M1_SCAN_QUEUE_FRAMES) { m1_scan_fault(scan);return false; }
-    uint16_t *frame=scan->frames[(scan->head+scan->pending)%M1_SCAN_QUEUE_FRAMES];
+    ++scan->sequence;
+    if(scan->pending==M1_SCAN_QUEUE_FRAMES) {
+        /* The foreground fell behind by a whole queue. Drop the oldest frame
+         * and keep acquiring: the sequence numbers the consumer receives skip
+         * the dropped ones, which is the board's existing lost-frame signal. */
+        scan->head=(scan->head+1u)%M1_SCAN_QUEUE_FRAMES;
+        --scan->pending;
+    }
+    unsigned slot=(scan->head+scan->pending)%M1_SCAN_QUEUE_FRAMES;
+    uint16_t *frame=scan->frames[slot];
+    scan->frame_sequence[slot]=scan->sequence;
     for(unsigned sensor=0;sensor<M1_KEY_COUNT;++sensor) {
         const m1_key_t *key=&m1_keys[sensor];
         /* ADC falls with travel. Native range 0..4095 -> canonical 1..4096.
@@ -27,7 +36,6 @@ bool m1_scan_bank(m1_scan_t *scan,unsigned bank,const uint16_t *values)
     }
     scan->battery=scan->rows[M1_BATTERY_BANK][M1_BATTERY_RANK];
     scan->battery_valid=true;
-    ++scan->sequence;
     ++scan->pending;
     return true;
 }
@@ -41,7 +49,7 @@ bool m1_scan_take(m1_scan_t *scan,uint16_t *frame,uint32_t *sequence)
 {
     if(!scan->pending || !frame || !sequence) return false;
     memcpy(frame,scan->frames[scan->head],sizeof(scan->frames[0]));
-    *sequence=scan->sequence-scan->pending+1u;
+    *sequence=scan->frame_sequence[scan->head];
     scan->head=(scan->head+1u)%M1_SCAN_QUEUE_FRAMES;
     --scan->pending;
     return true;

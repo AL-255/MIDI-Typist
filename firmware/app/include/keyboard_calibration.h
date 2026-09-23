@@ -22,7 +22,12 @@ void calibration_init(keyboard_calibration_t *s);
 bool calibration_active(const keyboard_calibration_t *s);
 bool calibration_start(keyboard_calibration_t *s, uint8_t profile, uint8_t count, uint32_t now);
 void calibration_abort(keyboard_calibration_t *s, uint8_t reason, uint32_t now);
-void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool valid, bool neutral, uint32_t now);
+/* lo/hi are the electrical bounds currently in force for this profile: the
+ * released endpoints measured here plus the travel span they imply. They only
+ * size the press requirement and are never copied into the candidate. */
+void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw,
+                       const uint16_t *lo, const uint16_t *hi,
+                       bool valid, bool neutral, uint32_t now);
 void calibration_tick(keyboard_calibration_t *s, bool healthy, uint32_t now);
 void calibration_finish(keyboard_calibration_t *s, bool success, uint32_t now);
 void calibration_lights(const keyboard_calibration_t *s, uint8_t *rgb, uint32_t now);

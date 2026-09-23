@@ -146,14 +146,14 @@ static void calibration(void)
     assert(!calibration_start(&cal,1,SYN_COUNT,0));
     assert(calibration_start(&cal,SYN_PROFILE,SYN_COUNT,0));
     for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=4000;
-    calibration_frame(&cal,samples,true,true,0);
-    calibration_frame(&cal,samples,true,true,500);
+    calibration_frame(&cal,samples,NULL,NULL,true,true,0);
+    calibration_frame(&cal,samples,NULL,NULL,true,true,500);
     assert(cal.state==CAL_COLLECT);
     for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=1000;
-    calibration_frame(&cal,samples,true,false,501);
+    calibration_frame(&cal,samples,NULL,NULL,true,false,501);
     calibration_lights(&cal,rgb,501);
     assert(rgb[103*3]==128 && rgb[103*3+1]==48);
-    calibration_frame(&cal,samples,true,false,1501);
+    calibration_frame(&cal,samples,NULL,NULL,true,false,1501);
     assert(cal.completed==SYN_COUNT && cal.state==CAL_SAVE);
     assert(calibration_bounds_valid(SYN_PROFILE,SYN_COUNT,cal.lower,cal.upper));
 }

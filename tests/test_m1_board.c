@@ -8,6 +8,7 @@
 #include "m1_wake.h"
 #include "m1_factory.h"
 #include "keyboard_app.h"
+#include "keyboard_calibration.h"
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
 #include "defaults.h"
@@ -53,6 +54,11 @@ static void mapping(void)
 }
 static void factory_word(m1_factory_record_t *r,unsigned cell,unsigned value)
 { r->values[cell*2u]=value;r->values[cell*2u+1u]=value>>8; }
+/* Reference pages carry M1_FACTORY_VALUE_SHIFT extra low bits. Fixtures are
+ * written the way the reference stores them, and the low bits are deliberately
+ * non-zero to prove the decode drops them. */
+static void reference_word(m1_factory_record_t *r,unsigned cell,unsigned native)
+{ factory_word(r,cell,(native<<M1_FACTORY_VALUE_SHIFT)|(cell&7u)); }
 static void factory_calibration(void)
 {
     m1_factory_record_t hi,lo;
@@ -61,7 +67,7 @@ static void factory_calibration(void)
     memcpy(hi.trailer,trailer,3);memcpy(lo.trailer,trailer,3);
     for(unsigned i=0;i<M1_KEY_COUNT;++i) {
         unsigned cell=m1_factory_cell(i);
-        factory_word(&hi,cell,3900-cell);factory_word(&lo,cell,1000+cell);
+        reference_word(&hi,cell,3900-cell);reference_word(&lo,cell,1000+cell);
     }
     struct { uint32_t before;m1_factory_bounds_t bounds;uint32_t after; } out={.before=0x12345678,.after=0x87654321};
     assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
@@ -69,7 +75,15 @@ static void factory_calibration(void)
         unsigned cell=m1_factory_cell(i);
         assert(out.bounds.upper[i]==3901-cell && out.bounds.lower[i]==1001+cell);
     }
+    /* Unscaled records, which is what the pages look like when read as native
+     * counts, must be rejected rather than turned into a 1/8-scale keyboard. */
     const m1_factory_bounds_t previous=out.bounds;
+    factory_word(&hi,m1_factory_cell(0),2600u);
+    factory_word(&lo,m1_factory_cell(0),1800u);
+    assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
+    assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
+    reference_word(&hi,m1_factory_cell(0),3900u);reference_word(&lo,m1_factory_cell(0),1000u);
+    assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
     assert(m1_factory_decode(NULL,&lo,&out.bounds)==M1_FACTORY_ARGUMENT);
     assert(m1_factory_decode(&hi,NULL,&out.bounds)==M1_FACTORY_ARGUMENT);
     assert(m1_factory_decode(&hi,&lo,NULL)==M1_FACTORY_ARGUMENT);
@@ -86,26 +100,28 @@ static void factory_calibration(void)
     }
     for(unsigned i=0;i<M1_KEY_COUNT;++i) {
         unsigned cell=m1_factory_cell(i);
-        const unsigned invalid_hi[]={0,M1_FACTORY_RELEASE_MIN_RAW-1u,M1_FACTORY_RELEASE_MAX_RAW+1u,65535};
+        const unsigned invalid_hi[]={0,M1_FACTORY_RELEASE_MIN_RAW-1u,
+            M1_FACTORY_RELEASE_MAX_RAW+1u,0xffffu>>M1_FACTORY_VALUE_SHIFT};
         for(unsigned n=0;n<sizeof(invalid_hi)/sizeof(*invalid_hi);++n) {
-            factory_word(&hi,cell,invalid_hi[n]);
+            reference_word(&hi,cell,invalid_hi[n]);
             assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
             assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
         }
-        factory_word(&hi,cell,3900-cell);
-        const unsigned invalid_lo[]={3900-cell,3901-cell,3900-cell-M1_CALIBRATION_MIN_SPAN_RAW+1u,4096,65535};
+        reference_word(&hi,cell,3900-cell);
+        const unsigned invalid_lo[]={3900-cell,3901-cell,3900-cell-M1_CALIBRATION_MIN_SPAN_RAW+1u,4096,
+            0xffffu>>M1_FACTORY_VALUE_SHIFT};
         for(unsigned n=0;n<sizeof(invalid_lo)/sizeof(*invalid_lo);++n) {
-            factory_word(&lo,cell,invalid_lo[n]);
+            reference_word(&lo,cell,invalid_lo[n]);
             assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_RANGE);
             assert(!memcmp(&out.bounds,&previous,sizeof(previous)));
         }
-        factory_word(&lo,cell,1000+cell);
+        reference_word(&lo,cell,1000+cell);
     }
-    factory_word(&hi,0,M1_FACTORY_RELEASE_MIN_RAW);
-    factory_word(&lo,0,M1_FACTORY_RELEASE_MIN_RAW-M1_CALIBRATION_MIN_SPAN_RAW);
+    reference_word(&hi,0,M1_FACTORY_RELEASE_MIN_RAW);
+    reference_word(&lo,0,M1_FACTORY_RELEASE_MIN_RAW-M1_CALIBRATION_MIN_SPAN_RAW);
     assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
     assert(out.bounds.upper[0]-out.bounds.lower[0]==M1_CALIBRATION_MIN_SPAN_RAW);
-    factory_word(&hi,0,M1_FACTORY_RELEASE_MAX_RAW);factory_word(&lo,0,0);
+    reference_word(&hi,0,M1_FACTORY_RELEASE_MAX_RAW);reference_word(&lo,0,0);
     assert(m1_factory_decode(&hi,&lo,&out.bounds)==M1_FACTORY_OK);
     assert(out.bounds.lower[0]==1 && out.bounds.upper[0]==M1_FACTORY_RELEASE_MAX_RAW+1u);
     assert(out.before==0x12345678 && out.after==0x87654321);
@@ -120,6 +136,70 @@ static void factory_calibration(void)
     released[81]=M1_FACTORY_RELEASE_MAX_RAW+2u;
     assert(!m1_factory_bootstrap(released,&out.bounds));
     assert(!m1_factory_bootstrap(NULL,&out.bounds) && !m1_factory_bootstrap(released,NULL));
+}
+/* The calibration press requirement must commit the user to the key's own
+ * travel, so a mid-travel hold cannot be recorded as a bottom-out, while a key
+ * with a genuinely small recorded span still reaches its requirement. */
+static void calibration_depth(void)
+{
+    const keyboard_input_policy_t *policy=keyboard_layout(M1_PROFILE)->input;
+    assert(policy && policy->press_drop==M1_CALIBRATION_PRESS_DROP_RAW);
+    uint16_t lower[M1_KEY_COUNT],upper[M1_KEY_COUNT],raw[M1_KEY_COUNT];
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) { lower[i]=1800;upper[i]=2600;raw[i]=2600; }
+    keyboard_calibration_t c;
+    calibration_init(&c);
+    uint32_t now=1000;
+    assert(calibration_start(&c,M1_PROFILE,M1_KEY_COUNT,now));
+    for(unsigned step=0;step<5;++step) {
+        now+=200; calibration_frame(&c,raw,lower,upper,true,true,now);
+    }
+    assert(c.state==CAL_COLLECT);
+    /* 5/8 of the 800-count span is 500, deeper than the policy drop alone. */
+    assert(M1_CALIBRATION_PRESS_DROP_RAW<500);
+    raw[0]=(uint16_t)(2600-300);
+    now+=100; calibration_frame(&c,raw,lower,upper,true,false,now);
+    assert(!c.holds[0].active);
+    raw[0]=(uint16_t)(2600-600);
+    now+=100; calibration_frame(&c,raw,lower,upper,true,false,now);
+    assert(c.holds[0].active);
+    for(unsigned step=0;step<10;++step) {
+        now+=110; calibration_frame(&c,raw,lower,upper,true,false,now);
+    }
+    assert(c.completed==1 && c.lower[0]==2600-600 && c.upper[0]==2600);
+    /* A 200-count span requires the 128-count drop, not 5/8 of an absent span. */
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) { lower[i]=2400;upper[i]=2600;raw[i]=2600; }
+    calibration_init(&c);
+    now+=10000;
+    assert(calibration_start(&c,M1_PROFILE,M1_KEY_COUNT,now));
+    for(unsigned step=0;step<5;++step) {
+        now+=200; calibration_frame(&c,raw,lower,upper,true,true,now);
+    }
+    assert(c.state==CAL_COLLECT);
+    raw[1]=(uint16_t)(2600-127);
+    now+=100; calibration_frame(&c,raw,lower,upper,true,false,now);
+    assert(!c.holds[1].active);
+    raw[1]=(uint16_t)(2600-128);
+    now+=100; calibration_frame(&c,raw,lower,upper,true,false,now);
+    assert(c.holds[1].active);
+    for(unsigned step=0;step<10;++step) {
+        now+=110; calibration_frame(&c,raw,lower,upper,true,false,now);
+    }
+    assert(c.completed==1 && c.lower[1]==2600-128);
+    /* Without reference bounds the policy drop still applies on its own. */
+    calibration_init(&c);
+    now+=10000;
+    assert(calibration_start(&c,M1_PROFILE,M1_KEY_COUNT,now));
+    for(unsigned i=0;i<M1_KEY_COUNT;++i) raw[i]=2600;
+    for(unsigned step=0;step<5;++step) {
+        now+=200; calibration_frame(&c,raw,NULL,NULL,true,true,now);
+    }
+    assert(c.state==CAL_COLLECT);
+    raw[2]=(uint16_t)(2600-M1_CALIBRATION_PRESS_DROP_RAW+1u);
+    now+=100; calibration_frame(&c,raw,NULL,NULL,true,false,now);
+    assert(!c.holds[2].active);
+    raw[2]=(uint16_t)(2600-M1_CALIBRATION_PRESS_DROP_RAW);
+    now+=100; calibration_frame(&c,raw,NULL,NULL,true,false,now);
+    assert(c.holds[2].active);
 }
 static void lighting_encoding(void)
 {
@@ -194,9 +274,18 @@ static void acquisition(void)
     }
     for(unsigned i=0;i<M1_SCAN_QUEUE_FRAMES;++i)frame_set(&scan,1000);
     memset(row,0,sizeof(row));
+    /* A foreground that falls behind by the whole queue loses its oldest
+     * frames and keeps scanning: the consumer sees the sequence gap. */
     for(unsigned i=0;i<M1_BANK_COUNT-1u;++i)assert(m1_scan_bank(&scan,i,row));
-    assert(!m1_scan_bank(&scan,M1_BANK_COUNT-1u,row));
-    assert(scan.errors==1 && !scan.pending && !scan.battery_valid);
+    uint32_t queued=scan.sequence;
+    assert(m1_scan_bank(&scan,M1_BANK_COUNT-1u,row));
+    assert(scan.sequence==queued+1u && scan.pending==M1_SCAN_QUEUE_FRAMES && scan.errors==0);
+    assert(m1_scan_take(&scan,frame,&sequence) && sequence==queued-M1_SCAN_QUEUE_FRAMES+2u);
+    assert(scan.pending==M1_SCAN_QUEUE_FRAMES-1u);
+    for(unsigned i=0;i<M1_BANK_COUNT;++i)assert(m1_scan_bank(&scan,i,row));
+    assert(scan.sequence==queued+2u && scan.pending==M1_SCAN_QUEUE_FRAMES && scan.errors==0);
+    /* A faulty bank is still an acquisition fault, and it clears the queue. */
+    assert(!m1_scan_bank(&scan,2,row) && scan.errors==1 && !scan.pending && !scan.battery_valid);
     assert(!m1_scan_take(&scan,frame,&sequence));
 }
 static void battery(void)
@@ -335,7 +424,7 @@ static keyboard_save_result_t calibrated(const keyboard_calibration_t *candidate
 {
     assert(calibration_bounds_valid(M1_PROFILE,M1_KEY_COUNT,candidate->lower,candidate->upper));
     for(unsigned i=0;i<M1_KEY_COUNT;++i) {
-        assert(candidate->upper[i]==2600+i && candidate->lower[i]==2300+i);
+        assert(candidate->upper[i]==2600+i && candidate->lower[i]==1900+i);
     }
     return KEYBOARD_SAVE_COMPLETE;
 }
@@ -354,12 +443,15 @@ static void travel_domain(void)
     samples[45]=hi[45];frame();assert(!keyboard_report_get_usage(&raw.engine.report,4));
     assert(keyboard_app_calibrate(&app,now,true));
     frame();now+=CALIBRATION_SETTLE_MS;frame();assert(cal.state==CAL_COLLECT);
-    /* TMR electrical travel need not reach half of its released ADC reading.
-     * Every key can be held/calibrated independently and in parallel. */
-    for(unsigned i=0;i<M1_KEY_COUNT;++i)samples[i]=2300+i;
+    /* TMR electrical travel need not reach half of its released ADC reading,
+     * but the press must commit to the key's own travel: a mid-travel hold is
+     * not a bottom-out. Every key is held/calibrated independently. */
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)samples[i]=hi[i]-300;
+    frame();now+=CALIBRATION_HOLD_MS;frame();assert(cal.state==CAL_COLLECT);
+    for(unsigned i=0;i<M1_KEY_COUNT;++i)samples[i]=lo[i];
     frame();now+=CALIBRATION_HOLD_MS;frame();assert(cal.state==CAL_DONE);
     for(unsigned i=0;i<M1_KEY_COUNT;++i) {
-        assert(lo[i]==2300+i && hi[i]==2600+i);samples[i]=hi[i];
+        assert(lo[i]==1900+i && hi[i]==2600+i);samples[i]=hi[i];
     }
     frame();assert(raw.armed && raw.raw[45]==4096);
     samples[45]=lo[45];frame();assert(raw.raw[45]==1);
@@ -793,7 +885,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); factory_calibration(); calibration_depth(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

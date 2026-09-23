@@ -392,6 +392,30 @@ def scanner(elf):
     assert struct.unpack('<H',dev.cpu.mem_read(RGB+204,2))[0]==1079
     assert dev.u32(RGB+208)==1
     assert dev.call('m1_hal_frame',RGB,RGB+200)==0
+    # A consumer that falls behind by more than a whole queue loses its oldest
+    # frames and acquisition continues: health and the fault latch stay clean,
+    # the delivered sequence numbers show the gap, and the newest frame is kept.
+    assert dev.call('m1_hal_healthy')==1 and dev.call('m1_hal_fault_reason')==0
+    depth=D['M1_SCAN_QUEUE_FRAMES']
+    for _ in range(depth+3):
+        begin()
+        for bank in range(6): complete(bank)
+    assert dev.call('m1_hal_healthy')==1 and dev.call('m1_hal_errors')==0
+    assert dev.call('m1_hal_fault_reason')==0
+    assert dev.call('m1_hal_battery',RGB+204,RGB+208)==1
+    produced=dev.u32(RGB+208)
+    assert dev.call('m1_hal_frame',RGB,RGB+200)==1
+    first=dev.u32(RGB+200)
+    assert first==produced-depth+1,(first,produced,depth)
+    delivered=1
+    while dev.call('m1_hal_frame',RGB,RGB+200)==1:
+        assert dev.u32(RGB+200)==first+delivered,(first,delivered,dev.u32(RGB+200))
+        delivered+=1
+    assert delivered==depth
+    begin()
+    for bank in range(6): complete(bank)
+    assert dev.call('m1_hal_frame',RGB,RGB+200)==1
+    assert dev.u32(RGB+200)==produced+1
     begin();begin()  # cadence overtook an incomplete frame: fail-stop
     assert dev.call('m1_hal_healthy')==0 and dev.call('m1_hal_errors')==1
     assert dev.call('m1_hal_fault_reason')==5
@@ -1877,13 +1901,20 @@ FACTORY_UPPER,FACTORY_LOWER,FACTORY_PAGE = 0x08032000,0x08032800,2048
 
 
 def factory_memory(dev,distinct=False):
-    """Synthetic private-page fixtures; no original device data or image."""
+    """Synthetic private-page fixtures; no original device data or image.
+
+    Records are stored the way the reference stores them: native counts with
+    ``M1_FACTORY_VALUE_SHIFT`` extra low bits, deliberately non-zero so a decode
+    that forgets the shift is rejected rather than scaled by a factor of eight.
+    """
     dev.cpu.mem_map(FACTORY_UPPER,2*FACTORY_PAGE)
     pages=bytearray(b'\xff'*(2*FACTORY_PAGE))
+    shift=D['M1_FACTORY_VALUE_SHIFT']
     for record in m1_records():
         cell=record[2]*6+record[1]
-        struct.pack_into('<H',pages,cell*2,3900-cell if distinct else 3999)
-        struct.pack_into('<H',pages,FACTORY_PAGE+cell*2,1000+cell if distinct else 999)
+        high,low=(3900-cell,1000+cell) if distinct else (3999,999)
+        struct.pack_into('<H',pages,cell*2,((high<<shift)|(cell&7))&0xffff)
+        struct.pack_into('<H',pages,FACTORY_PAGE+cell*2,((low<<shift)|(cell&7))&0xffff)
     for offset in (0,FACTORY_PAGE):pages[offset+2045:offset+2048]=bytes((1,0x55,0xaa))
     dev.cpu.mem_write(FACTORY_UPPER,bytes(pages))
     dev.cpu.mem_protect(FACTORY_UPPER,2*FACTORY_PAGE,UC_PROT_READ)
