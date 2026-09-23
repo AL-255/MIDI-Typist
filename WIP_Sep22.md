@@ -5,91 +5,85 @@
 The M1 port is functional over USB but **not complete or qualified for daily use**.
 Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 
-- Last user-confirmed installed firmware: `ab4b048`. The user confirms MIDI
-  notes, Jankó and Fn+V now work. This is not a worst-case timing qualification.
-  A keyboard was connected again during this session; its identity was verified
-  over the control port as `v0.1.0-MG-M1V5TMR git=ab4b048… state=clean`, bound to
-  the physical USB device through the ALSA/sysfs check rather than a port name.
-- The redistributable artifact is now USB-only: `MT_M1_WIRELESS` (default `OFF`)
+- Installed firmware on the connected keyboard: `b9a6845` (USB-only build,
+  `state=clean`), verified over the control port and bound to the physical USB
+  device through the ALSA/sysfs check rather than a port name. The user flashed it
+  and reported that typing works but sensor calibration does not.
+- Diagnosis of that report (read-only session, no settings/flash/boot changes):
+  three separate defects, all now fixed and offline-verified in this checkpoint.
+  1. **A full acquisition queue stopped the whole application.** The keyboard
+     latched a terminal runtime fault (`detail=1`, scanner reason `7` = queue
+     overflow) about 14 s after start, with `runtime stats` showing a 40 441 µs
+     storage stage and a 40 507 µs loop against a 32-frame (4 ms) queue. The
+     application then answered `unsupported command` to every live command, which
+     is why keys stopped registering and calibration timed out. A full queue is
+     now a counted frame loss: the oldest frame is dropped, the sequence gap is
+     reported as a scan loss, and acquisition continues.
+  2. **The factory calibration records were read in the wrong domain**, so the
+     importer rejected all 82 keys and the board silently fell back to a uniform
+     700-count provisional span. The reference stores counts with three extra low
+     bits (8× the 12-bit acquisition domain); after shifting, all 82 released
+     records match a live released frame within 26 counts and imply 129–930
+     counts of travel per key (mean 717).
+  3. **The custom calibration press requirement was far too shallow.** A uniform
+     128-count requirement is ~5 % of travel, so a light or mid-travel hold was
+     accepted as a bottom-out and the reading tracked the finger instead of the
+     bottom stop; the hold never completed and the 5 s inactivity abort fired
+     ("stuck at amber"). The requirement is now the larger of that drop and five
+     eighths of the key's recorded travel span, so a mid-travel hold cannot start
+     a measurement and small-span keys still reach their requirement.
+- The redistributable artifact remains USB-only: `MT_M1_WIRELESS` (default `OFF`)
   compiles the unverified Bluetooth/2.4 GHz stack out entirely. Wireless work
   needs `-DMT_M1_WIRELESS=ON` and is documented as unqualified.
-- Latest firmware-code checkpoint: `9c6db9b` (Fn+Tab/Fn+Caps editor entry) and
-  `fd0e6df` (M1 custom-profile RESET) on top of the handoff commit. Together with
-  the earlier work they include system-menu observation ownership, directional
-  battery filtering, safe cancellation of an Fn transport selection that has not
-  yet called the hardware adapter, the editor-entry fix for what the
-  observation-only change had silently broken, and M1 custom-profile RESET.
-  None of it has been flashed to the confirmed working keyboard.
-- The observation-only change also left two audits red and one M1 HAL guard set
-  stale at handoff; both are corrected and the whole offline suite passes again.
-  The runtime-power audit additionally reports its Unicorn IT-state recoveries in
-  the verdict (see [validation limits](docs/VALIDATION.md)).
-- The incomplete broader cable-bounce experiment was discarded at handoff.
-  No experimental changes from it remain in the source.
-- The previously used USB path `3-2.1` was absent at handoff. Rediscover and
-  verify the device's SysEx build identity before any further hardware action.
+- Offline state after this checkpoint: native host CTest 18/18, native M1 CTest
+  5/5, all nine M1 linked-ARM audits pass in the default USB-only tree, and the
+  M1 HAL/live/image audits pass in a `-DMT_M1_WIRELESS=ON` tree. The Huntsman
+  ARM audits for calibration, menu and mode pass unchanged (its policy still uses
+  the fractional press criterion, so its behaviour is untouched).
 
 ## What is verified
 
 - Guarded application flashing has bootloader checksum/readback confirmation.
   Custom USB HID/MIDI, build identity, GUI telemetry and sensor/bounds readback
   have been exercised on hardware.
-- A full 82-key calibration was completed and retrieved. Private diagnostic
-  files remain excluded from Git. Released bounds: mean **2625.67**, population
-  standard deviation **38.63**. Bottom-out bounds: mean **1751.76**, population
-  standard deviation **31.02**. These are native sensor counts, not normalized
-  control values, and are not evidence that the installed image retains them.
-- The Fn+V fault involved repeated engine rearm/reset work while a modal menu
-  owned input. Menus now observe scans without rearming performance input;
-  leaving a menu requires fresh neutral input. The user confirms the fix works.
-- M1 custom-profile RESET (Fn+R, or `cfg clean` from the GUI) erases only the two
-  custom pages, blank-verifies each erase, returns defaults with the factory
-  electrical bounds and refuses a denied gate or failed erase. It is verified
-  offline only; no reset has been performed on hardware.
-- Read-only hardware session on the connected keyboard (no settings, flash or
-  boot state changed): the control session answered identity, `git`,
-  `runtime storage/stats/encoder`, `calibration read` and `power status`. Stored
-  bounds are travel-normalized (82 keys, lower mean 1920.7, upper mean 2620.7,
-  flags 3); the profile reports slot 0, generation 1, no pending or fault. A
-  10-minute idle soak saw 18,073 snapshots at ~30 Hz with `scan_errors=0`,
-  `light_errors=0`, `losses=0`, `hal_errors=0`, advancing scan and encoder
-  counters, no invalid encoder transitions and stable external-power telemetry
-  (charger pin reported raw low, 23%). GUI snapshot sequence gaps in that soak
-  are the documented latest-only replacement, not acquisition loss.
-- Physical key presses were not possible while the user was away, so typing,
-  MIDI performance, Fn menus, wheels/sustain and cold-boot persistence remain
-  untested on this image. Nothing has been flashed: the new checkpoints are
-  offline-verified only, and an early startup fault needs a debugger.
-- Native M1 tests, complete application builds, the linked-ARM audits and strict
-  Sphinx documentation builds pass for both configurations: 31/31 groups in the
-  default USB-only tree (wireless sections report `SKIP`) and 12/12 M1 groups in
-  a `-DMT_M1_WIRELESS=ON` tree. Linked-ARM tests model peripheral completions;
-  they do not prove physical timing, radio delivery or electrical behavior.
-
-- The pre-flash artifact was verified through the adapter's own validator for
-  the `custom` destination (identity header, vectors, padded size inside the
-  profile boundary) and carries `git=b9a68453fed7483270b1fcd01ccee33e405e2110
-  state=clean`. The flash itself needs write access to `/dev/bus/usb`, which on
-  this host means one interactive polkit/sudo authorization; it has not been
-  performed. `docs/M1_TEST_CHECKLIST.md` is the procedure and record sheet.
+- A full 82-key calibration was completed on an earlier image and retrieved.
+  Private diagnostic files remain excluded from Git. Released bounds: mean
+  **2625.67**, population standard deviation **38.63**. Bottom-out bounds: mean
+  **1751.76**, population standard deviation **31.02**. These are native sensor
+  counts, not normalized control values.
+- Live read-only measurements on the connected unit: all 82 keys neutral at rest
+  with electrical rest levels 2508–2701 and control readings 4049–4096; factory
+  travel spans 129–930 counts; a fresh settings-only journal advances its
+  generation after a GUI threshold edit and restore, without claiming calibration.
+- Native M1 tests now cover the imported factory domain (including rejection of
+  unscaled records), the per-key depth requirement, and queue overflow as a loss;
+  the HAL audit overfills the queue and compares delivered sequence numbers with
+  the producer count.
+- Physical key presses were not possible while the user was away, so the fixes
+  above have **not** been re-verified on hardware. Nothing beyond `b9a6845` has
+  been flashed; an early startup fault still needs a debugger.
 
 ## Remaining work
 
-1. Validate the combined latest build on hardware: ordinary typing, MIDI chords,
+1. Reflash this checkpoint (the bootloader erases both custom profile slots) and
+   re-run the calibration row of `docs/M1_TEST_CHECKLIST.md`: the GUI must now
+   report saved calibration from the factory records; if a custom calibration is
+   run, press each key fully to its bottom stop and hold it until green.
+2. Validate the rest of the build on hardware: ordinary typing, MIDI chords,
    velocity, aftertouch, wheels, sustain, Fn menus and saved-state reboot, with
    and without a performance MIDI reader. Check advancing scan sequences and
-   fault counters, not merely USB enumeration. This needs someone at the
-   keyboard to press keys, and it needs the new image flashed first.
-2. Physically verify Fn+F1–F3 Bluetooth slots/pairing, Fn+F4 2.4 GHz, Fn+F5 USB,
-   host delivery, disconnect/reconnect and USB-only MIDI gating.
-3. Finish and physically qualify power management: charging-pin meaning,
-   battery indication, low/critical protection, idle sleep, wake and cable
-   transitions. PB10 remains labelled raw high/low, not charging/full.
-4. Cable edges after a transport hardware callback or during PHY transition
-   can still fail closed. Handle these ownership transitions without hiding
-   genuine peripheral faults, retrying ambiguous operations or losing RAM state.
-   This needs a physical cable session; there is no offline model of PHY timing.
-5. GUI knob remapping and transport-selection persistence are not implemented.
+   fault counters, and read `runtime stats` after any flash save.
+3. Confirm the queue-loss behaviour under a deliberate foreground stall and
+   confirm that a scan **loss** (not a fault) is what appears in telemetry.
+4. Physically verify Fn+F1–F3 Bluetooth slots/pairing, Fn+F4 2.4 GHz, Fn+F5 USB,
+   host delivery, disconnect/reconnect and USB-only MIDI gating (wireless build).
+5. Finish and physically qualify power management: charging-pin meaning, battery
+   indication, low/critical protection, idle sleep, wake and cable transitions.
+   PB10 remains labelled raw high/low, not charging/full.
+6. Cable edges after a transport hardware callback or during PHY transition can
+   still fail closed. This needs a physical cable session; there is no offline
+   model of PHY timing.
+7. GUI knob remapping and transport-selection persistence are not implemented.
    Both need a board-owned persisted field in the shared journal, so start them
    as their own checkpoints. Do not describe the port as feature-complete.
 
@@ -105,9 +99,10 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 - Normal boot leaves the IAP flag blank. Explicit update writes only verified
   magic at `0x08004800` after guarded shutdown. Early startup faults can require
   a debugger; power cycling is not guaranteed recovery.
-- Continue committing/pushing validated checkpoints on the feature branch.
-  Keep original firmware/disassembly read-only and out of Git. The GUI remains
-  the only supported PC application; configuration uses MIDI SysEx, not CDC.
+- Never probe the destructive boot-entry command and never treat a friendly MIDI
+  name as device identity. Continue committing/pushing validated checkpoints on
+  the feature branch; keep original firmware/disassembly read-only and out of Git.
+  The GUI remains the only supported PC application.
 
 See [building](docs/BUILDING.md), [M1 implementation](docs/MONSGEEK_M1.md),
 [flashing](docs/DEVICE_FLASHING.md) and [validation limits](docs/VALIDATION.md).

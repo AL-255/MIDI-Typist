@@ -86,9 +86,13 @@ message instead of retrying blindly.
 - [ ] Settings line reflects reality (`settings pending`/defaults right after an
       update that erased the profile; `settings saved` after the first
       confirmed save).
-- [ ] Calibration: run Fn+C and hold every blue key until green, or confirm the
-      GUI marks provisional bounds as **unsaved**. Do not accept unsaved bounds
-      as factory calibration.
+- [ ] Calibration: the factory records are imported on this build, so the GUI
+      reports saved calibration and no custom measurement is needed. If you do
+      run Fn+C, press each key **fully to its bottom stop and hold it there**
+      until it turns green (about a second), one key at a time; a light or
+      mid-travel hold is deliberately not accepted. Release a green key before
+      moving on. Unsaved bounds after that mean the custom measurement failed,
+      not that the keyboard is uncalibrated.
 
 ## 4. Functional checks (needs hands on the keyboard)
 
@@ -122,6 +126,11 @@ output.
 Stop and record the exact sequence if any of these appear:
 
 - scan or lighting error counters increase, or snapshots stop advancing;
+- keys stop registering while the GUI still shows the device: the application
+  has stopped itself, and the terminal fault text in
+  [telemetry](TELEMETRY.md#cold-start-failure-reporting) says why. Record that
+  text (and `runtime stats`) before unplugging; a scan **loss** that only makes
+  the loss counter advance is expected during flash writes and is not a fault;
 - a key or note sticks, or a mode switch leaves notes sounding;
 - a menu cannot be left, or Fn+R cannot be confirmed/cancelled;
 - the GUI reports a storage fault, `settings SAVE FAILED`, or an unspecified

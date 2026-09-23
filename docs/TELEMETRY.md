@@ -104,8 +104,10 @@ payload with magic `M1FC`, version byte 1, reserved byte 0 and a little-endian
 u16 cell count (126). Two records follow, upper then lower: 126 raw little-endian
 u16 values followed by their three stored trailer bytes (flag, `55`, `AA`).
 Total size is 518 bytes. Values retain the factory rank-major order, not compact
-key order. The command exposes only these fixed calibration fields, never an
-arbitrary address or a flash write. ACK means the response was queued; ERROR
+key order, and the raw stored counts: the importer shifts them down by three bits
+before range checks, so a diagnostic reader must divide by eight to compare them
+with scan samples. The command exposes only these fixed calibration fields,
+never an arbitrary address or a flash write. ACK means the response was queued; ERROR
 means it was not. Private readbacks must stay outside Git.
 
 `boot scan` returns the first complete cold-start acquisition, not a live stream:
@@ -164,7 +166,7 @@ not restart acquisition. Boot failure before live initialization has no snapshot
 | 6 | u16 LE | Total size, 120 bytes |
 | 8 | u32 LE | Current application milliseconds |
 | 12 | u32 LE | Last consumed acquisition sequence |
-| 16 | u32 LE | Loss/gap events, including intentional flash-save pauses |
+| 16 | u32 LE | Loss/gap events: skipped acquisition sequences, dropped frames after a queue overflow and intentional flash-save pauses |
 | 20 | u32 LE | Scanner HAL error count |
 | 24 | Eight 12-byte records | Calls, total microseconds, maximum microseconds; all u32 LE |
 
