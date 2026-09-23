@@ -15,7 +15,17 @@ void m1_transport_service(uint32_t now_us)
     if(starting)m1_radio_service(now);
 }
 static bool available(void *context,m1_transport_t target)
-{ (void)context;return target!=M1_TRANSPORT_USB || m1_usb_ready(); }
+{
+    (void)context;
+    if(target==M1_TRANSPORT_USB)return m1_usb_ready();
+#if MT_M1_WIRELESS
+    return true;
+#else
+    /* USB-only artifact: Fn+F1-F5 and any host request must never select a
+     * wireless transport that this image cannot service. */
+    return false;
+#endif
+}
 static bool drained(void *context)
 {
     (void)context;

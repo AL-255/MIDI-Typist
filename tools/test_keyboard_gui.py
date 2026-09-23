@@ -275,12 +275,16 @@ class Tests(unittest.TestCase):
             for flags in range(16):
                 data=bytearray(packet());data[78:80]=bytes((transport,flags))
                 struct.pack_into('<I',data,len(data)-4,sum(struct.unpack_from(f'<{(len(data)-4)//2}H',data)))
-                if flags & ~7 or (not transport and flags) or (flags & 4 and (transport<2 or flags & 1)):
+                # Bit 3 is the USB-only build capability: valid only with USB.
+                if (flags & ~15 or (not transport and flags) or
+                        (flags & 4 and (transport<2 or flags & 1)) or
+                        (flags & 8 and transport != 1)):
                     with self.assertRaisesRegex(ValueError,'transport'):decode(data)
                 else:
                     s=decode(data);self.assertEqual((s.transport,s.transport_flags),(transport,flags))
                     self.assertEqual(bool(transport_text(s)),bool(transport))
                     if flags & 4:self.assertIn('pairing requested / searching',transport_text(s))
+                    if flags & 8:self.assertIn('USB-only',transport_text(s))
 
     def test_capture_buffer_integrity(self):
         connection = Connection('/unused')

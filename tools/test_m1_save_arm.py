@@ -8,7 +8,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
     UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
-from test_m1_hal_arm import M1Arm, RGB, GPIO, DMA, ADC, TMR2, TMR3, TMR6, CRM, SPI
+from test_m1_hal_arm import wireless_supported, M1Arm, RGB, GPIO, DMA, ADC, TMR2, TMR3, TMR6, CRM, SPI
 from firmware_defaults import DEFAULTS as D
 
 
@@ -99,10 +99,14 @@ def run(elf):
     assert struct.unpack('<II',d.cpu.mem_read(RGB,8))==(d.now&0xffffffff,d.now//1000)
     d=Save(elf,False);d.raw=1145;d.frame(d.now+125);d.writes.clear()
     assert d.call('m1_test_save_begin')==0 and not d.writes  # fresh raw drop beats slow display
-    for address,value in ((GPIO+0x810,1<<13),(GPIO+0x814,0),(GPIO+0x414,0),
-            (GPIO+0x800,0),(DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),
-            (0x40026408,1),(SPI+8,128),(0x40003c08,128),(0x40040008,32),
-            (0xe000e010,1)):
+    blocked=[(GPIO+0x810,1<<13),(GPIO+0x814,0),(GPIO+0x414,0),
+             (GPIO+0x800,0),(DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),
+             (0x40026408,1),(SPI+8,128),(0x40040008,32),
+             (0xe000e010,1)]
+    if wireless_supported(Save(elf)):
+        # Only a build that owns the radio bus defers on its shifter.
+        blocked.insert(9,(0x40003c08,128))
+    for address,value in blocked:
         d=Save(elf);d.put(address,value)
         assert d.call('m1_test_save_begin')==0 and not d.writes,(hex(address),value)
         assert d.call('m1_hal_periodic_active') and not d.call('m1_save_fault')

@@ -1,6 +1,16 @@
 # M1 libraries and an experimental application with explicit guarded IAP entry.
 # Runtime transport/power recovery remains incomplete. Native build runs this board
 # against the real shared application; ARM build uses the pinned official SDK.
+# Bluetooth/2.4 GHz are unverified, so the radio HAL and peer scheduler are only
+# built when this option is enabled. The default artifact is a USB-only keyboard
+# that can be redistributed without the unverified feature; development and audit
+# builds pass -DMT_M1_WIRELESS=ON.
+option(MT_M1_WIRELESS "Build the unverified M1 Bluetooth/2.4 GHz stack" OFF)
+if(MT_M1_WIRELESS)
+    set(MT_M1_WIRELESS_SOURCES ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c)
+else()
+    set(MT_M1_WIRELESS_SOURCES ${MT_BOARD_DIR}/src/m1_wireless_off.c)
+endif()
 add_library(midi_typist_app STATIC ${MT_APP_SOURCES})
 target_include_directories(midi_typist_app PUBLIC firmware/app/include)
 target_compile_definitions(midi_typist_app PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
@@ -11,7 +21,8 @@ add_library(m1_board STATIC ${MT_BOARD_DIR}/src/m1_board.c ${MT_BOARD_DIR}/src/m
     ${MT_BOARD_DIR}/src/m1_radio_packet.c ${MT_BOARD_DIR}/src/m1_radio_keyboard.c
     ${MT_BOARD_DIR}/src/m1_wake.c ${MT_BOARD_DIR}/src/m1_factory.c)
 target_include_directories(m1_board PUBLIC ${MT_BOARD_DIR}/include firmware/app/include)
-target_compile_definitions(m1_board PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246)
+target_compile_definitions(m1_board PUBLIC MT_KEY_CAPACITY=82 MT_LIGHT_FRAME_BYTES=246
+    MT_M1_WIRELESS=$<BOOL:${MT_M1_WIRELESS}>)
 target_compile_options(m1_board PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(m1_board PUBLIC midi_typist_app)
 # Archive-level cycle: board calibration uses shared normalization; application
@@ -59,10 +70,15 @@ if(CMAKE_CROSSCOMPILING)
     target_include_directories(m1_storage PUBLIC ${MT_BOARD_DIR}/include)
     target_link_libraries(m1_storage PUBLIC midi_typist_services m1_board at32_sdk)
     target_compile_options(m1_storage PRIVATE -Wall -Wextra -Werror)
-    add_executable(m1_storage_audit tests/m1_storage_audit.c)
+    # The storage writer's quiescence gate asks the radio module whether its bus
+    # is idle, so this standalone audit needs the same radio source as the
+    # firmware configuration it runs against.
+    add_executable(m1_storage_audit tests/m1_storage_audit.c ${MT_M1_WIRELESS_SOURCES})
     set_target_properties(m1_storage_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_storage_audit PRIVATE m1_storage)
     target_link_options(m1_storage_audit PRIVATE -nostartfiles --specs=nosys.specs
+        # The audit asks the artifact which feature set it was built with.
+        -Wl,--undefined=m1_wireless_supported
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -Wl,-L,${CMAKE_SOURCE_DIR} -T${CMAKE_SOURCE_DIR}/tests/m1_storage_audit.ld)
     set_property(TARGET m1_storage_audit APPEND PROPERTY LINK_DEPENDS
@@ -71,7 +87,7 @@ if(CMAKE_CROSSCOMPILING)
         ${MT_BOARD_DIR}/src/m1_encoder_hal.c
         ${MT_BOARD_DIR}/src/m1_clock.c ${MT_BOARD_DIR}/src/m1_time.c ${MT_BOARD_DIR}/src/m1_startup.c ${MT_BOARD_DIR}/src/m1_factory_hal.c
         ${MT_BOARD_DIR}/src/m1_battery_hal.c ${MT_BOARD_DIR}/src/m1_sleep.c ${MT_BOARD_DIR}/src/m1_sleep_time.c ${MT_BOARD_DIR}/src/m1_power_gpio.c
-        ${MT_BOARD_DIR}/src/m1_radio_hal.c ${MT_BOARD_DIR}/src/m1_wireless.c ${MT_BOARD_DIR}/src/m1_usb_power.c
+        ${MT_M1_WIRELESS_SOURCES} ${MT_BOARD_DIR}/src/m1_usb_power.c
         ${MT_BOARD_DIR}/src/m1_usb_class.c ${MT_BOARD_DIR}/src/m1_usb_descriptors.c
         ${MT_BOARD_DIR}/src/m1_usb_hal.c)
     target_link_libraries(m1_hal PUBLIC m1_board at32_sdk)
@@ -109,6 +125,8 @@ if(CMAKE_CROSSCOMPILING)
     target_link_options(m1_boot_audit PRIVATE -nostartfiles --specs=nosys.specs
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -Wl,--wrap=m1_storage_read -Wl,--wrap=m1_storage_write
+        # The audit asks the artifact which feature set it was built with.
+        -Wl,--undefined=m1_wireless_supported
         -Wl,--wrap=m1_storage_erase -Wl,--wrap=m1_storage_check_recovery
         -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_boot_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
@@ -117,13 +135,21 @@ if(CMAKE_CROSSCOMPILING)
     target_link_libraries(m1_hal_audit PRIVATE m1_hal midi_typist_app)
     target_link_options(m1_hal_audit PRIVATE -nostartfiles --specs=nosys.specs
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
+        # The audit asks the artifact whether the wireless feature was built in;
+        # keep the capability answer reachable for a build that links no
+        # wireless consumer of it.
+        -Wl,--undefined=m1_wireless_supported
         -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_hal_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     add_executable(m1_usb_audit tests/m1_usb_audit.c)
     set_target_properties(m1_usb_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_usb_audit PRIVATE m1_hal midi_typist_services)
     target_link_options(m1_usb_audit PRIVATE -nostartfiles --specs=nosys.specs
+        # The audit asks the artifact which feature set it was built with.
+        -Wl,--undefined=m1_wireless_supported
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
+        # The audit asks the artifact which feature set it was built with.
+        -Wl,--undefined=m1_wireless_supported
         -Wl,-e,m1_test_usb_init -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_usb_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     add_executable(m1_live_audit tests/m1_usb_audit.c tests/m1_live_audit.c)
@@ -143,6 +169,8 @@ if(CMAKE_CROSSCOMPILING)
     set_target_properties(m1_save_audit PROPERTIES SUFFIX ".elf")
     target_link_libraries(m1_save_audit PRIVATE m1_save)
     target_link_options(m1_save_audit PRIVATE -nostartfiles --specs=nosys.specs
+        # The audit asks the artifact which feature set it was built with.
+        -Wl,--undefined=m1_wireless_supported
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_save_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)

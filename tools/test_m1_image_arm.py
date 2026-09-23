@@ -13,7 +13,7 @@ from elftools.elf.elffile import ELFFile
 from unicorn import (Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_CODE,
                      UC_HOOK_MEM_WRITE, UC_PROT_READ, UC_PROT_EXEC)
 from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M4, UC_ARM_REG_R0, UC_ARM_REG_R1,
-    UC_ARM_REG_R2, UC_ARM_REG_SP, UC_ARM_REG_MSP, UC_ARM_REG_PSP, UC_ARM_REG_PC,
+    UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_MSP, UC_ARM_REG_PSP, UC_ARM_REG_PC,
     UC_ARM_REG_LR, UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI, UC_ARM_REG_FAULTMASK,
     UC_ARM_REG_CONTROL)
 from firmware_defaults import DEFAULTS as D
@@ -180,14 +180,57 @@ def malformed(data):
     print('PASS M1 ELF: exact identity/vectors, all load ranges, RAM SDK writer, stack and malformed-image rejection')
 
 
+def wireless_supported(image):
+    """Execute the artifact's own capability answer; never infer it from a name."""
+    d=Reset(image);d.reset()
+    name='m1_wireless_supported'
+    return_address=FLASH+0x3fff0
+    d.cpu.reg_write(UC_ARM_REG_SP,d.s['__m1_stack_top__'])
+    d.cpu.reg_write(UC_ARM_REG_LR,return_address|1)
+    d.cpu.emu_start(d.s[name]|1,return_address,count=10000)
+    return bool(d.cpu.reg_read(UC_ARM_REG_R0))
+
+
+def wireless_absent(image):
+    """The shipped USB-only artifact: no radio transport can be selected, and
+    the host is told the build has no wireless feature."""
+    d=Reset(image);d.reset();s=d.s
+    return_address=FLASH+0x3fff0
+    def call(name,*args):
+        for register,value in zip((UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_R2,UC_ARM_REG_R3),args):
+            d.cpu.reg_write(register,value)
+        d.cpu.reg_write(UC_ARM_REG_SP,s['__m1_stack_top__'])
+        d.cpu.reg_write(UC_ARM_REG_LR,return_address|1)
+        d.cpu.emu_start(s[name]|1,return_address,count=100000)
+        return d.cpu.reg_read(UC_ARM_REG_R0)
+    assert not call('m1_wireless_supported')
+    assert call('m1_radio_bus_idle') and call('m1_radio_healthy') and call('m1_radio_ready')
+    assert not call('m1_wireless_init',0,1,0)      # Bluetooth slot 1 refused
+    assert not call('m1_wireless_init',5,1,0)      # 2.4 GHz refused
+    assert call('m1_wireless_init',6,1,0)          # USB needs no peer
+    assert call('m1_wireless_healthy') and call('m1_wireless_local_idle')
+    assert not call('m1_wireless_ready') and not call('m1_wireless_selected',0)
+    assert not call('m1_wireless_select',0,0) and call('m1_wireless_select',6,0)
+    assert call('m1_wireless_selected',6) and not call('m1_wireless_pairing')
+    assert call('m1_wireless_request_sleep',5,1) and call('m1_wireless_sleep_sent')==5
+    assert call('m1_wireless_cancel_sleep') and call('m1_wireless_resume_retained',1,0)
+    print('PASS M1 USB-only artifact: radio HAL and scheduler absent, wireless transports and '
+          'pairing refused, sleep handoff completes locally and the host is told it is USB-only')
+
+
 def main_loop(image):
     # Test actual foreground control flow, not its already-audited callees.
-    for external,failure,expected in ((True,None,3),(False,None,3),(True,'geometry',4),
+    wireless=wireless_supported(image)
+    cases=[(True,None,3),(False,None,3),(True,'geometry',4),
         (True,'clock',5),(True,'time_start',6),(True,'boot_begin',7),(True,'boot_service',7),
         (True,'time_now',6),(True,'source',3),(False,'source',3),(True,'device',9),
-        (True,'lighting',9),(True,'transport',9),(True,'storage',9),(False,'radio',9),
+        (True,'lighting',9),(True,'transport',9),(True,'storage',9),
         (True,'recovery',11),(True,'boot_diagnostics',7),(True,'power',9),
-        (False,'power_clock',5),(False,'power_time',6),(False,'sleeping',3)):
+        (False,'power_clock',5),(False,'power_time',6),(False,'sleeping',3)]
+    if wireless:
+        # A battery radio fault needs a build that owns a radio transport.
+        cases.insert(14,(False,'radio',9))
+    for external,failure,expected in cases:
         d=Reset(image);d.reset();s=d.s;trace=[];live=0;times=[];diagnostic_calls=0
         d.cpu.mem_write(SIZE,struct.pack('<H',128 if failure=='geometry' else 256))
         d.put(GPIOC+0x10,0 if external else 1<<13)
@@ -203,7 +246,7 @@ def main_loop(image):
             'm1_boot_state':6 if failure in ('boot_service','boot_diagnostics') else 5,'m1_boot_error':5,
             'm1_hal_healthy':failure!='device','m1_lighting_healthy':failure!='lighting',
             'm1_live_transport_fault':failure=='transport','m1_live_storage_fault':failure=='storage',
-            'm1_live_transport':6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'],
+            'm1_live_transport':6 if external or not wireless else D['M1_DEFAULT_WIRELESS_TRANSPORT'],
             'm1_wireless_healthy':failure!='radio'}
         voids=('m1_boot_service','m1_live_stop','m1_usb_hw_stop','m1_hal_stop',
                'm1_lighting_stop','m1_wireless_stop','m1_radio_stop','m1_diagnostics_runtime_fault')
@@ -248,7 +291,9 @@ def main_loop(image):
             assert labels.index('m1_boot_service')<labels.index('m1_runtime_power_service')
             if failure=='sleeping':assert 'm1_hal_healthy' not in labels
             begin=next(x for x in trace if x[0]=='m1_boot_begin')
-            assert begin[1][0]==(6 if external else D['M1_DEFAULT_WIRELESS_TRANSPORT'])
+            # A build without the wireless stack always starts on USB.
+            assert begin[1][0]==(6 if external or not wireless
+                                 else D['M1_DEFAULT_WIRELESS_TRANSPORT'])
             assert begin[1][1] and begin[1][2]==1 # runtime Fn transport callbacks bound
             assert begin[2]==1
             assert next(x for x in trace if x[0]=='m1_boot_service')[2]==0
@@ -319,6 +364,10 @@ def main():
     for psp in (False,True):Reset(image).reset(psp)
     print('PASS M1 reset: real entry, MSP/PSP normalization, masked vectors, data/RAM-code copy, BSS and memory guards')
     main_loop(image)
+    if wireless_supported(image):
+        print('SKIP USB-only artifact check: this build has the wireless stack')
+    else:
+        wireless_absent(image)
     update_entry(image)
 
 

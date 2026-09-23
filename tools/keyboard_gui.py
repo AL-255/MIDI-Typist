@@ -36,6 +36,7 @@ class App:
         self.root,self.demo = root,demo
         self.connection = None
         self.snapshot = None
+        self.help_wireless = None
         self.device_build = None  # build identity reported by the connected device
         self.board = get_board(board_target)
         self.keys = self.board.keys
@@ -247,6 +248,12 @@ class App:
             self.canvas.tag_bind(tag,'<Button-1>',lambda _,i=key.sensor:self.select(i))
         self.paint()
 
+    def device_wireless(self):
+        """Connected build capability, None before the device reports it."""
+        s=self.snapshot
+        if self.demo or not s or not s.transport:return None
+        return not bool(s.transport_flags & 8)
+
     def set_board(self,target):
         """Select geometry from verified build identity, never from key count."""
         board=get_board(target)
@@ -263,7 +270,7 @@ class App:
         self.recovery_label.configure(text=board.recovery_notice)
         if board.recovery_notice:self.recovery_label.pack(after=self.coordinate_label,anchor='w',pady=(0,8))
         else:self.recovery_label.pack_forget()
-        self.help_label.configure(text=board_help(board))
+        self.help_label.configure(text=board_help(board,self.device_wireless()))
         self.message.set(storage_notice(board))
         self.draw()
 
@@ -643,6 +650,10 @@ class App:
             while True:
                 try: self.message.set(self.connection.events.get_nowait())
                 except queue.Empty: break
+            capability=self.device_wireless()
+            if capability!=self.help_wireless:
+                self.help_wireless=capability
+                self.help_label.configure(text=board_help(self.board,capability))
             if self.connection.build != self.device_build:
                 self.device_build = self.connection.build
                 if self.device_build:

@@ -97,6 +97,24 @@ Cortex-M4. They never access a keyboard. The application `.bin` is an
 [experimental M1 recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion),
 not a working plug-and-play release.
 
+`MT_M1_WIRELESS` (default `OFF`) selects whether the unverified Bluetooth/2.4 GHz
+stack is built at all. With the default, no radio HAL, peer scheduler, pairing
+request or peer sleep transaction is linked: the artifact is a USB-only keyboard
+that refuses every wireless transport, reports that capability in telemetry and
+can be redistributed without the unverified feature. Development and audit builds
+that need wireless behaviour pass the option explicitly:
+
+```sh
+cmake -S . -B build-m1-hal -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Release \
+      -DMT_M1_WIRELESS=ON
+```
+
+`tools/run_tests.py --m1-dir DIR` runs the M1 audit groups against whichever
+configuration `DIR` was built with, and each audit prints `SKIP` lines for the
+sections that only exist in a wireless build (`--group m1` runs just those
+groups).
+
 ```sh
 git submodule update --init third_party/artery
 cmake -S . -B build-m1-host -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr -DCMAKE_BUILD_TYPE=Debug

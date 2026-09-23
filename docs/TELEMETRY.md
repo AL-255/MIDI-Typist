@@ -330,13 +330,17 @@ received and decoded on the connected high-speed USB device.
 | 64, 68, 72 | u32 each | calibration generation, storage error, full profile generation |
 | 76 | u16 | header size, 80 |
 | 78 | u8 | selected keyboard transport: unreported=0, USB=1, Bluetooth slots 1/2/3=2/3/4, 2.4 GHz=5 |
-| 79 | u8 flags | transport report-eligible=1, switching=2, pairing requested/searching=4; zero when transport is unreported |
+| 79 | u8 flags | transport report-eligible=1, switching=2, pairing requested/searching=4, USB-only build=8; zero when transport is unreported |
 
 Transport selection is distinct from report eligibility. A selected but unpaired
 Bluetooth slot reports waiting, not ready; neither flag proves reception by a
 remote host. The wired SysEx connection may coexist with wireless keyboard output.
 Unknown transport values/bits and unsupported snapshot magics are rejected.
 Pairing is valid only for wireless transports and cannot accompany report-eligible.
+Bit 8 is a property of the firmware image, not of the current link: it marks a
+build compiled without Bluetooth/2.4 GHz (see [M1 build switch](MONSGEEK_M1.md)),
+so it is valid only while the reported transport is USB, and a host must not
+offer wireless selection or pairing for it.
 It covers a pending explicit pairing request or peer searching state; it does not
 prove advertising, a bond or host delivery. During a switch the transport field
 continues to identify the old selection until handoff completes.

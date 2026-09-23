@@ -24,7 +24,15 @@ static bool detach(uint32_t ms)
 }
 bool m1_source_begin(uint32_t ms,bool external,m1_transport_t fallback)
 {
-    if((state!=OFF && state!=READY) || !m1_transport_valid(fallback) || fallback==M1_TRANSPORT_USB)return false;
+    /* The fallback must be a transport this artifact can actually select: a
+     * wireless mode with the stack built in, USB alone without it. */
+    if((state!=OFF && state!=READY) || !m1_transport_valid(fallback) ||
+#if MT_M1_WIRELESS
+       fallback==M1_TRANSPORT_USB
+#else
+       fallback!=M1_TRANSPORT_USB
+#endif
+      )return false;
     original=m1_live_transport();wireless=fallback;candidate=external;
     started=stable_at=ms;radio_starting=false;error=0;state=DRAIN;
     if(!(external?m1_live_source_suspend(ms,false):detach(ms))) { fail();return false; }

@@ -536,6 +536,7 @@ static void snapshot(void)
     status.transport=controls.current==M1_TRANSPORT_USB?MT_TRANSPORT_USB:
         controls.current==M1_TRANSPORT_RADIO?MT_TRANSPORT_RADIO:MT_TRANSPORT_BT1+controls.current;
     status.transport_flags=(output_ready()?MT_TRANSPORT_READY:0u) |
+        (!m1_wireless_supported()?MT_TRANSPORT_USB_ONLY:0u) |
         (controls.switching?MT_TRANSPORT_SWITCHING:0u) |
         (controls.current!=M1_TRANSPORT_USB && m1_wireless_pairing()?MT_TRANSPORT_PAIRING:0u);
     uint8_t out[SCAN_STREAM_GUI_SIZE];

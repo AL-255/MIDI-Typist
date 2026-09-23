@@ -350,6 +350,27 @@ Huntsman flash tests restrict writes to the two custom tail pages, but modeled
 flash behavior does not establish electrical power-loss recovery. No reset of
 a user's calibration is part of validation.
 
+## M1 wireless build switch
+
+The M1 audits run against whichever `-DMT_M1_WIRELESS` configuration their build
+directory has, and each prints `SKIP` lines for sections that need the wireless
+stack; `tools/run_tests.py --m1-dir DIR --group m1` runs them against `DIR`.
+Both configurations are checked offline:
+
+- USB-only (default): the image audit executes the shipped artifact's own
+  capability answer, then asserts that `m1_wireless_init`, `m1_wireless_select`
+  and pairing refuse Bluetooth/2.4 GHz while USB works, that the radio bus check
+  reports idle, and that the sleep handoff completes locally; the runtime-power
+  audit adds a USB-only scenario that reaches deep sleep and restores on a key
+  through the real no-radio stub, and the GUI decoder tests require the USB-only
+  telemetry bit to appear only with a USB transport.
+- Wireless: the radio HAL, scheduler, pairing, reconnect, wireless power and
+  retention scenarios run unchanged, which is the evidence that the switch and
+  the radio-bus indirection did not alter that configuration.
+
+Neither configuration has been exercised on a physical keyboard with this build
+switch; the linked-hardware checks below are from the previously installed image.
+
 ## Not established
 
 - Electrical power-cut recovery, flash endurance and physical unplug/replug

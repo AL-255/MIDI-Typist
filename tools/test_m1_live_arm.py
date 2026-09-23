@@ -121,8 +121,15 @@ class Live(Device,RadioArm):
         for _ in range(180):self.tick()
 
 
+def wireless_supported(path):
+    """Ask the artifact whether the Bluetooth/2.4 GHz feature is built in."""
+    return bool(Live(path,True).call('m1_wireless_supported'))
+
+
 def knob_integration(path):
-    for high,mode in ((False,6),(True,6),(False,0),(True,5)):
+    wireless=wireless_supported(path)
+    modes=((False,6),(True,6),(False,0),(True,5)) if wireless else ((False,6),(True,6))
+    for high,mode in modes:
         d=Live(path,high,mode=mode,transports='runtime');d.run(400)
         def samples(phase,pressed=False,count=None):
             d.put(GPIO+0x810,((phase&1)<<10)|((phase>>1)<<12)|(0 if pressed else 0x800))
@@ -149,10 +156,16 @@ def knob_integration(path):
         output.clear();d.run(800);assert all(v==0 for v in output)
         output.clear();turn();d.run(8)
         next_output=d.radio_consumer if mode==6 else d.consumer;next_output.clear()
-        d.chord(1 if mode==6 else 5);d.run(1200)
-        assert d.call('m1_live_transport')==(0 if mode==6 else 6)
+        if wireless or mode!=6:
+            d.chord(1 if mode==6 else 5);d.run(1200)
+            assert d.call('m1_live_transport')==(0 if mode==6 else 6)
+        else:
+            # USB-only artifact: Fn+F1 must not select a transport it lacks.
+            d.chord(1);d.run(1200)
+            assert d.call('m1_live_transport')==6
         assert output[-1]==0 and all(v==0 for v in next_output),(output,next_output)
-    print('PASS knob-to-host integration: real GPIO decoder, USB/radio volume/mute pulses, Fn/loss cleanup and neutral transport handoff')
+    print('PASS knob-to-host integration: real GPIO decoder, volume/mute pulses, Fn/loss cleanup and neutral transport handoff'+
+          ('' if wireless else ' (USB-only build: wireless selection refused)'))
 
 
 def recovery_preflight(path):
@@ -176,6 +189,8 @@ def integration(path):
         d.send(sx.HELLO);assert b'MG-M1V5TMR' in d.wait(sx.READY)[3]
         d.command('stream gui');s=d.snapshot()
         assert s.count==82 and s.sample_hz==8000 and s.raw==(3959,)*82
+        # The GUI-visible capability must match the artifact that answers it.
+        assert bool(s.transport_flags & 8)==(not d.call('m1_wireless_supported')),s.transport_flags
         b=decode_bounds(d.command('calibration read')[3])
         assert b.flags==3 and b.samples==(3900,)*82 and b.control==(3959,)*82
         assert b.lower==(1000,)*82 and b.upper==(4000,)*82
@@ -472,7 +487,8 @@ def power_handoff(path):
         assert not d.call('m1_live_power_resume',d.time//1000,1)
         assert not d.call('m1_live_init',6,d.ops,d.storage_ops)
         print(f'PASS M1 {"HS MIDI" if high else "FS HID"} power handoff: drain/backpressure, parked ownership, unsaved settings preserved, stale-frame discard, fresh lease and neutral rearm')
-    for mode in (0,1,2,5):
+    wireless=wireless_supported(path)
+    for mode in ((0,1,2,5) if wireless else ()):
         d=Live(path,True,mode=mode,storage=True);d.run()
         d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
         d.command('cfg key 1 81 135');d.snapshot(1)
@@ -494,8 +510,9 @@ def power_handoff(path):
         s=reconnect(d);assert s.keyboard_mapping[81]==135 and s.performance_mode==0
         assert not s.flags&2 and not d.call('m1_test_live_storage_count',2)
         d.samples[81]=3900;d.run();d.samples[81]=3000;d.run();assert d.radio_held(135)
-    print('PASS M1 radio power handoff: all four modes release locally, parked scheduler ownership, explicit restoration, retained keymaps and no MIDI')
-    for mode in (0,1,2,5):
+    print('PASS M1 radio power handoff: all four modes release locally, parked scheduler ownership, explicit restoration, retained keymaps and no MIDI'
+          if wireless else 'SKIP radio power handoff: this build has no Bluetooth/2.4 GHz')
+    for mode in ((0,1,2,5) if wireless else ()):
         d=Live(path,True,mode=mode,storage=True);d.peer_state=1;d.run(400)
         assert d.call('m1_wireless_selected',mode) and not d.call('m1_wireless_ready')
         assert not d.call('m1_wireless_reports_sent')
@@ -524,8 +541,9 @@ def power_handoff(path):
         assert not d.radio_held(0x4f)
         d.samples[81]=3900;d.run(100);d.samples[81]=3000;d.run(200)
         assert d.radio_held(0x4f)
-    print('PASS M1 unlinked power handoff: neutral cancellation, critical sleep packet, fresh searching-mode restore and no held-key replay on connect')
-    for mode in (0,1,2):
+    print('PASS M1 unlinked power handoff: neutral cancellation, critical sleep packet, fresh searching-mode restore and no held-key replay on connect'
+          if wireless else 'SKIP unlinked power handoff: this build has no Bluetooth/2.4 GHz')
+    for mode in ((0,1,2) if wireless else ()):
         d=Live(path,True,mode=mode);d.run(400)
         assert not d.call('m1_wireless_resume_retained',1,d.time)
         assert d.call('m1_live_power_suspend',d.time//1000);park(d)
@@ -548,7 +566,8 @@ def power_handoff(path):
             if d.call('m1_wireless_selected',mode):break
         assert d.call('m1_wireless_selected',mode)
         assert d.call('m1_live_power_resume',d.time//1000,1)
-    print('PASS retained BT resume: no GPIO reset pulse, explicit restoration, fresh mode handshake and neutral rearm')
+    print('PASS retained BT resume: no GPIO reset pulse, explicit restoration, fresh mode handshake and neutral rearm'
+          if wireless else 'SKIP retained BT resume: this build has no Bluetooth/2.4 GHz')
 
 
 def source_handoff(path):
@@ -563,7 +582,8 @@ def source_handoff(path):
             d.tick()
             if d.call('m1_live_power_park'):return
         raise AssertionError('Source handoff failed to park')
-    for high,target in ((False,0),(True,6),(True,5)):
+    targets=((False,0),(True,6),(True,5)) if wireless_supported(path) else ((True,6),(False,6))
+    for high,target in targets:
         d=Live(path,high,storage=True);d.run(10)
         d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
         d.command('cfg key 1 81 135');d.command('cfg set 2 81 2700 3100');d.snapshot(2)
@@ -599,7 +619,7 @@ def source_handoff(path):
         d.samples=[3900]*82;d.run(200);d.samples[81]=2500;d.run(200)
         assert (d.held(135) if target==6 else d.radio_held(135))
         assert not d.call('m1_live_transport_fault') and d.call('m1_live_scan_losses')==1
-    for mode in (0,1,2,5):
+    for mode in ((0,1,2,5) if wireless_supported(path) else ()):
         d=Live(path,True,mode=mode);d.run(400)
         d.samples[81]=3000;d.run(200);assert d.radio_held(0x4f)
         detach(d);assert d.call('m1_live_source_suspend',d.time//1000,1)
@@ -607,14 +627,17 @@ def source_handoff(path):
         park(d);assert not any(d.radio_slots) and not any(d.radio_bitmap)
         assert d.call('m1_live_source_resume',d.time//1000,mode,1)
         d.run(200);assert not d.radio_held(0x4f)
-    print('PASS source handoff: explicit USB abandonment, radio drain, offline USB restore, unsaved settings, fresh control lease and no held-key replay')
+    print('PASS source handoff: explicit USB abandonment, radio drain, offline USB restore, unsaved settings, fresh control lease and no held-key replay'+
+          ('' if wireless_supported(path) else ' (USB-only build: no radio drain case)'))
 
 
 def source_switch_handoff(path):
     # A physical cable edge may cancel an Fn selection only BEFORE the first
     # platform select/pair call. Sleep must not steal that user transaction.
     for high in (False,True):
-        for original,selector in ((6,1),(0,5)):
+        wireless=wireless_supported(path)
+        cases=((6,1),(0,5)) if wireless else ((6,1),)
+        for original,selector in cases:
             d=Live(path,high,mode=original,transports=True,storage=True);d.run(400)
             d.call('m1_test_live_transport_gate',0,0)
             d.chord(selector)
@@ -734,7 +757,8 @@ def calibration_persistence(path):
         assert bounds(d,'lower')==tuple(range(1000,1082)) and bounds(d,'upper')==(3900,)*82
         assert d.call('m1_live_factory_result')==4
         print(f'PASS M1 {"HS Fn+C" if high else "FS GUI"} parallel calibration: 82 endpoints, deferred LED/power gate, held-key save, atomic settings/bounds, scan gap and restart')
-    for mode in (0,5):
+    wireless=wireless_supported(path)
+    for mode in ((0,5) if wireless else ()):
         d=start(mode=mode,fn=mode==0)
         d.call('m1_test_live_storage_gate',1,1,0)
         s=state(d,lambda s:s.calibration_state==6)
@@ -961,6 +985,9 @@ def reset_profile(path):
 
 
 def wireless_integration(path):
+    if not wireless_supported(path):
+        print('SKIP wireless integration: this build has no Bluetooth/2.4 GHz')
+        return
     for mode in (0,1,2,5):
         d=Live(path,True,mode=mode)
         assert not d.call('m1_wireless_ready')  # status is not manufactured by live init
@@ -1056,6 +1083,9 @@ def wireless_integration(path):
     d.samples[45]=3000;d.run();assert not d.held(4)
     print('PASS M1 Fn transport integration: explicit neutral-handoff gate, actual mode confirmation, neutral routing and terminal ambiguous selection')
 def runtime_transports(path):
+    if not wireless_supported(path):
+        print('SKIP runtime transport selection: this build has no Bluetooth/2.4 GHz')
+        return
     # Real runtime callbacks and SPI/SDK, not the permissive scripted adapter.
     for high in (False,True):
         d=Live(path,high,transports='runtime');d.run(160)
@@ -1090,6 +1120,9 @@ def runtime_transports(path):
 
 
 def runtime_pairing(path):
+    if not wireless_supported(path):
+        print('SKIP runtime pairing: this build has no Bluetooth/2.4 GHz')
+        return
     for start,key,target,wire in ((6,1,0,2),(0,1,0,2),(1,3,2,4),(5,4,5,5)):
         d=Live(path,True,mode=start,transports='runtime');d.run(200)
         d.samples[77]=d.samples[key]=3000;d.tick()
@@ -1114,6 +1147,9 @@ def runtime_pairing(path):
 
 
 def runtime_reconnect(path):
+    if not wireless_supported(path):
+        print('SKIP runtime reconnect: this build has no Bluetooth/2.4 GHz')
+        return
     for mode,state,wire in ((0,0,2),(1,1,3),(2,2,4),(5,4,5)):
         d=Live(path,True,mode=mode,transports='runtime');d.run(300)
         d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')

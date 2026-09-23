@@ -175,6 +175,9 @@ def transport_text(snapshot):
     state=('pairing requested / searching' if snapshot.transport_flags & 4 else
            'switching' if snapshot.transport_flags & 2 else
            'ready' if snapshot.transport_flags & 1 else 'waiting for host')
+    # Bit 3 reports a build without Bluetooth/2.4 GHz at all: say so instead of
+    # letting the operator expect pairing or a wireless transport.
+    if snapshot.transport_flags & 8:return f'{names[snapshot.transport]} (USB-only build): {state}'
     return f'{names[snapshot.transport]}: {state}'
 
 
@@ -195,7 +198,12 @@ def settings_text(snapshot,board):
     return 'settings not confirmed saved'
 
 
-def board_help(board):
+def board_help(board,wireless=None):
+    """Board guidance; wireless=False marks a connected USB-only firmware build.
+
+    None means the device has not reported its capability yet, so the catalog
+    text stands.
+    """
     common=(f'Fn+Tab (MIDI): trigger point, 1 = bottom-out … 0 = release − 1\n'
         'Fn+V: transmitted-velocity start, 1 = 0% … 0 = 100%\n'
         'Fn+Enter: keyboard ↔ MIDI; RAlt/RCtrl: octave −/+\n'
@@ -205,7 +213,10 @@ def board_help(board):
         'MIDI channel 1; C4=60. Notes/Off configurable.')
     reset=('Fn+R or cfg clean clears custom state.' if board.profile_reset else
            'Custom-profile RESET (Fn+R / cfg clean) is unavailable on this build.')
-    return '\n\n'.join(text for text in (board.transport_notice,common,storage_notice(board),reset,
+    transport=(board.transport_notice if wireless is not False else
+        'This firmware build has no Bluetooth/2.4 GHz: Fn+F1–F5 and pairing are '
+        'unavailable and the keyboard types over USB only.')
+    return '\n\n'.join(text for text in (transport,common,storage_notice(board),reset,
         'Host JSON exports per-key thresholds and keyboard/MIDI mappings, not calibration or the complete device state. '
         'Config edits release keys/notes and wait for neutral.') if text)
 
@@ -249,8 +260,11 @@ def decode(data):
         raise ValueError('GUI checksum mismatch')
     end = HEADER_SIZE+count*RECORD_SIZE
     transport,transport_flags=data[78:80]
-    if (transport>5 or transport_flags & ~7 or (not transport and transport_flags) or
-        (transport_flags & 4 and (transport<2 or transport_flags & 1))):
+    # Bit 3 is the USB-only build capability: it is a property of the firmware
+    # image, so it can only be reported while the selected transport is USB.
+    if (transport>5 or transport_flags & ~15 or (not transport and transport_flags) or
+        (transport_flags & 4 and (transport<2 or transport_flags & 1)) or
+        (transport_flags & 8 and transport != 1)):
         raise ValueError('invalid transport state')
     if any(data[end+hid_bytes:size-4]):
         raise ValueError('invalid GUI padding')

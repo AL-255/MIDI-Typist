@@ -5,6 +5,7 @@
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
 #include "at32f402_405_usb.h"
+#include "m1_radio.h"
 
 static bool prepared;
 static bool context(void)
@@ -18,7 +19,7 @@ static bool idle(void)
        DMA1_CHANNEL3->ctrl_bit.chen || DMA1_CHANNEL6->ctrl_bit.chen ||
        ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) ||
        spi_i2s_flag_get(SPI2,SPI_I2S_BF_FLAG)==SET ||
-       spi_i2s_flag_get(SPI3,SPI_I2S_BF_FLAG)==SET ||
+       !m1_radio_bus_idle() ||
        NVIC_GetEnableIRQ(OTGHS_IRQn) || NVIC_GetEnableIRQ(OTGHS_WKUP_IRQn) ||
        NVIC_GetEnableIRQ(OTGHS_EP1_IN_IRQn) || NVIC_GetEnableIRQ(OTGHS_EP1_OUT_IRQn))return false;
     /* Never inspect an unclocked/reset core. A stopped PHY on cable arrival

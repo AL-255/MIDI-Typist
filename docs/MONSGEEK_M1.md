@@ -17,6 +17,33 @@ Bluetooth/2.4 GHz operation and power management are not yet qualified for use.
 Automatic battery sleep/wake, cable-arrival restoration and explicit wireless
 pairing requests are linked; physical wireless/power qualification remains unfinished.
 
+## Wireless build switch
+
+`MT_M1_WIRELESS` (CMake option, default `OFF`) decides whether the unverified
+wireless feature exists in an artifact at all. The default build links
+`m1_wireless_off.c` instead of the radio HAL and peer scheduler, so no SPI3
+transfer, pairing request, peer report, peer battery metadata or radio sleep
+transaction is present in the image; that build is the one intended for
+redistribution. `-DMT_M1_WIRELESS=ON` produces the development/audit build that
+contains the full wireless stack described below.
+
+A USB-only artifact still starts, scans, lights, stores settings and sleeps:
+
+- Boot selects USB for both power sources; a wireless boot transport is refused
+  before any peripheral is touched. On battery the device has no host at all, so
+  the idle policy sleeps it after the unselected limit instead of waiting for a
+  link that cannot exist.
+- `Fn+F1`–`Fn+F5`, GUI transport selection and pairing are refused, and the
+  capability is reported once as telemetry `transport_flags` bit 8 (USB-only).
+  The GUI labels such a device USB-only and replaces its Fn+F1–F5 guidance.
+- Power handoff still parks live, blanks the LEDs, takes exclusive GPIO
+  ownership, reduces the USB PHY and restores; the radio handoff has no peer to
+  signal, so the sequence uses plain sleep and never claims a retained Bluetooth
+  link. The no-radio stub answers "healthy, idle, no host", which is why the
+  owner's health checks pass without a fault.
+- The storage quiescence gate asks the radio module whether its bus is idle, so
+  a build without that module never inspects the unused peripheral.
+
 ## Identify a keyboard
 
 1. Connect the keyboard by USB in wired, normal application mode.

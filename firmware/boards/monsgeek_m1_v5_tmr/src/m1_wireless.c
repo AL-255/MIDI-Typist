@@ -56,6 +56,7 @@ static void begin_session(m1_transport_t mode,uint32_t tick)
     active=true;
     pair_state=PAIR_NONE;pair_complete=false;
 }
+bool m1_wireless_supported(void) { return true; }
 bool m1_wireless_init(m1_transport_t mode,bool released,uint32_t tick)
 {
     if(active || !released || !m1_transport_valid(mode) || mode==M1_TRANSPORT_USB ||

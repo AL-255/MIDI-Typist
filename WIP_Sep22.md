@@ -7,6 +7,12 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
 
 - Last user-confirmed installed firmware: `ab4b048`. The user confirms MIDI
   notes, Jankó and Fn+V now work. This is not a worst-case timing qualification.
+  A keyboard was connected again during this session; its identity was verified
+  over the control port as `v0.1.0-MG-M1V5TMR git=ab4b048… state=clean`, bound to
+  the physical USB device through the ALSA/sysfs check rather than a port name.
+- The redistributable artifact is now USB-only: `MT_M1_WIRELESS` (default `OFF`)
+  compiles the unverified Bluetooth/2.4 GHz stack out entirely. Wireless work
+  needs `-DMT_M1_WIRELESS=ON` and is documented as unqualified.
 - Latest firmware-code checkpoint: `9c6db9b` (Fn+Tab/Fn+Caps editor entry) and
   `fd0e6df` (M1 custom-profile RESET) on top of the handoff commit. Together with
   the earlier work they include system-menu observation ownership, directional
@@ -40,17 +46,33 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
   custom pages, blank-verifies each erase, returns defaults with the factory
   electrical bounds and refuses a denied gate or failed erase. It is verified
   offline only; no reset has been performed on hardware.
+- Read-only hardware session on the connected keyboard (no settings, flash or
+  boot state changed): the control session answered identity, `git`,
+  `runtime storage/stats/encoder`, `calibration read` and `power status`. Stored
+  bounds are travel-normalized (82 keys, lower mean 1920.7, upper mean 2620.7,
+  flags 3); the profile reports slot 0, generation 1, no pending or fault. A
+  10-minute idle soak saw 18,073 snapshots at ~30 Hz with `scan_errors=0`,
+  `light_errors=0`, `losses=0`, `hal_errors=0`, advancing scan and encoder
+  counters, no invalid encoder transitions and stable external-power telemetry
+  (charger pin reported raw low, 23%). GUI snapshot sequence gaps in that soak
+  are the documented latest-only replacement, not acquisition loss.
+- Physical key presses were not possible while the user was away, so typing,
+  MIDI performance, Fn menus, wheels/sustain and cold-boot persistence remain
+  untested on this image. Nothing has been flashed: the new checkpoints are
+  offline-verified only, and an early startup fault needs a debugger.
 - Native M1 tests, complete application builds, the linked-ARM audits and strict
-  Sphinx documentation builds pass for the retained changes: 31/31 offline audit
-  groups. Linked-ARM tests model peripheral completions; they
-  do not prove physical timing, radio delivery or electrical behavior.
+  Sphinx documentation builds pass for both configurations: 31/31 groups in the
+  default USB-only tree (wireless sections report `SKIP`) and 12/12 M1 groups in
+  a `-DMT_M1_WIRELESS=ON` tree. Linked-ARM tests model peripheral completions;
+  they do not prove physical timing, radio delivery or electrical behavior.
 
 ## Remaining work
 
 1. Validate the combined latest build on hardware: ordinary typing, MIDI chords,
    velocity, aftertouch, wheels, sustain, Fn menus and saved-state reboot, with
    and without a performance MIDI reader. Check advancing scan sequences and
-   fault counters, not merely USB enumeration.
+   fault counters, not merely USB enumeration. This needs someone at the
+   keyboard to press keys, and it needs the new image flashed first.
 2. Physically verify Fn+F1–F3 Bluetooth slots/pairing, Fn+F4 2.4 GHz, Fn+F5 USB,
    host delivery, disconnect/reconnect and USB-only MIDI gating.
 3. Finish and physically qualify power management: charging-pin meaning,

@@ -23,7 +23,10 @@ size_t keyboard_bounds_encode(const keyboard_app_t *app,uint32_t now,
                               uint8_t *out,size_t capacity);
 enum { MT_TRANSPORT_UNKNOWN,MT_TRANSPORT_USB,MT_TRANSPORT_BT1,
        MT_TRANSPORT_BT2,MT_TRANSPORT_BT3,MT_TRANSPORT_RADIO };
-enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u,MT_TRANSPORT_PAIRING=4u };
+enum { MT_TRANSPORT_READY=1u,MT_TRANSPORT_SWITCHING=2u,MT_TRANSPORT_PAIRING=4u,
+       /* Build has no Bluetooth/2.4 GHz feature: no wireless transport can be
+        * selected and no pairing request exists. Hosts must not advertise them. */
+       MT_TRANSPORT_USB_ONLY=8u };
 /* Optional read-only power status, returned in the command ACK, not the
  * latest-only key stream. Unverified charger polarity has explicit raw states. */
 #define MT_POWER_SIZE 16u

@@ -3,6 +3,7 @@
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
 #include "at32f402_405_usb.h"
+#include "m1_radio.h"
 
 static bool reduced;
 _Static_assert(USB_EPT_MAX_NUM==8,"check all hardware endpoints before PHY power-down");
@@ -24,7 +25,7 @@ static bool busy(void)
        DMA1_CHANNEL3->ctrl_bit.chen || DMA1_CHANNEL6->ctrl_bit.chen ||
        ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) ||
        spi_i2s_flag_get(SPI2,SPI_I2S_BF_FLAG)==SET ||
-       spi_i2s_flag_get(SPI3,SPI_I2S_BF_FLAG)==SET)return true;
+       !m1_radio_bus_idle())return true;
     if(NVIC_GetEnableIRQ(OTGHS_IRQn) || NVIC_GetEnableIRQ(OTGHS_WKUP_IRQn) ||
        NVIC_GetEnableIRQ(OTGHS_EP1_IN_IRQn) || NVIC_GetEnableIRQ(OTGHS_EP1_OUT_IRQn))return true;
     if(!CRM->ahben1_bit.otghsen)return false; /* cold core: no live register reads */

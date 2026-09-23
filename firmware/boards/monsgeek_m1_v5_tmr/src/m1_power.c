@@ -14,7 +14,7 @@ void m1_power_tick(m1_power_t *s,const m1_power_input_t *in)
     if(!in || !m1_transport_valid(in->transport) || in->blocked) {
         m1_power_activity(s); return;
     }
-    if(in->externally_powered || in->transport==M1_TRANSPORT_USB) {
+    if(in->externally_powered || in->host_link) {
         s->critical_latched=false; m1_power_activity(s); return;
     }
     if(in->battery && m1_battery_critical(in->battery))s->critical_latched=true;

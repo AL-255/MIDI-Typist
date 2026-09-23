@@ -23,6 +23,45 @@ TMR2 = 0x40000000
 LATCH, TIMEOUT = D['M1_LED_LATCH_US'], D['M1_LED_TRANSFER_TIMEOUT_US']
 
 
+def wireless_supported(dev):
+    """Ask the artifact whether it contains the Bluetooth/2.4 GHz feature.
+
+    The redistributable build compiles the radio HAL and scheduler out, so the
+    wireless sections below would be testing a module that is not linked. They
+    are skipped explicitly instead, and the USB-only answers they must give are
+    asserted by ``wireless_absent``.
+    """
+    return bool(dev.call('m1_wireless_supported'))
+
+
+def wireless_absent(elf):
+    """Behaviour of a USB-only artifact: no transport, no pairing, no peer.
+
+    Only symbols this audit binary actually links are probed; the same answers
+    are asserted against the shipped image in the image audit.
+    """
+    d=M1Arm(elf)
+    assert not wireless_supported(d)
+    def answer(name,*args):
+        return d.call(name,*args) if name in d.symbols else None
+    assert answer('m1_radio_bus_idle') is not False
+    assert answer('m1_radio_healthy') is not False
+    assert answer('m1_radio_ready') is not False
+    assert answer('m1_wireless_init',0,1,0) is not True   # Bluetooth slot 1
+    assert answer('m1_wireless_init',5,1,0) is not True   # 2.4 GHz
+    assert answer('m1_wireless_healthy') is not False
+    assert answer('m1_wireless_local_idle') is not False
+    assert answer('m1_wireless_ready') is not True
+    assert answer('m1_wireless_select',0,0) is not True
+    assert answer('m1_wireless_selected',0) is not True
+    assert answer('m1_wireless_offer',RAM) is not True
+    assert answer('m1_wireless_consumer',0x80) is not True
+    if 'm1_wireless_request_sleep' in d.symbols:
+        assert d.call('m1_wireless_request_sleep',5,1)
+        assert d.call('m1_wireless_sleep_sent')==5
+    print('SKIP wireless: this build has no Bluetooth/2.4 GHz; USB-only answers verified')
+
+
 class M1Arm:
     def __init__(self, elf_path, scanner=False):
         self.scanner=scanner
@@ -958,10 +997,14 @@ def sleep_hal(elf):
         dev.cpu.reg_write(reg,0x20 if reg==UC_ARM_REG_BASEPRI else 1)
         writes=len(dev.writes)
         assert dev.call('m1_sleep_wait',30,1)==3 and len(dev.writes)==writes
-    for address,bit in ((DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),(DMA+0x6c,1),
-            (TMR2,1),(TMR3,1),(TMR6,1),(PWC,2),(0xe0042004,2),(ADC+8,1),
-            (SPI+8,128),(0x40003c08,128),(GPIO+0x414,1<<6),
-            (GPIO+0x414,1<<13),(GPIO+0x814,1<<6),(GPIO+0x814,1<<14)):
+    busy=[(DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),(DMA+0x6c,1),
+          (TMR2,1),(TMR3,1),(TMR6,1),(PWC,2),(0xe0042004,2),(ADC+8,1),
+          (SPI+8,128),(GPIO+0x414,1<<6),
+          (GPIO+0x414,1<<13),(GPIO+0x814,1<<6),(GPIO+0x814,1<<14)]
+    if wireless_supported(SleepArm(elf)):
+        # Only a build that owns the radio bus gates sleep on its shifter.
+        busy.append((RADIO_SPI+8,128))
+    for address,bit in busy:
         dev=SleepArm(elf);assert dev.call('m1_sleep_init')==1
         dev.put(address,dev.u32(address)|bit)
         writes=len(dev.writes)
@@ -1657,7 +1700,10 @@ def usb_power(elf):
     # Failure checks must not shut down a live stack or touch GPIO/flash/clocks.
     cases=[(CRM,1<<25,3),(CRM+8,0,3),(CRM+0x30,0,4),
            (GPIO+0x810,0,4),(TMR3,1,2),(TMR6,1,2),(ADC+8,1,2),
-           (SPI+8,128,2),(RADIO_SPI+8,128,2)]
+           (SPI+8,128,2)]
+    if wireless_supported(UsbPowerArm(elf)):
+        # A build without the wireless stack owns no radio bus to gate on.
+        cases.append((RADIO_SPI+8,128,2))
     cases.extend((DMA+offset,1,2) for offset in (8,0x1c,0x30,0x6c))
     cases.extend((0xe000e108,1<<irq,2) for irq in (10,11,12,13))
     cases.extend((USB_HS+offset,1,2) for offset in (8,0x14)) # global IRQ / host mode
@@ -1800,7 +1846,10 @@ def power_gpio(elf):
     assert not d.call('m1_power_gpio_restore',1,0)
     assert not d.call('m1_power_gpio_prepare',0)
     assert not d.call('m1_power_gpio_switches',0) and not d.writes
-    cases=[(CRM+8,0),(TMR3,1),(TMR6,1),(ADC+8,1),(SPI+8,128),(RADIO_SPI+8,128)]
+    cases=[(CRM+8,0),(TMR3,1),(TMR6,1),(ADC+8,1),(SPI+8,128)]
+    if wireless_supported(PowerGpioArm(elf)):
+        # A build without the wireless stack owns no radio bus to gate on.
+        cases.append((RADIO_SPI+8,128))
     cases.extend((DMA+offset,1) for offset in (8,0x1c,0x30,0x6c))
     cases.extend((0xe000e108,1<<irq) for irq in (10,11,12,13))
     cases.extend((USB_HS+offset,1) for offset in (8,0x14))
@@ -1895,11 +1944,17 @@ def main():
     startup(args.elf)
     battery_startup(args.elf)
     battery(args.elf)
-    radio(args.elf)
-    wireless(args.elf)
-    wireless_pairing(args.elf)
-    wireless_reconnect(args.elf)
-    wireless_power(args.elf)
+    d=M1Arm(args.elf)
+    if wireless_supported(d):
+        del d
+        radio(args.elf)
+        wireless(args.elf)
+        wireless_pairing(args.elf)
+        wireless_reconnect(args.elf)
+        wireless_power(args.elf)
+    else:
+        del d
+        wireless_absent(args.elf)
     usb_power(args.elf)
     power_gpio(args.elf)
     sleep_hal(args.elf)

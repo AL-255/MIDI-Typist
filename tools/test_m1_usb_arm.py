@@ -8,7 +8,7 @@ import struct
 from unicorn import UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
                               UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
-from test_m1_hal_arm import M1Arm, RAM, CRM, GPIO, DMA, ADC, TMR3, TMR6, SPI
+from test_m1_hal_arm import wireless_supported, M1Arm, RAM, CRM, GPIO, DMA, ADC, TMR3, TMR6, SPI
 
 USB=0x40040000
 INPUT,OUTPUT=RAM+0xc000,RAM+0xc400
@@ -139,9 +139,13 @@ def hardware(path):
     assert d.call('m1_usb_hw_start',0)==2 and not d.writes
     d.put(CRM+4,0) # invalid PLL denominator must not enter SDK divide
     assert d.call('m1_usb_hw_start',1)==3 and not d.writes
-    for address,bits in ((DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),(DMA+0x6c,1),
-                         (ADC+8,1),(TMR3,1),(TMR6,1),(SPI+8,128),(SPI+0x400+8,128),
-                         (0xe000e010,1),(0xe000e108,1<<13)):
+    busy=[(DMA+8,1),(DMA+0x1c,1),(DMA+0x30,1),(DMA+0x6c,1),
+          (ADC+8,1),(TMR3,1),(TMR6,1),(SPI+8,128),
+          (0xe000e010,1),(0xe000e108,1<<13)]
+    if wireless_supported(Hardware(path)):
+        # Only a build that owns the radio bus gates USB startup on it.
+        busy.insert(8,(SPI+0x400+8,128))
+    for address,bits in busy:
         d=Hardware(path);d.put(address,d.u32(address)|bits)
         d.dma_guard=bytes(d.cpu.mem_read(DMA,0x200))
         assert d.call('m1_usb_hw_start',1)==2 and not d.writes

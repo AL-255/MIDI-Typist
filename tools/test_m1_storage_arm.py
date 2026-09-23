@@ -11,7 +11,7 @@ import tempfile
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UC_HOOK_CODE
 from unicorn.arm_const import (UC_ARM_REG_PC, UC_ARM_REG_PRIMASK,
     UC_ARM_REG_BASEPRI, UC_ARM_REG_FAULTMASK, UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR)
-from test_m1_hal_arm import M1Arm, CODE, RAM, RGB, DMA, ADC, TMR2, TMR3, TMR6, SPI
+from test_m1_hal_arm import wireless_supported, M1Arm, CODE, RAM, RGB, DMA, ADC, TMR2, TMR3, TMR6, SPI
 
 FLASH, SIZE = 0x40023c00, 0x1ffff7e0
 BASE, A, B, END = 0x08000000, 0x08027000, 0x08027800, 0x08028000
@@ -242,7 +242,11 @@ def run(elf):
     for register in busy_registers:
         d=Store(elf);d.put(register,d.u32(register)|1)
         assert d.call('m1_storage_erase',0,1)==UNSAFE and not d.writes,hex(register)
-    for register in (SPI+8,0x40003c08):
+    radio_bus=[SPI+8]
+    if wireless_supported(Store(elf)):
+        # A build without the wireless stack owns no radio bus to gate on.
+        radio_bus.append(0x40003c08)
+    for register in radio_bus:
         d=Store(elf);d.put(register,0x80)
         assert d.call('m1_storage_erase',0,1)==UNSAFE and not d.writes
     for failure,expected in (('unlock_fails',UNLOCK),('erase_fails',ERASE),('drop_erase',VERIFY)):

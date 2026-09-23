@@ -50,7 +50,11 @@ bool m1_boot_begin(m1_transport_t transport,const m1_transport_ops_t *ops,
                    bool cold_quiescent)
 {
     if(state!=M1_BOOT_OFF || !context() || !cold_quiescent ||
-       !m1_transport_valid(transport) || (ops && (!ops->drained || !ops->select)))return false;
+       !m1_transport_valid(transport) ||
+       /* Never start a boot for a transport this artifact cannot provide: a
+        * USB-only build must fail here instead of half-starting a radio. */
+       (transport!=M1_TRANSPORT_USB && !m1_wireless_supported()) ||
+       (ops && (!ops->drained || !ops->select)))return false;
     m1_time_point_t now;
     if(!m1_time_now(&now)) { fail(M1_BOOT_TIME);return false; }
     selected=transport;transport_ops=ops;

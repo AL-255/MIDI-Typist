@@ -3,6 +3,7 @@
 #include "device_store.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
+#include "m1_radio.h"
 
 _Static_assert(CAL_PAGE_SIZE==M1_STORAGE_PAGE_BYTES,"M1 journal/page geometry");
 _Static_assert(M1_STORAGE_SLOT_A+M1_STORAGE_PAGE_BYTES==M1_STORAGE_SLOT_B &&
@@ -33,7 +34,7 @@ static bool active(void)
         if(((dma_channel_type *)(DMA1_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen ||
            ((dma_channel_type *)(DMA2_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen)return true;
     return ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) ||
-           SPI2->sts_bit.bf || SPI3->sts_bit.bf ||
+           SPI2->sts_bit.bf || !m1_radio_bus_idle() ||
            (CRM->ahben1_bit.otghsen && OTG2_GLOBAL->gahbcfg_bit.dmaen) ||
            (SysTick->CTRL&SysTick_CTRL_ENABLE_Msk);
 }

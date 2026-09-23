@@ -8,6 +8,7 @@
 #include "m1_hal.h"
 #include "m1_lighting.h"
 #include "m1_wireless.h"
+#include "m1_usb.h"
 #include "m1_usb_hal.h"
 #include "m1_usb_power.h"
 #include "m1_battery_hal.h"
@@ -21,7 +22,13 @@ static bool initialized,retained,scan_initialized,source_external;
 static uint32_t last_tick,since,scan_stamp,retained_at,error;
 static uint8_t switches;
 static m1_transport_t transport;
+#if MT_M1_WIRELESS
 static m1_transport_t last_wireless=M1_DEFAULT_WIRELESS_TRANSPORT;
+#else
+/* USB-only build: a removed cable leaves no host, never a wireless fallback.
+ * The source owner still parks, powers the PHY down and restores on arrival. */
+static m1_transport_t last_wireless=M1_TRANSPORT_USB;
+#endif
 static const uint8_t black[M1_LED_BYTES]={0};
 
 m1_runtime_power_state_t m1_runtime_power_state(void) { return state; }
@@ -38,6 +45,7 @@ static void rails_off(void)
 }
 /* Reference 0x08017a34 state table, not an inference from a friendly RF name.
  * Selector 2's separate pairing requests remain outside this sleep owner. */
+#if MT_M1_WIRELESS
 static uint8_t selector(m1_transport_t mode,uint8_t peer)
 {
     if(peer==3)return 1;
@@ -45,6 +53,7 @@ static uint8_t selector(m1_transport_t mode,uint8_t peer)
     if(peer<2 || (mode==M1_TRANSPORT_RADIO && peer==2))return 3;
     return 0;
 }
+#endif
 static bool quiesce_peer(void)
 {
     if(!m1_radio_quiesce(true))return false;
@@ -117,10 +126,18 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         last_tick=ms;
         bool activity=false;
         bool eligible=m1_live_power_activity(&activity);
+#if MT_M1_WIRELESS
         m1_radio_status_t peer;
         uint8_t selection=m1_wireless_status(&peer)?selector(transport,peer.state):0;
+#else
+        /* No wireless scheduler exists, so no peer can be linked or searching:
+         * an idle USB-only device uses the unselected limit and sleeps instead
+         * of waiting for a transport this build does not have. */
+        uint8_t selection=3;
+#endif
         m1_power_input_t input={.transport=transport,.selector=selection,
             .externally_powered=external,.blocked=!eligible,.activity=activity,
+            .host_link=transport==M1_TRANSPORT_USB && m1_usb_ready(),
             .battery=m1_battery_hal_status()};
         m1_power_tick(&policy,&input);
         if(!policy.sleep_requested)return;
@@ -154,7 +171,11 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         if(!m1_wireless_healthy()) { fail();break; }
         if(m1_wireless_sleep_sent()!=policy.radio_command)break;
         if(!m1_power_radio_committed(&policy,policy.radio_command)) { fail();break; }
-        retained=policy.radio_command==M1_RADIO_BT_RETAIN;retained_at=ms;
+        /* A build without the wireless stack has no Bluetooth link to retain:
+         * the handoff completes and deepens instead of holding a phantom
+         * retention window. The policy still names the command it sequenced. */
+        retained=policy.radio_command==M1_RADIO_BT_RETAIN && m1_wireless_supported();
+        retained_at=ms;
         if(!retained && !quiesce_peer()) { fail();break; }
         if(external) { restore(ms);break; }
         m1_hal_stop();scan_initialized=false;rails_off();

@@ -45,6 +45,10 @@ void m1_radio_service(uint32_t now_us);
 bool m1_radio_ready(void);
 bool m1_radio_healthy(void);
 uint32_t m1_radio_errors(void);
+/* True when the radio's SPI bus is idle, for the power/save/storage/HAL
+ * quiescence gates. A build without the wireless stack owns no radio bus and
+ * reports idle, so those gates never inspect a peripheral it does not use. */
+bool m1_radio_bus_idle(void);
 /* PD2 is active-low data-ready; false while the HAL cannot start a poll. */
 bool m1_radio_data_pending(void);
 /* Copy-on-accept. No second transfer until both DMA channels and the SPI

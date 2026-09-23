@@ -21,7 +21,7 @@ class Test:
     command: tuple
 
 
-def manifest(elf, library, reference, jobs):
+def manifest(elf, library, reference, jobs, m1_dir):
     """One entry per independent audit: no repeated dependency chains."""
     tests = [Test('native', 'native', ('ctest', '--preset', 'host-tests', '-j', str(jobs)))]
     tests.append(Test('m1-native','m1',('ctest','--test-dir','build-m1-host','--output-on-failure')))
@@ -29,14 +29,14 @@ def manifest(elf, library, reference, jobs):
     def add(name, group, *args):
         tests.append(Test(name, group, (sys.executable, '-B', '-u', str(ROOT/'tools'/f'{name}.py'), *map(str,args))))
 
-    add('test_m1_hal_arm','m1',ROOT/'build-m1-hal/m1_hal_audit.elf')
-    add('test_m1_usb_arm','m1',ROOT/'build-m1-hal/m1_usb_audit.elf')
-    add('test_m1_live_arm','m1',ROOT/'build-m1-hal/m1_live_audit.elf')
-    add('test_m1_storage_arm','m1',ROOT/'build-m1-hal/m1_storage_audit.elf')
-    add('test_m1_save_arm','m1',ROOT/'build-m1-hal/m1_save_audit.elf')
-    add('test_m1_boot_arm','m1',ROOT/'build-m1-hal/m1_boot_audit.elf')
-    add('test_m1_image_arm','m1',ROOT/'build-m1-hal/m1_development.elf')
-    add('test_m1_runtime_power_arm','m1',ROOT/'build-m1-hal/m1_development.elf')
+    add('test_m1_hal_arm','m1',m1_dir/'m1_hal_audit.elf')
+    add('test_m1_usb_arm','m1',m1_dir/'m1_usb_audit.elf')
+    add('test_m1_live_arm','m1',m1_dir/'m1_live_audit.elf')
+    add('test_m1_storage_arm','m1',m1_dir/'m1_storage_audit.elf')
+    add('test_m1_save_arm','m1',m1_dir/'m1_save_audit.elf')
+    add('test_m1_boot_arm','m1',m1_dir/'m1_boot_audit.elf')
+    add('test_m1_image_arm','m1',m1_dir/'m1_development.elf')
+    add('test_m1_runtime_power_arm','m1',m1_dir/'m1_development.elf')
     add('test_monsgeek_identity','m1')
     add('test_midi_usb_binding','m1')
     add('test_monsgeek_iap','m1')
@@ -91,13 +91,16 @@ def main():
     parser.add_argument('--elf', type=Path, default=ROOT/'build-huntsman/huntsman_firmware.elf')
     parser.add_argument('--library', type=Path, default=ROOT/'build-host/libkeyboard_logic.so')
     parser.add_argument('--reference', type=Path, default=REFERENCE)
+    parser.add_argument('--m1-dir', type=Path, default=ROOT/'build-m1-hal',
+                        help='M1 ARM build directory; point it at a second tree to audit '
+                             'the other -DMT_M1_WIRELESS configuration (default build-m1-hal)')
     parser.add_argument('--group', action='append', choices=('native','usb','dump','keyboard','lighting',
                         'calibration','menu','reference-keyboard','reference-lighting','gui','m1'))
     args = parser.parse_args()
     if args.jobs < 1 or not 0 < args.timeout < float('inf'):
         parser.error('jobs and timeout must be positive and finite')
     start = time.monotonic(); deadline = start+args.timeout
-    tests = manifest(args.elf, args.library, args.reference, args.jobs)
+    tests = manifest(args.elf, args.library, args.reference, args.jobs, args.m1_dir)
     tests = [test for test in tests if not args.group or test.group in args.group]
     logs = ROOT/'build-test-logs'; logs.mkdir(exist_ok=True)
 
@@ -121,8 +124,9 @@ def main():
         if 'm1' in groups:
             for build_dir, extra in (
                     ('build-m1-host', ('-DCMAKE_BUILD_TYPE=Debug',)),
-                    ('build-m1-hal', ('-DCMAKE_BUILD_TYPE=Release',
-                                     '-DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake'))):
+                    (str(args.m1_dir.relative_to(ROOT) if args.m1_dir.is_relative_to(ROOT) else args.m1_dir),
+                     ('-DCMAKE_BUILD_TYPE=Release',
+                      '-DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake'))):
                 for action,command in (
                     ('configure',('cmake','-S','.','-B',build_dir,'-G','Ninja',
                                   '-DMT_BOARD=monsgeek_m1_v5_tmr',*extra)),

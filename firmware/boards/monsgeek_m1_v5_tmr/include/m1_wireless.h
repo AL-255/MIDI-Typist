@@ -2,6 +2,21 @@
 #define MIDI_TYPIST_M1_WIRELESS_H
 #include "m1_radio_keyboard.h"
 #include "m1_controls.h"
+/* Bluetooth and 2.4 GHz are not qualified on this board: peer timing, pairing,
+ * host delivery and the radio sleep handoff are unverified. The default build
+ * compiles the radio HAL and scheduler out and links m1_wireless_off.c instead,
+ * leaving a USB-only keyboard that cannot select a wireless transport.
+ * Development and audit builds enable the feature with -DMT_M1_WIRELESS=1. */
+#ifndef MT_M1_WIRELESS
+#define MT_M1_WIRELESS 0
+#endif
+#if MT_M1_WIRELESS != 0 && MT_M1_WIRELESS != 1
+#error "MT_M1_WIRELESS is a 0/1 build switch"
+#endif
+/* False when this artifact has no wireless feature at all: no code may then
+ * advertise pairing or peer sleep, every wireless transport selection is
+ * refused, and the GUI is told the build is USB-only. */
+bool m1_wireless_supported(void);
 /* Single foreground owner of the radio HAL. Init requires initialized, idle
  * SPI3 and explicit permission from the outer coordinator: previous host
  * releases and peer power are its responsibility. Never use local_idle as a

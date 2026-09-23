@@ -29,6 +29,7 @@ class Runtime(Reset):
         self.periodic=True;self.scan_healthy=True;self.led_healthy=True;self.led_ticks=0
         self.radio_healthy=True;self.radio_ready=True;self.prepared=False;self.usb_reduced=False
         self.external=False
+        self.usb_ready=False    # no enumerated USB host unless a case says so
         self.cancel_allowed=False;self.cancel_previous=0
         self.arrive_during=None
         self.request=self.sent=self.peer_ticks=self.captures=self.sequence=self.scan_inits=0
@@ -37,7 +38,7 @@ class Runtime(Reset):
         self.parked=False;self.resumed=False;self.confirmed=True;self.link_ticks=0
         self.trace=[];self.failure=None;self.calls={}
         self.put(PB+0x14,(1<<6)|(1<<13));self.put(PC+0x14,(1<<6)|(1<<14))
-        names='''m1_live_service m1_live_power_activity m1_live_transport
+        names='''m1_live_service m1_live_power_activity m1_live_transport m1_usb_ready
             m1_wireless_status m1_battery_hal_status m1_battery_critical
             m1_sleep_time_ready m1_live_power_suspend m1_live_power_park
             m1_hal_healthy m1_lighting_healthy m1_wireless_healthy m1_hal_pause
@@ -51,7 +52,10 @@ class Runtime(Reset):
             m1_power_gpio_restore m1_lighting_init m1_wireless_resume_retained
             m1_radio_init m1_radio_service m1_radio_healthy m1_wireless_init m1_wireless_selected
             m1_battery_hal_init m1_hal_start m1_live_power_resume'''.split()
-        self.by_address={self.s[n]&~1:n for n in names}
+        # A USB-only artifact does not link every wireless entry point; those
+        # calls are answered by its own stub instead of a scripted value.
+        self.by_address={self.s[n]&~1:n for n in names if n in self.s}
+        self.missing=[n for n in names if n not in self.s]
         self.cpu.hook_add(UC_HOOK_CODE,self.intercept)
         self.cpu.hook_add(UC_HOOK_INSN_INVALID,self.invalid_instruction)
 
@@ -106,6 +110,7 @@ class Runtime(Reset):
         if name=='m1_live_service':assert not self.parked
         elif name=='m1_live_power_activity':cpu.mem_write(a[0],bytes((self.activity,)));result=self.eligible
         elif name=='m1_live_transport':result=self.mode
+        elif name=='m1_usb_ready':result=self.usb_ready
         elif name=='m1_wireless_status':cpu.mem_write(a[0],bytes((0,self.peer,self.mode)))
         elif name=='m1_battery_hal_status':result=RAM_END-256
         elif name=='m1_battery_critical':result=self.critical
@@ -387,9 +392,37 @@ def sleep_source_transitions(image):
     print('PASS cable arrival throughout battery sleep: pre-submit cancellation, committed peer restore, retention escalation, scan abort, every restoration stage, unchanged wireless mode and no extra WFI (HAL completions scripted)')
 
 
+def usb_only(image):
+    """Runtime power owner in a build that has no Bluetooth/2.4 GHz.
+
+    Only the real stub answers the wireless calls, so this checks the shipped
+    USB-only sleep/wake sequence rather than a scripted wireless stack.
+    """
+    d=Runtime(image,mode=6)
+    assert not d.call('m1_wireless_supported')
+    d.shorten_idle();d.until(lambda:d.resumed)
+    assert d.state()==0 and not d.call('m1_runtime_power_error')
+    assert d.captures==D['M1_WAKE_ACQUIRE_FRAMES']+1 and d.scan_inits==2
+    labels=[x[0] for x in d.trace]
+    assert labels.index('m1_live_power_park')<labels.index('m1_hal_pause')<labels.index('m1_lighting_offer')
+    assert labels.index('m1_lighting_stop')<labels.index('m1_power_gpio_prepare')<labels.index('m1_sleep_timed_wait')
+    assert labels.index('m1_power_gpio_restore')<labels.index('m1_hal_start')<labels.index('m1_live_power_resume')
+    # No wireless stack exists, so no retention handshake may be claimed.
+    assert 'm1_wireless_resume_retained' not in labels
+    # An idle USB-only device has no link to keep, so it requests plain sleep
+    # (3) rather than a Bluetooth retention (5) it could not honour.
+    assert [args[0] for name,args,_ in d.trace if name=='m1_wireless_request_sleep']==[3]
+    print('PASS installed runtime power controller (USB-only build): idle to deep sleep through the '
+          'real no-radio stub, ordered park/pause/blank/GPIO ownership and key wake restoration')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('elf',type=Path)
     image=Image(parser.parse_args().elf.read_bytes())
+    if not Runtime(image).call('m1_wireless_supported'):
+        usb_only(image)
+        print('SKIP wireless runtime power scenarios: this build has no Bluetooth/2.4 GHz')
+        return
     source_transitions(image)
     sleep_source_transitions(image)
     for mode,critical,peer in ((0,False,3),(1,False,3),(2,False,3),(5,False,3),(0,True,1),(5,True,1)):
@@ -406,10 +439,20 @@ def main():
     assert [args[0] for name,args,_ in d.trace if name=='m1_wireless_request_sleep']==[5,3]
     d.switches=6;d.until(lambda:d.resumed)
     assert not d.calls.get('m1_wireless_resume_retained')
-    for mode,external,activity in ((6,False,False),(0,True,False),(0,False,True)):
-        d=Runtime(image,mode,critical=external);d.activity=activity;d.shorten_idle(external)
-        for _ in range(600):d.tick(10000,external)
-        assert d.state()==0 and not d.calls.get('m1_live_power_suspend')
+    # Sleep is inhibited by external power or an enumerated host, not by the
+    # transport number: a selected but unready USB link must not keep a
+    # battery-only device awake (that is the USB-only build's idle case).
+    for mode,external,activity,host,sleeps in ((6,False,False,False,True),
+                                               (6,False,False,True,False),
+                                               (0,True,False,False,False),
+                                               (0,False,True,False,False)):
+        d=Runtime(image,mode,critical=external);d.activity=activity;d.usb_ready=host
+        d.shorten_idle(external)
+        for _ in range(2000):d.tick(10000,external)
+        if sleeps:
+            assert d.calls.get('m1_live_power_suspend'),(mode,external,activity,host)
+        else:
+            assert d.state()==0 and not d.calls.get('m1_live_power_suspend'),(mode,external,activity,host)
     # Held input never bypasses critical protection.
     d=Runtime(image,critical=True);d.activity=True;d.shorten_idle();d.until(lambda:d.resumed)
     # Long output drain still owns live service; scanner pauses only after park.

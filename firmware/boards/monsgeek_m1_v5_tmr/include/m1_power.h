@@ -8,6 +8,10 @@ typedef struct {
     m1_transport_t transport;
     uint8_t selector;
     bool externally_powered, blocked, fast_idle, activity;
+    /* A host that can currently receive reports. A selected but unenumerated
+     * USB link must not keep a battery-only device awake, and an enumerated one
+     * must never be interrupted by sleep. */
+    bool host_link;
     const m1_battery_t *battery;
 } m1_power_input_t;
 typedef struct {

@@ -6,6 +6,7 @@
 #include "defaults.h"
 #include "usbd_int.h"
 #include <string.h>
+#include "m1_radio.h"
 
 static otg_core_type core;
 static bool owned,starting,keep_pllu,delay_fault,core_fault;
@@ -21,7 +22,7 @@ static bool busy(void)
        DMA1_CHANNEL3->ctrl_bit.chen || DMA1_CHANNEL6->ctrl_bit.chen ||
        ADC1->ctrl2_bit.adcen || (TMR3->ctrl1&1u) || (TMR6->ctrl1&1u) ||
        spi_i2s_flag_get(SPI2,SPI_I2S_BF_FLAG)==SET ||
-       spi_i2s_flag_get(SPI3,SPI_I2S_BF_FLAG)==SET)return true;
+       !m1_radio_bus_idle())return true;
     for(int irq=OTGHS_EP1_OUT_IRQn;irq<=OTGHS_IRQn;++irq)
         if(NVIC_GetEnableIRQ((IRQn_Type)irq))return true;
     if(!CRM->ahben1_bit.otghsen || CRM->ahbrst1_bit.otghsrst)return false;

@@ -546,9 +546,18 @@ static void power_policy(void)
     assert(power.critical_latched && power.sleep_requested && power.radio_command==3);
     in.externally_powered=true; m1_power_tick(&power,&in);
     assert(!power.critical_latched && !power.sleep_requested);
-    in.externally_powered=false; in.transport=M1_TRANSPORT_USB;
+    /* An enumerated USB host must never be interrupted by sleep; the transport
+     * number alone is not the gate, because a selected-but-unenumerated USB
+     * link is exactly the battery-only case that has to be allowed to sleep. */
+    in.externally_powered=false; in.transport=M1_TRANSPORT_USB; in.host_link=true;
     for(unsigned i=0;i<1000;++i)m1_power_tick(&power,&in);
     assert(!power.critical_latched && !power.sleep_requested);
+    in.host_link=false; in.selector=1; in.fast_idle=true;
+    in.activity=false; battery.percent=80;
+    m1_power_init(&power,2,3);
+    for(unsigned i=0;i<3*M1_POWER_FAST_QUALIFY_TICKS && !power.sleep_requested;++i)
+        m1_power_tick(&power,&in);
+    assert(power.sleep_requested && power.radio_command==5);
 }
 static void radio_packets(void)
 {

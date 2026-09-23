@@ -8,6 +8,7 @@
 #include "m1_usb.h"
 #include "at32f402_405.h"
 #include "at32f402_405_conf.h"
+#include "m1_radio.h"
 
 static bool owned,faulted,external;
 static uint32_t saved_mask,started;
@@ -45,7 +46,7 @@ static bool idle_bus(bool scanning)
            ((dma_channel_type *)(DMA1_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen)return false;
         if(((dma_channel_type *)(DMA2_CHANNEL1_BASE+i*0x14u))->ctrl_bit.chen)return false;
     }
-    return !SPI2->sts_bit.bf && !SPI3->sts_bit.bf &&
+    return !SPI2->sts_bit.bf && m1_radio_bus_idle() &&
         !(CRM->ahben1_bit.otghsen && OTG2_GLOBAL->gahbcfg_bit.dmaen) &&
         !(SysTick->CTRL&SysTick_CTRL_ENABLE_Msk);
 }

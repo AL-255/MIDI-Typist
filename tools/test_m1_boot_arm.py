@@ -10,7 +10,7 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_PRIMASK, UC_ARM_REG_BASEPRI,
                               UC_ARM_REG_CONTROL, UC_ARM_REG_IPSR, UC_ARM_REG_FAULTMASK,
                               UC_ARM_REG_R0,UC_ARM_REG_R1,UC_ARM_REG_PC,UC_ARM_REG_LR)
-from test_m1_hal_arm import (BatteryStartupArm, CRM, GPIO, DMA, TMR2, TMR6,
+from test_m1_hal_arm import (wireless_supported, BatteryStartupArm, CRM, GPIO, DMA, TMR2, TMR6,
                              ADC, RTC, RADIO_SPI, factory_memory, FACTORY_UPPER)
 from test_m1_usb_arm import Hardware, USB, DWT, DEMCR
 from firmware_defaults import DEFAULTS as D
@@ -94,10 +94,15 @@ class Boot(BatteryStartupArm):
             self.tick()
         assert self.state()==state,(self.state(),self.call('m1_boot_error'),state)
 
+    def wireless(self):
+        return bool(self.call('m1_wireless_supported'))
+
     def failed(self,error):
         assert self.state()==FAILED and self.call('m1_boot_error')==error
         assert self.call('m1_usb_hw_running')==bool(self.attaches and error not in (1,3))
-        assert not self.call('m1_radio_healthy')
+        # A failed boot must leave no radio running; a USB-only artifact has no
+        # radio to leave in any state.
+        assert not self.call('m1_radio_healthy') if self.wireless() else self.call('m1_radio_healthy')
         assert not self.call('m1_hal_healthy') and not self.call('m1_lighting_healthy')
         assert not self.u32(GPIO+0x414)&((1<<6)|(1<<13))
         assert not self.u32(GPIO+0x814)&((1<<6)|(1<<14))
@@ -107,8 +112,13 @@ class Boot(BatteryStartupArm):
 
 
 def handoff(path):
+    wireless=wireless_supported(Boot(path,False))
+    modes=(0,1,2,5,6) if wireless else (6,)
+    if not wireless:
+        print('SKIP boot radio handshake: this build has no Bluetooth/2.4 GHz; '
+              'USB-only startup still verified')
     for external in (False,True):
-        for mode in (0,1,2,5,6):
+        for mode in modes:
             for mask in (0,1):
                 d=Boot(path,external);d.cpu.reg_write(UC_ARM_REG_PRIMASK,mask)
                 if mask:d.put(TMR2+0x24,0xffff0000)
@@ -134,7 +144,11 @@ def handoff(path):
                 assert d.call('m1_hal_periodic_active') and d.u32(TMR6+0x24)==0
                 assert d.call('m1_usb_hw_running')==external and d.attaches==external
                 assert not d.call('m1_usb_ready') and not d.call('m1_wireless_ready')
-                assert d.call('m1_wireless_healthy')==(mode!=6)
+                if wireless:
+                    assert d.call('m1_wireless_healthy')==(mode!=6)
+                else:
+                    # A USB-only artifact has no wireless subsystem to fault.
+                    assert d.call('m1_wireless_healthy')
                 assert d.wakes==int(not external)
                 assert not d.call('m1_live_storage_fault') and not d.call('m1_live_transport_fault')
                 assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==mask
@@ -164,8 +178,13 @@ def faults(path):
     d.cpu.hook_add(UC_HOOK_CODE,lambda *args:d.put(DMA,8<<20),begin=address,end=address)
     assert d.call('m1_boot_begin',6,0,1)
     d.until(FAILED);d.failed(4);assert d.attaches==1
-    for stage in (RAILS,LINKS,RADIO,APPLICATION):
-        d=Boot(path);assert d.call('m1_boot_begin',0,0,1);d.until(stage)
+    stages=((RAILS,LINKS,RADIO,APPLICATION) if wireless_supported(Boot(path))
+            else (RAILS,LINKS,APPLICATION))
+    for stage in stages:
+        d=Boot(path)
+        if not wireless_supported(d):assert not d.call('m1_boot_begin',0,0,1)
+        # RADIO only exists for a wireless transport in a build that has one.
+        assert d.call('m1_boot_begin',0 if stage==RADIO else 6,0,1);d.until(stage)
         d.put(GPIO+0x810,1<<13);d.tick();d.failed(3)
     for failure in ('counter','pllu','unplug'):
         d=Boot(path,failure=failure);assert d.call('m1_boot_begin',6,0,1)
@@ -187,7 +206,8 @@ def faults(path):
     d=Boot(path);assert d.call('m1_boot_begin',6,0,1);d.until(APPLICATION)
     d.call('m1_hal_stop');d.tick();d.failed(8)
     d=Boot(path,False);d.resume_failure='pll_switch'
-    assert d.call('m1_boot_begin',0,0,1)
+    # A build without the wireless stack has no battery radio transport.
+    assert d.call('m1_boot_begin',0 if wireless_supported(d) else 6,0,1)
     for _ in range(100):
         d.tick()
         if d.state()==FATAL:break

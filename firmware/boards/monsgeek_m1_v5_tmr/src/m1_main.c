@@ -73,7 +73,15 @@ void m1_main(void)
     pin.gpio_pins=GPIO_PINS_13;pin.gpio_mode=GPIO_MODE_INPUT;pin.gpio_pull=GPIO_PULL_UP;
     gpio_init(GPIOC,&pin);
     bool external=wired();
+#if MT_M1_WIRELESS
     m1_transport_t transport=external?M1_TRANSPORT_USB:M1_DEFAULT_WIRELESS_TRANSPORT;
+#else
+    /* USB-only build. On battery there is no host at all: start on USB anyway so
+     * acquisition, lighting, battery telemetry and cable-arrival handling keep
+     * working, and let the idle policy put the device to sleep. */
+    (void)external;
+    m1_transport_t transport=M1_TRANSPORT_USB;
+#endif
     if(!m1_boot_begin(transport,m1_transport_ops(),true))halted(M1_MAIN_BOOT_FAULT,m1_boot_error());
     m1_main_state=M1_MAIN_COLD;__enable_irq();
     for(;;) {

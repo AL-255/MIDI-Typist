@@ -84,6 +84,8 @@ bool m1_radio_init(uint32_t now)
     since=now; state=START_PULSE;
     return true;
 }
+bool m1_radio_bus_idle(void)
+{ return spi_i2s_flag_get(SPI3,SPI_I2S_BF_FLAG)!=SET; }
 bool m1_radio_ready(void) { return state==READY; }
 bool m1_radio_healthy(void) { return state!=OFF && state!=FAULT; }
 uint32_t m1_radio_errors(void) { return errors; }
