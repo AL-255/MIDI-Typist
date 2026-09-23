@@ -59,8 +59,14 @@ python3 tools/device_flash_service.py --gui-worker flash \
 
 `--token` comes from the adapter's own discovery of the selected physical port,
 and the digest is the padded application digest the GUI displays — do not
-substitute the raw file hash. The command needs write access to
-`/dev/bus/usb/...`, so run it with the same privilege escalation the GUI uses.
+substitute the raw file hash.
+
+**Run this only with the privilege it needs (the GUI elevates automatically).**
+The worker verifies the model over MIDI and requests guarded IAP entry *before*
+it opens the bootloader over raw USB. Without write access to `/dev/bus/usb/...`
+the entry still happens and only the programming step fails, which leaves the
+keyboard sitting in the factory bootloader until an authorized flash completes
+the transfer. Re-running the same command with privileges is the recovery path.
 
 Expected sequence: the keyboard leaves the application, re-enumerates as the
 factory bootloader on the same port, is programmed in 64-byte blocks without
