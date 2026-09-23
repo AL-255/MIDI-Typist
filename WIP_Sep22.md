@@ -66,6 +66,13 @@ Work is on `feature/m1-v5-tmr`; `main` has not been changed.
   a `-DMT_M1_WIRELESS=ON` tree. Linked-ARM tests model peripheral completions;
   they do not prove physical timing, radio delivery or electrical behavior.
 
+- The pre-flash artifact was verified through the adapter's own validator for
+  the `custom` destination (identity header, vectors, padded size inside the
+  profile boundary) and carries `git=b9a68453fed7483270b1fcd01ccee33e405e2110
+  state=clean`. The flash itself needs write access to `/dev/bus/usb`, which on
+  this host means one interactive polkit/sudo authorization; it has not been
+  performed. `docs/M1_TEST_CHECKLIST.md` is the procedure and record sheet.
+
 ## Remaining work
 
 1. Validate the combined latest build on hardware: ordinary typing, MIDI chords,
