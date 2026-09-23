@@ -43,7 +43,7 @@ bool m1_hal_periodic_active(void);
 uint32_t m1_hal_errors(void);
 enum { M1_SCAN_FAULT_NONE, M1_SCAN_FAULT_ADC_CALIBRATION, M1_SCAN_FAULT_PAUSE_OVERRUN,
        M1_SCAN_FAULT_DMA, M1_SCAN_FAULT_CAPTURE_TIMEOUT, M1_SCAN_FAULT_PERIOD_OVERRUN,
-       M1_SCAN_FAULT_BANK };
+       M1_SCAN_FAULT_BANK, M1_SCAN_FAULT_QUEUE };
 uint32_t m1_hal_fault_reason(void); /* retained first fault, cleared by init */
 /* Six packed 5-bit DMA remaining counts, bank 0 in low bits, sampled after
  * enabling DMA but before starting each row's trigger. Read-only diagnostics. */

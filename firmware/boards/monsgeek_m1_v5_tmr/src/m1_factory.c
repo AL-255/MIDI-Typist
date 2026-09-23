@@ -5,10 +5,6 @@
 
 static uint16_t halfword(const uint8_t *p)
 { return (uint16_t)p[0] | (uint16_t)p[1]<<8; }
-/* Reference counts carry M1_FACTORY_VALUE_SHIFT extra low bits; the low bits
- * are discarded rather than rounded: the acquisition itself is 12-bit. */
-static uint16_t reference_counts(const uint8_t *p)
-{ return (uint16_t)(halfword(p)>>M1_FACTORY_VALUE_SHIFT); }
 m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
     const m1_factory_record_t *lower,m1_factory_bounds_t *out)
 {
@@ -20,8 +16,7 @@ m1_factory_result_t m1_factory_decode(const m1_factory_record_t *upper,
     for(unsigned i=0;i<M1_KEY_COUNT;++i) {
         unsigned cell=m1_factory_cell(i);
         if(cell>=M1_FACTORY_CELL_COUNT)return M1_FACTORY_RANGE;
-        uint16_t hi=reference_counts(upper->values+2u*cell);
-        uint16_t lo=reference_counts(lower->values+2u*cell);
+        uint16_t hi=halfword(upper->values+2u*cell),lo=halfword(lower->values+2u*cell);
         /* Saved bounds must be in the electrical ADC domain. Never infer a
          * scale from an out-of-range record or rewrite its factory page. */
         if(hi<M1_FACTORY_RELEASE_MIN_RAW || hi>M1_FACTORY_RELEASE_MAX_RAW ||

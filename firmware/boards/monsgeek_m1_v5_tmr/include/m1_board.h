@@ -32,16 +32,11 @@ uint8_t m1_led_index(unsigned sensor);
 unsigned m1_factory_cell(unsigned sensor);
 
 /* Single owner, or callers must hold the scanner's IRQ critical section.
- * Only complete, ordered six-bank acquisitions are published. A foreground
- * that falls further behind than the queue is deep loses its oldest frames
- * instead of stopping acquisition: every frame keeps its own sequence number,
- * so consumers see a gap and invalidate exactly as they do for a lost bank.
- * Flash transactions, USB backpressure and menu work must never turn a
- * scheduling hiccup into a terminal acquisition fault. */
+ * Only complete, ordered six-bank acquisitions are published. Queue overflow
+ * is an acquisition fault: never silently overwrite velocity samples. */
 typedef struct {
     uint16_t rows[M1_BANK_COUNT][M1_ADC_RANKS];
     uint16_t frames[M1_SCAN_QUEUE_FRAMES][M1_KEY_COUNT];
-    uint32_t frame_sequence[M1_SCAN_QUEUE_FRAMES];
     uint16_t battery;
     uint32_t sequence, errors;
     uint8_t next_bank, head, pending;

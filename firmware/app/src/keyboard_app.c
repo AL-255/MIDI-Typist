@@ -131,7 +131,7 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     bool active=calibration_active(s->cal),neutral=true;
     if(active && observing)neutral=raw->neutral_idle;
     else if(active) for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
-    calibration_frame(s->cal,samples,lo,hi,s->frame_valid,neutral,now);
+    calibration_frame(s->cal,samples,s->frame_valid,neutral,now);
     if(s->cal->state==CAL_SAVE) {
         keyboard_save_result_t result=s->ops && s->ops->save_calibration?
             s->ops->save_calibration(s->cal):KEYBOARD_SAVE_FAILED;

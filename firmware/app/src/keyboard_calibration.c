@@ -48,9 +48,7 @@ bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo
         if (!lo[i] || hi[i] > 4096u || hi[i] < lo[i]+minimum) return false;
     return true;
 }
-void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw,
-                       const uint16_t *lo, const uint16_t *hi,
-                       bool valid, bool neutral, uint32_t now)
+void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw, bool valid, bool neutral, uint32_t now)
 {
     if (!calibration_active(s)) return;
     for (unsigned i=0; i<s->count; ++i) if (!raw[i] || raw[i]>4096u) valid=false;
@@ -75,17 +73,8 @@ void calibration_frame(keyboard_calibration_t *s, const uint16_t *raw,
         if (done(s,key)) continue;
         /* Each sensor has its own timer/anchor/mean. Releasing or moving one
          * key cannot reset another key's hold. Completed keys may stay held. */
-        unsigned requirement=policy?policy->press_drop:0u;
-        if (requirement && lo && hi && hi[key]>lo[key]) {
-            /* Size the press against the travel this key is known to have, so
-             * the hold starts once the press is committed to the bottom stop
-             * instead of tracking a finger held mid-travel. */
-            unsigned travel=((unsigned)(hi[key]-lo[key])*CALIBRATION_PRESS_DEPTH_NUM)/
-                CALIBRATION_PRESS_DEPTH_DEN;
-            if (travel>requirement) requirement=travel;
-        }
-        unsigned ceiling=requirement?
-            (s->upper[key]>requirement?(unsigned)s->upper[key]-requirement:0u):
+        unsigned ceiling=policy && policy->press_drop?
+            (s->upper[key]>policy->press_drop?(unsigned)s->upper[key]-policy->press_drop:0u):
             s->upper[key]/CALIBRATION_PRESS_DIVISOR;
         if (raw[key]>ceiling) { h->active=false; h->samples=0; continue; }
         if (!h->active) {
