@@ -294,20 +294,9 @@ and live/boot-fault/runtime-fault update ordering. USB shutdown or flag-write
 failure must prevent reset; no metadata erase or retry is permitted. The
 on-demand transition and normal reboot persistence await hardware qualification;
 early startup failure may require a debugger, not merely a power cycle.
-Read-only factory diagnostics on the connected unit returned valid markers and
-the complete 518-byte calibration-field readback; every record is stored with
-three extra low bits, so a reader must divide by eight to compare it with scans.
-After that conversion all 82 resting records agree with the first live released
-scan within 26 counts and imply 129–930 counts of travel per key (mean 717).
-Those pages are unchanged after flashing and automatic settings-only
-initialization. One flashed checkpoint stopped its live service by itself: the
-diagnostic owner reported `Runtime failed: detail=0x00000001
-store=0x00000000 scan=0x00000007`, that build's queue-overflow reason, with
-`runtime stats` showing a 40 441 µs storage stage and a 40 507 µs loop against a
-4 ms (32-frame) queue; every command needing live service then answered
-`unsupported command` until a power cycle. The current build drops the oldest
-frames and reports the gap as a scan loss instead, which native and ARM audits
-cover and hardware reconfirmation still has to confirm. The live
+Read-only factory diagnostics return valid markers but resting values outside
+the 12-bit import domain. The complete 518-byte calibration-field readback remains
+unchanged after flashing and automatic settings-only initialization. The live
 journal verifies settings-only saves without marking provisional calibration
 as saved. A GUI threshold edit and restoration each advanced the journal
 generation after ACK/readback; the original threshold was restored. This is not
@@ -328,9 +317,7 @@ intentional settings-save pause, with no light errors. Intentional save pauses
 are included in the scan-gap counter; this GUI check
 does not independently measure the declared 8 kHz acquisition rate. Queue order/wrap/overflow,
 pause invalidation, and released-key fast-path velocity semantics have offline
-tests. An overflowing queue drops its oldest frames and keeps scanning, which the
-HAL audit checks by overfilling the queue and comparing delivered sequence
-numbers against the producer count. The per-key pending-strike bitmap is checked against every occupied slot
+tests. The per-key pending-strike bitmap is checked against every occupied slot
 through the native MIDI suite, including retrigger and overflow cleanup. These
 checks do not establish sustained pressed-key/polyphonic
 performance or worst-case latency. A physical A/S check observed eight

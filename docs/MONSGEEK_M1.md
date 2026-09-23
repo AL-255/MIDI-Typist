@@ -152,14 +152,9 @@ enabling the new destination and reconnecting the producer. Pretrigger DMA
 counts remain available through cold-start diagnostics to detect stale transfers.
 Complete acquisitions enter a bounded `M1_SCAN_QUEUE_FRAMES` FIFO (32 frames,
 4 ms at the declared rate), preserving order through short foreground delays.
-A foreground that falls further behind than the queue is deep loses its oldest
-frames and acquisition continues; each frame keeps its own sequence number, so
-the application sees a gap and treats it as a scan loss (consumer invalidation
-and a loss count) instead of stopping the keyboard. Flash transactions, USB
-backpressure and menu work are therefore scheduling hiccups, not terminal
-acquisition faults. Pause/stop discard queued frames; startup resumes
-acquisition only after the application has loaded its profile. Battery telemetry
-uses the newest complete acquisition.
+Overflow faults the scanner instead of overwriting velocity samples. Pause/stop
+discard queued frames; startup resumes acquisition only after the application
+has loaded its profile. Battery telemetry uses the newest complete acquisition.
 The shared released-key fast path still copies and validates every sample;
 it skips edge/velocity work only after all keys are released and no fit is pending.
 During held chords, individual unchanged keys also skip velocity work once their
@@ -314,27 +309,18 @@ and marker bytes `55 aa` at 2046–2047. The upper page contains startup resting
 baselines; the lower page contains floors. Only the 82 mapped key cells become
 application bounds; unused, battery and extra logical cells are not keys.
 
-Those halfwords carry `M1_FACTORY_VALUE_SHIFT` (3) extra low bits — eight times
-the 12-bit acquisition domain this port samples — so the importer shifts them
-down and discards the low bits rather than rounding. Measured on the connected
-unit: with that shift all 82 resting records agree with a live released frame
-within 26 counts, and the recorded floors imply 129…930 counts of travel per
-key (mean 717). Reading the same pages as native counts would place every
-record above the ADC range and reject the entire factory calibration, which is
-how a uniform 700-count provisional span came to be used on hardware.
-
 Both records must have valid markers and saved flag 1. Every mapped resting
-baseline must be within the reference's native 1000–4000 range after the shift;
-both endpoints must be ADC-representable and span at least the M1 calibration
-minimum (128). Bounds receive the same native-to-canonical conversion as scans
-(`ADC + 1`). The decoder stages the entire result before publishing it. Bad
-markers, absent calibration, wrapped/reversed/narrow pairs, busy flash or
-invalid execution context leave the previous output unchanged. The reader
-preserves the interrupt mask and touches only 252 data bytes plus three trailer
-bytes per page. Unscaled records are still rejected: a page read in the wrong
-domain fails the range check instead of producing a one-eighth-scale keyboard.
-The [cold-start diagnostics](TELEMETRY.md#cold-start-failure-reporting) expose
-those fixed fields and the first actual scan.
+baseline must be within the reference's native 1000–4000 range; both endpoints
+must be ADC-representable and span at least the M1 calibration minimum (128).
+Bounds receive the same native-to-canonical conversion as scans (`ADC + 1`).
+The decoder stages the entire result before publishing it. Bad markers, absent
+calibration, wrapped/reversed/narrow pairs, busy flash or invalid execution
+context leave the previous output unchanged. The reader preserves the interrupt
+mask and touches only 252 data bytes plus three trailer bytes per page.
+The tested keyboard has valid record markers but values outside this importer's
+ADC domain. They are rejected, not rescaled or overwritten. The
+[cold-start diagnostics](TELEMETRY.md#cold-start-failure-reporting) expose those
+fixed fields and the first actual scan for investigating the representation.
 
 This is a conservative import, not the stock calibration algorithm: it does not
 repair records, import nonlinear vendor curves, initialize the key-type page or erase anything.
@@ -351,16 +337,12 @@ validity/fallback instructions at `0x08005D68..0x08005E86`; this supports the RA
 policy, not a claim of measured travel or compatibility of out-of-range records.
 Context/busy read failures still reject startup.
 
-The GUI's saved-calibration flag stays clear for provisional bounds and is set
-when the imported factory records are valid. Settings autosave does not promote
-provisional bounds to calibration. A custom Fn+C/GUI calibration measures
-endpoints itself: for each key the press requirement is the larger of the
-electrical `press_drop` (128) and five eighths of that key's recorded travel
-span, so a resting finger or a mid-travel hold cannot start a measurement and
-keys with a genuinely small span still reach their requirement. A completed
-hold keeps the key within ±64 counts for one second and stores the mean.
-Storage callbacks are required for calibration entry, and only verified saves
-replace active bounds.
+The GUI's saved-calibration flag stays clear for provisional bounds. Settings
+autosave does not promote them to calibration. A full Fn+C/GUI calibration is
+needed for measured endpoints; it accepts a stable electrical drop of at least
+128 counts for one second, independently for each key. User-held partial travel
+can still yield partial bounds: fully depress each key. Storage callbacks are
+required for calibration entry, and only verified saves replace active bounds.
 
 The shared application's layout policy maps each key's electrical bounds to
 control values **4096 released / 1 pressed**, clipping at the endpoints. Thresholds,
