@@ -1,113 +1,55 @@
-# M1 V5 TMR handoff — September 22, 2026
+# M1 V5 TMR handoff — updated September 25, 2026
 
-## Status
+## Current status
 
-The M1 port is functional over USB but **not complete or qualified for daily use**.
-Work is on `feature/m1-v5-tmr`; `main` has not been changed.
+The Monsgeek M1 V5 TMR port is **work in progress**, not qualified for daily use.
+The active branch is `feature/m1-v5-tmr` at `6fbedb3`; `main` remains Huntsman-only.
+The last user-confirmed working image was `ab4b048`: USB keyboard, MIDI notes,
+Jankó and Fn+V worked. Later source changes have not been flashed or confirmed
+on hardware. No device flash was performed during this handoff.
 
-- Last user-confirmed installed firmware: `ab4b048`. The user confirms MIDI
-  notes, Jankó and Fn+V now work. This is not a worst-case timing qualification.
-  A keyboard was connected again during this session; its identity was verified
-  over the control port as `v0.1.0-MG-M1V5TMR git=ab4b048… state=clean`, bound to
-  the physical USB device through the ALSA/sysfs check rather than a port name.
-- The redistributable artifact is now USB-only: `MT_M1_WIRELESS` (default `OFF`)
-  compiles the unverified Bluetooth/2.4 GHz stack out entirely. Wireless work
-  needs `-DMT_M1_WIRELESS=ON` and is documented as unqualified.
-- Latest firmware-code checkpoint: `9c6db9b` (Fn+Tab/Fn+Caps editor entry) and
-  `fd0e6df` (M1 custom-profile RESET) on top of the handoff commit. Together with
-  the earlier work they include system-menu observation ownership, directional
-  battery filtering, safe cancellation of an Fn transport selection that has not
-  yet called the hardware adapter, the editor-entry fix for what the
-  observation-only change had silently broken, and M1 custom-profile RESET.
-  None of it has been flashed to the confirmed working keyboard.
-- The observation-only change also left two audits red and one M1 HAL guard set
-  stale at handoff; both are corrected and the whole offline suite passes again.
-  The runtime-power audit additionally reports its Unicorn IT-state recoveries in
-  the verdict (see [validation limits](docs/VALIDATION.md)).
-- The incomplete broader cable-bounce experiment was discarded at handoff.
-  No experimental changes from it remain in the source.
-- The previously used USB path `3-2.1` was absent at handoff. Rediscover and
-  verify the device's SysEx build identity before any further hardware action.
+The default M1 build is USB-only (`MT_M1_WIRELESS=OFF`). Bluetooth and 2.4 GHz
+support can be compiled in, but remain physically unqualified. The guarded
+flasher validates image bounds and readback. It does not prove that the new
+application will boot or scan correctly.
 
-## What is verified
+## Known blocker
 
-- Guarded application flashing has bootloader checksum/readback confirmation.
-  Custom USB HID/MIDI, build identity, GUI telemetry and sensor/bounds readback
-  have been exercised on hardware.
-- A full 82-key calibration was completed and retrieved. Private diagnostic
-  files remain excluded from Git. Released bounds: mean **2625.67**, population
-  standard deviation **38.63**. Bottom-out bounds: mean **1751.76**, population
-  standard deviation **31.02**. These are native sensor counts, not normalized
-  control values, and are not evidence that the installed image retains them.
-- The Fn+V fault involved repeated engine rearm/reset work while a modal menu
-  owned input. Menus now observe scans without rearming performance input;
-  leaving a menu requires fresh neutral input. The user confirms the fix works.
-- M1 custom-profile RESET (Fn+R, or `cfg clean` from the GUI) erases only the two
-  custom pages, blank-verifies each erase, returns defaults with the factory
-  electrical bounds and refuses a denied gate or failed erase. It is verified
-  offline only; no reset has been performed on hardware.
-- Read-only hardware session on the connected keyboard (no settings, flash or
-  boot state changed): the control session answered identity, `git`,
-  `runtime storage/stats/encoder`, `calibration read` and `power status`. Stored
-  bounds are travel-normalized (82 keys, lower mean 1920.7, upper mean 2620.7,
-  flags 3); the profile reports slot 0, generation 1, no pending or fault. A
-  10-minute idle soak saw 18,073 snapshots at ~30 Hz with `scan_errors=0`,
-  `light_errors=0`, `losses=0`, `hal_errors=0`, advancing scan and encoder
-  counters, no invalid encoder transitions and stable external-power telemetry
-  (charger pin reported raw low, 23%). GUI snapshot sequence gaps in that soak
-  are the documented latest-only replacement, not acquisition loss.
-- Physical key presses were not possible while the user was away, so typing,
-  MIDI performance, Fn menus, wheels/sustain and cold-boot persistence remain
-  untested on this image. Nothing has been flashed: the new checkpoints are
-  offline-verified only, and an early startup fault needs a debugger.
-- Native M1 tests, complete application builds, the linked-ARM audits and strict
-  Sphinx documentation builds pass for both configurations: 31/31 groups in the
-  default USB-only tree (wireless sections report `SKIP`) and 12/12 M1 groups in
-  a `-DMT_M1_WIRELESS=ON` tree. Linked-ARM tests model peripheral completions;
-  they do not prove physical timing, radio delivery or electrical behavior.
+A prior on-device runtime fault reported `detail=0x00000001`,
+`scan=0x00000007` after a scan queue overflow. Current code treats a full
+32-frame queue as a fatal scanner fault and stops acquisition; a subsequent
+control session cannot restore typing. The queue-loss recovery change in
+`ddc9abd` was explicitly reverted by `6fbedb3` along with two unrelated
+calibration changes. Do not assume any of those fixes are present. Before the
+next flash, investigate the foreground stall and implement a narrowly scoped
+recovery that reports lost frames explicitly to lossless capture and rearms
+ordinary input safely. Keep ADC, bank-order and DMA faults fail-stop.
 
-- The pre-flash artifact was verified through the adapter's own validator for
-  the `custom` destination (identity header, vectors, padded size inside the
-  profile boundary) and carries `git=b9a68453fed7483270b1fcd01ccee33e405e2110
-  state=clean`. The flash itself needs write access to `/dev/bus/usb`, which on
-  this host means one interactive polkit/sudo authorization; it has not been
-  performed. `docs/M1_TEST_CHECKLIST.md` is the procedure and record sheet.
+Calibration and flash persistence also require further hardware validation.
+The 82-key calibration previously retrieved from hardware had released mean
+**2625.67** (population SD **38.63**) and bottom-out mean **1751.76**
+(population SD **31.02**) in native sensor counts. The factory bootloader
+erases the custom profile/calibration slots during reflash; this export is
+diagnostic, not an importable backup. Recalibration is expected after flashing.
 
-## Remaining work
+## Next safe checkpoint
 
-1. Validate the combined latest build on hardware: ordinary typing, MIDI chords,
-   velocity, aftertouch, wheels, sustain, Fn menus and saved-state reboot, with
-   and without a performance MIDI reader. Check advancing scan sequences and
-   fault counters, not merely USB enumeration. This needs someone at the
-   keyboard to press keys, and it needs the new image flashed first.
-2. Physically verify Fn+F1–F3 Bluetooth slots/pairing, Fn+F4 2.4 GHz, Fn+F5 USB,
-   host delivery, disconnect/reconnect and USB-only MIDI gating.
-3. Finish and physically qualify power management: charging-pin meaning,
-   battery indication, low/critical protection, idle sleep, wake and cable
-   transitions. PB10 remains labelled raw high/low, not charging/full.
-4. Cable edges after a transport hardware callback or during PHY transition
-   can still fail closed. Handle these ownership transitions without hiding
-   genuine peripheral faults, retrying ambiguous operations or losing RAM state.
-   This needs a physical cable session; there is no offline model of PHY timing.
-5. GUI knob remapping and transport-selection persistence are not implemented.
-   Both need a board-owned persisted field in the shared journal, so start them
-   as their own checkpoints. Do not describe the port as feature-complete.
+1. Resolve the scan queue overflow without silently skipping samples in the
+   lossless capture mode. Add a focused native test and linked-ARM check.
+2. Build the default USB-only firmware and run the relevant M1 audits. Record
+   the exact Git build identity in the artifact and commit/push the checkpoint.
+3. Flash only after validating application bounds and bootloader readback;
+   test ordinary typing, MIDI input, Fn menus, saved-state reboot and live
+   scan/fault counters on hardware. Repeat calibration if the bootloader erased
+   it. Physical power, radio and cable-edge behavior remain separate work.
 
-## Safety and continuation
+Preserve the bootloader and factory flash. Custom profiles occupy only
+`0x08027000` and `0x08027800`; the application ends below `0x08027000`.
+Factory settings begin at `0x08028000`, with factory calibration pages at
+`0x08032000` and `0x08032800`. Keep the original firmware/disassembly read-only
+and excluded from Git. The GUI is the supported PC application, communicating
+through USB MIDI SysEx rather than CDC.
 
-- Preserve bootloader, factory settings and factory calibration. Custom profiles
-  use only `0x08027000` and `0x08027800`; the application image must end below
-  `0x08027000`. Factory settings start at `0x08028000`, calibration pages at
-  `0x08032000` and `0x08032800`.
-- The factory bootloader erases custom profile/calibration slots when reflashing.
-  Private bounds exports are diagnostic, **not importable backups**. Expect
-  recalibration after a flash; do not claim saved bounds were restored.
-- Normal boot leaves the IAP flag blank. Explicit update writes only verified
-  magic at `0x08004800` after guarded shutdown. Early startup faults can require
-  a debugger; power cycling is not guaranteed recovery.
-- Continue committing/pushing validated checkpoints on the feature branch.
-  Keep original firmware/disassembly read-only and out of Git. The GUI remains
-  the only supported PC application; configuration uses MIDI SysEx, not CDC.
-
-See [building](docs/BUILDING.md), [M1 implementation](docs/MONSGEEK_M1.md),
-[flashing](docs/DEVICE_FLASHING.md) and [validation limits](docs/VALIDATION.md).
+Further details: [M1 board](docs/MONSGEEK_M1.md),
+[validation limits](docs/VALIDATION.md),
+[flash procedure](docs/M1_TEST_CHECKLIST.md).
