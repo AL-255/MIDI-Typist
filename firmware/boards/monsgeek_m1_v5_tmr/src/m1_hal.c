@@ -289,8 +289,7 @@ void m1_hal_dma_irq(void)
     dma_channel_enable(DMA1_CHANNEL6,FALSE);
     dma_flag_clear(DMA1_GL6_FLAG); __DMB();
     if(!running || !busy || !healthy) return;
-    bool full=scan.pending==M1_SCAN_QUEUE_FRAMES;
-    if(!m1_scan_bank(&scan,bank,row)) { fail(full?M1_SCAN_FAULT_QUEUE:M1_SCAN_FAULT_BANK); return; }
+    if(!m1_scan_bank(&scan,bank,row)) { fail(M1_SCAN_FAULT_BANK); return; }
     if(++bank==M1_BANK_COUNT) {
         busy=false;
         if(single) {

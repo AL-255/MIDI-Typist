@@ -32,8 +32,8 @@ uint8_t m1_led_index(unsigned sensor);
 unsigned m1_factory_cell(unsigned sensor);
 
 /* Single owner, or callers must hold the scanner's IRQ critical section.
- * Only complete, ordered six-bank acquisitions are published. Queue overflow
- * is an acquisition fault: never silently overwrite velocity samples. */
+ * Only complete, ordered six-bank acquisitions are published. On queue
+ * overflow the oldest frame is dropped and sequence/errors expose the loss. */
 typedef struct {
     uint16_t rows[M1_BANK_COUNT][M1_ADC_RANKS];
     uint16_t frames[M1_SCAN_QUEUE_FRAMES][M1_KEY_COUNT];

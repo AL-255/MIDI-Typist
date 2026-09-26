@@ -17,7 +17,13 @@ bool m1_scan_bank(m1_scan_t *scan,unsigned bank,const uint16_t *values)
     memcpy(scan->rows[bank],values,sizeof(scan->rows[bank]));
     if(++scan->next_bank!=M1_BANK_COUNT) return true;
     scan->next_bank=0;
-    if(scan->pending==M1_SCAN_QUEUE_FRAMES) { m1_scan_fault(scan);return false; }
+    if(scan->pending==M1_SCAN_QUEUE_FRAMES) {
+        /* The foreground fell behind a complete scan. Retain the newest
+         * observation, but leave a sequence gap for lossless consumers. */
+        ++scan->errors;
+        scan->head=(scan->head+1u)%M1_SCAN_QUEUE_FRAMES;
+        --scan->pending;
+    }
     uint16_t *frame=scan->frames[(scan->head+scan->pending)%M1_SCAN_QUEUE_FRAMES];
     for(unsigned sensor=0;sensor<M1_KEY_COUNT;++sensor) {
         const m1_key_t *key=&m1_keys[sensor];

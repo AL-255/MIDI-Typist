@@ -425,6 +425,30 @@ def scanner(elf):
     print('PASS M1 linked scanner/SDK: ADC ranks, six DMA rows, bank pins, complete-frame ownership, cadence/DMA/calibration faults')
 
 
+def scanner_queue_overflow(elf):
+    d=M1Arm(elf,scanner=True)
+    assert d.call('m1_hal_init') and d.call('m1_hal_start')
+    capacity=D['M1_SCAN_QUEUE_FRAMES']
+    for frame in range(capacity+2):
+        d.put(TMR6+0x10,1);d.call('m1_hal_timer_irq')
+        for bank in range(6):
+            assert d.u32(DMA+0x6c)&1
+            d.cpu.mem_write(d.u32(DMA+0x78),struct.pack('<15H',*(1000+frame+bank*15+i for i in range(15))))
+            d.put(DMA,3<<20);d.call('m1_hal_dma_irq')
+    assert d.call('m1_hal_healthy')==1
+    assert d.call('m1_hal_periodic_active')==1
+    assert d.call('m1_hal_fault_reason')==0
+    assert d.call('m1_hal_errors')==2
+    assert d.call('m1_hal_frame',RGB,RGB+200)==1
+    assert d.u32(RGB+200)==3  # the loss is observable to the application
+    assert struct.unpack('<H',d.cpu.mem_read(RGB,2))[0]==1003
+    for sequence in range(4,capacity+3):
+        assert d.call('m1_hal_frame',RGB,RGB+200)==1
+        assert d.u32(RGB+200)==sequence
+    assert d.call('m1_hal_frame',RGB,RGB+200)==0
+    print('PASS M1 linked scanner queue: newest complete frames retained, loss visible, acquisition healthy')
+
+
 def encoder(elf):
     d=M1Arm(elf,scanner=True)
     def pins(phase,pressed=False):
@@ -1937,6 +1961,7 @@ def main():
     timebase(args.elf)
     lighting(args.elf)
     scanner(args.elf)
+    scanner_queue_overflow(args.elf)
     encoder(args.elf)
     scanner_pending_adc(args.elf)
     scanner_pause(args.elf)

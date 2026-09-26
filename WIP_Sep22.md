@@ -3,7 +3,7 @@
 ## Current status
 
 The Monsgeek M1 V5 TMR port is **work in progress**, not qualified for daily use.
-The active branch is `feature/m1-v5-tmr` at `6fbedb3`; `main` remains Huntsman-only.
+The active branch is `feature/m1-v5-tmr`; `main` remains Huntsman-only.
 The last user-confirmed working image was `ab4b048`: USB keyboard, MIDI notes,
 Jankó and Fn+V worked. Later source changes have not been flashed or confirmed
 on hardware. No device flash was performed during this handoff.
@@ -16,14 +16,12 @@ application will boot or scan correctly.
 ## Known blocker
 
 A prior on-device runtime fault reported `detail=0x00000001`,
-`scan=0x00000007` after a scan queue overflow. Current code treats a full
-32-frame queue as a fatal scanner fault and stops acquisition; a subsequent
-control session cannot restore typing. The queue-loss recovery change in
-`ddc9abd` was explicitly reverted by `6fbedb3` along with two unrelated
-calibration changes. Do not assume any of those fixes are present. Before the
-next flash, investigate the foreground stall and implement a narrowly scoped
-recovery that reports lost frames explicitly to lossless capture and rearms
-ordinary input safely. Keep ADC, bank-order and DMA faults fail-stop.
+`scan=0x00000007` after a scan queue overflow. The current source retains the
+newest 32 complete frames when the foreground falls behind, counts dropped
+frames and exposes a sequence gap. The application invalidates ordinary input
+until neutral and explicitly faults lossless capture. ADC, bank-order and DMA
+faults still stop the scanner. This recovery has offline tests but has **not**
+been flashed or shown to resolve the underlying foreground stall on hardware.
 
 Calibration and flash persistence also require further hardware validation.
 The 82-key calibration previously retrieved from hardware had released mean
@@ -34,8 +32,8 @@ diagnostic, not an importable backup. Recalibration is expected after flashing.
 
 ## Next safe checkpoint
 
-1. Resolve the scan queue overflow without silently skipping samples in the
-   lossless capture mode. Add a focused native test and linked-ARM check.
+1. Investigate the foreground stall responsible for scan queue overflow.
+   Confirm the recovery and explicit loss report on hardware.
 2. Build the default USB-only firmware and run the relevant M1 audits. Record
    the exact Git build identity in the artifact and commit/push the checkpoint.
 3. Flash only after validating application bounds and bootloader readback;

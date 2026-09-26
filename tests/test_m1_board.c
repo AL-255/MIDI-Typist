@@ -195,9 +195,14 @@ static void acquisition(void)
     for(unsigned i=0;i<M1_SCAN_QUEUE_FRAMES;++i)frame_set(&scan,1000);
     memset(row,0,sizeof(row));
     for(unsigned i=0;i<M1_BANK_COUNT-1u;++i)assert(m1_scan_bank(&scan,i,row));
-    assert(!m1_scan_bank(&scan,M1_BANK_COUNT-1u,row));
-    assert(scan.errors==1 && !scan.pending && !scan.battery_valid);
-    assert(!m1_scan_take(&scan,frame,&sequence));
+    assert(m1_scan_bank(&scan,M1_BANK_COUNT-1u,row));
+    assert(scan.errors==1 && scan.pending==M1_SCAN_QUEUE_FRAMES && scan.battery_valid);
+    assert(m1_scan_take(&scan,frame,&sequence));
+    assert(sequence==(uint32_t)(UINT32_MAX-1u+3u*M1_SCAN_QUEUE_FRAMES+1u));
+    assert(frame[0]==1001u);
+    for(unsigned i=1;i<M1_SCAN_QUEUE_FRAMES;++i)
+        assert(m1_scan_take(&scan,frame,&sequence));
+    assert(frame[0]==1u && !scan.pending);
 }
 static void battery(void)
 {

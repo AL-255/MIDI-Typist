@@ -268,8 +268,10 @@ ten seconds without sequence gaps or new scan errors, then returned to fresh GUI
 snapshots. A further five-second GUI check received 152 snapshots, with all 82
 keys released, control readings 3961–4096, and no light errors. This is a bounded
 idle-input check, not qualification of pressed-key/polyphonic load, worst-case
-latency or long-term stability. Queue overflow remains fail-stop; diagnostic USB
-and guarded recovery remain available after a runtime scan fault.
+latency or long-term stability. The current build's queue-overflow recovery is
+verified offline only: it drops the oldest frame, reports loss to capture and
+requires neutral input before ordinary key output resumes. Physical recovery
+from a long foreground stall has not been verified.
 The user confirms working MIDI notes, Jankó and Fn+V. This is functional
 confirmation, not full MIDI timing/load qualification. Shared raw/MIDI work bitmaps
 and per-frame edge lists avoid repeated idle-key state processing without

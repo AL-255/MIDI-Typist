@@ -24,7 +24,7 @@ static keyboard_calibration_t calibration;
 static m1_controls_t controls;
 static uint16_t lower[M1_KEY_COUNT],upper[M1_KEY_COUNT],samples[M1_KEY_COUNT];
 static uint8_t lights[M1_LED_BYTES];
-static uint32_t now,epoch,scan_sequence,losses,last_gui,last_light;
+static uint32_t now,epoch,scan_sequence,scan_errors_seen,losses,last_gui,last_light;
 static keyboard_telemetry_status_t status;
 static bool initialized,enabled,seen,source_healthy,light_sent,selection_attempted,transport_fault;
 static const m1_transport_ops_t *transport_ops;
@@ -295,6 +295,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
         memcpy(lower,bounds.lower,sizeof(lower));memcpy(upper,bounds.upper,sizeof(upper));
     }
     now=scan_sequence=losses=last_gui=last_light=last_save_attempt=0;
+    scan_errors_seen=m1_hal_errors();
     memset(timing,0,sizeof(timing));
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
     update_requested=power_activity=usb_abandoned=false;
@@ -580,10 +581,11 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     if(store.fault)menu.disabled_options|=1u<<(MENU_CALIBRATION-1u);
     uint32_t sequence;
     if(source_healthy && m1_hal_frame(samples,&sequence)) {
-        if(seen && sequence-scan_sequence!=1u) {
+        uint32_t acquisition_errors=m1_hal_errors();
+        if((seen && sequence-scan_sequence!=1u) || acquisition_errors!=scan_errors_seen) {
             ++losses;scan_stream_lost();cancel_input();
         }
-        seen=true;scan_sequence=sequence;
+        seen=true;scan_sequence=sequence;scan_errors_seen=acquisition_errors;
         keyboard_app_frame(&app,samples,M1_KEY_COUNT,M1_PROFILE,lower,upper,
                            true,now);
         power_activity|=!raw.neutral_idle;

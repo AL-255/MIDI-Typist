@@ -152,7 +152,10 @@ enabling the new destination and reconnecting the producer. Pretrigger DMA
 counts remain available through cold-start diagnostics to detect stale transfers.
 Complete acquisitions enter a bounded `M1_SCAN_QUEUE_FRAMES` FIFO (32 frames,
 4 ms at the declared rate), preserving order through short foreground delays.
-Overflow faults the scanner instead of overwriting velocity samples. Pause/stop
+On overflow, the oldest complete frame is discarded and the newest retained;
+the resulting sequence gap invalidates keyboard input until neutral, and
+lossless capture reports failure rather than silently skipping a sample.
+Invalid banks, ADC values and DMA completions still fault the scanner. Pause/stop
 discard queued frames; startup resumes acquisition only after the application
 has loaded its profile. Battery telemetry uses the newest complete acquisition.
 The shared released-key fast path still copies and validates every sample;
