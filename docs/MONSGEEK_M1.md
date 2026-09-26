@@ -7,9 +7,9 @@ transport-menu and power-policy components, an experimental application image,
 and matching GUI geometry. The GUI verifies internal model **ID2949** before
 offering [factory conversion](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 Flashing, recovery and live 82-key high-speed USB telemetry are hardware-checked.
-Bluetooth slots 1 and 2 pairing and A key delivery on their respective host
+Bluetooth slots 1–3 pairing and A key delivery on their respective host
 input devices, 2.4 GHz A key delivery through the receiver, and Fn+F5 return
-to USB are hardware-checked. Bluetooth slot 3, 2.4 GHz pairing/reconnection and
+to USB are hardware-checked. 2.4 GHz pairing/reconnection and
 wireless power remain unqualified.
 Released-key acquisition is hardware-checked with GUI telemetry active and an
 8 kHz timer configuration. The user confirms working MIDI notes, Jankó and Fn+V;
@@ -364,7 +364,7 @@ Any invalid sample or endpoint invalidates the whole frame.
 
 The experimental image binds the Fn transport owner to the radio HAL/scheduler.
 Switching and routing have offline integration tests; **physical delivery is
-verified for Bluetooth slots 1 and 2 and the 2.4 GHz receiver**. The [runtime battery controller](#runtime-battery-sleepwake)
+verified for Bluetooth slots 1–3 and the 2.4 GHz receiver**. The [runtime battery controller](#runtime-battery-sleepwake)
 coordinates automatic sleep/wake and cable changes, including restoration when
 USB power arrives during battery sleep.
 `m1_controls_bind` attaches board-specific input/lighting hooks to the shared
@@ -419,8 +419,8 @@ The GUI shows **pairing requested / searching** during the radio request or
 peer state 4. Neither a completed command nor matching mode proves a paired
 host. State 3 separately permits reports, starting with a fresh neutral report
 and released physical keys. Actual advertising names, bond replacement, receiver
-Bluetooth slot 3 and 2.4 GHz pairing/reconnection still require hardware
-verification; ordinary 2.4 GHz key delivery is verified on this receiver.
+2.4 GHz pairing/reconnection still requires hardware verification; ordinary
+2.4 GHz key delivery is verified on this receiver.
 
 Wireless forces keyboard mode, including a restored MIDI setting. The shared
 menu hides the MIDI entry hint. USB selection does not automatically enable MIDI.
@@ -592,8 +592,8 @@ the scheduler and official SPI/DMA drivers with scripted replies/completion,
 covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
 backpressure, stale/invalid status, faults and timer wrap. `m1_live` binds this
 component to the shared keyboard application and runtime transport/power owners.
-Bluetooth slots 1 and 2 pairing and A key delivery, and three A key-down/up
-pairs through the 2.4 GHz receiver, have physical confirmation. Slot 3, 2.4 GHz
+Bluetooth slots 1–3 pairing and A key delivery, and three A key-down/up
+pairs through the 2.4 GHz receiver, have physical confirmation. 2.4 GHz
 pairing/reconnection and the electrical sleep handoff remain unverified.
 
 ### Radio battery and sleep-control handoff
