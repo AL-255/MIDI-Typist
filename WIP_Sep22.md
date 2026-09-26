@@ -12,6 +12,9 @@ The default M1 build is USB-only (`MT_M1_WIRELESS=OFF`). Bluetooth and 2.4 GHz
 support can be compiled in, but remain physically unqualified. The guarded
 flasher validates image bounds and readback. It does not prove that the new
 application will boot or scan correctly.
+The clean USB-only application build passes the flasher's offline `custom`
+image check (header, vectors, padded size and profile boundary). No M1 is
+currently enumerated for the hardware half of that check.
 
 ## Known blocker
 
@@ -39,12 +42,12 @@ diagnostic, not an importable backup. Recalibration is expected after flashing.
 
 ## Next safe checkpoint
 
-1. Investigate the foreground stall responsible for scan queue overflow.
-   Confirm the recovery and explicit loss report on hardware.
-2. Build the default USB-only firmware and run the relevant M1 audits. Record
-   the exact Git build identity in the artifact and commit/push the checkpoint.
-3. Flash only after validating application bounds and bootloader readback;
-   test ordinary typing, MIDI input, Fn menus, saved-state reboot and live
+1. With the M1 connected, verify its USB-bound firmware identity, then use the
+   guarded updater once and require the bootloader's checksum/readback verdict.
+2. Read `runtime stats` during idle and pressed-key operation. Compare queue
+   peak, error/loss counts and foreground stage maxima to locate the stall;
+   confirm overflow recovery and explicit loss reporting on hardware.
+3. Test ordinary typing, MIDI input, Fn menus, saved-state reboot and live
    scan/fault counters on hardware. Repeat calibration if the bootloader erased
    it. Physical power, radio and cable-edge behavior remain separate work.
 
