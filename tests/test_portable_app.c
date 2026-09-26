@@ -166,6 +166,10 @@ static void rainbow_lighting(void)
     assert(menu.effect==KEYBOARD_LIGHT_RAINBOW);
     keyboard_app_lights(&app,lo,hi,rgb,0u);
     uint8_t first[3]={rgb[SYN_S*3],rgb[SYN_S*3+1],rgb[SYN_S*3+2]};
+    uint8_t expected[LIGHTING_FRAME_SIZE];
+    lighting_travel_frame(SYN_PROFILE,samples,lo,hi,true,expected);
+    lighting_rainbow_frame(SYN_PROFILE,SYN_COUNT,expected,0u);
+    assert(!memcmp(expected+SYN_ENTER*3,rgb+SYN_ENTER*3,3));
     assert(first[0]!=first[1] || first[1]!=first[2]);
     assert(memcmp(first,rgb+SYN_L*3,sizeof(first))!=0); /* spatial gradient */
     keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS);
@@ -180,6 +184,11 @@ static void rainbow_lighting(void)
     keyboard_app_set_caps_lock(&app,false);
     chord(SYN_ENTER);
     assert(midi.mode && menu.effect==KEYBOARD_LIGHT_RAINBOW);
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS/6u);
+#if !MIDI_COLOR_EFFECTS_ENABLED
+    assert(rgb[SYN_S*3]==rgb[SYN_S*3+1] && rgb[SYN_S*3+1]==rgb[SYN_S*3+2]);
+#endif
+    assert(!rgb[SYN_ENTER*3] && !rgb[SYN_ENTER*3+1] && rgb[SYN_ENTER*3+2]);
     chord(SYN_BACKSLASH);
     assert(midi.mode && menu.effect==KEYBOARD_LIGHT_WHITE);
     keyboard_app_lights(&app,lo,hi,rgb,now);

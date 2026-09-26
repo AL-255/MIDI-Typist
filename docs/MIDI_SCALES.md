@@ -50,7 +50,7 @@ mask. Filtering never quantizes, retunes or edits a mapping. Octave changes
 are whole octaves, so pitch-class membership stays the same, but out-of-range
 notes become both silent and dark. Existing held notes keep their latched
 pitch until release; selecting a root/scale performs cleanup first.
-Enter's mode marker and the six wheel/octave/sustain markers are separate overlays,
+MIDI Enter's blue mode marker and the six wheel/octave/sustain markers are separate overlays,
 not promises that a note assignment on those keys is playable.
 
 `keyboard_midi_select_music` validates values, updates the music config,

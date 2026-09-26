@@ -189,7 +189,8 @@ void keyboard_app_lights(keyboard_app_t *s,const uint16_t *lo,const uint16_t *hi
            s->raw->raw[caps_sensor]>s->raw->release[caps_sensor])
             keyboard_light_set(s->raw->profile,caps_sensor,frame,COLOR_WHITE);
     }
-    if(s->menu->effect==KEYBOARD_LIGHT_RAINBOW)
+    if(s->menu->effect==KEYBOARD_LIGHT_RAINBOW &&
+       (!s->midi->mode || MIDI_COLOR_EFFECTS_ENABLED))
         lighting_rainbow_frame(s->raw->profile,s->raw->count,frame,now);
     if(caps_sensor<s->raw->count && s->caps_lock)
         keyboard_light_set(s->raw->profile,caps_sensor,frame,COLOR_CAPS_LOCK);

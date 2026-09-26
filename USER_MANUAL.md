@@ -23,7 +23,7 @@ power-cycle persistence below must not be assumed for that backend.
 ## 1. Start here
 
 1. Connect USB with all keys released. Saved settings return automatically.
-   A first installation starts in keyboard mode: Enter is green.
+   A first installation starts in keyboard mode: Enter follows the White effect.
 2. To play music, hold **Fn+Enter** to preview blue `MIDI`, then release.
    Release all keys; Enter stays blue.
 3. Select this keyboard's MIDI input in your music application, route channel 1
@@ -65,9 +65,9 @@ layouts rather than mislabelling them.
 
 | Appearance | Meaning |
 | --- | --- |
-| Green / blue Enter | Keyboard / MIDI mode |
+| White or Rainbow Enter / blue Enter | Keyboard / MIDI mode; Enter follows the selected effect only in keyboard mode |
 | White keys, dimming as pressed | Default White effect |
-| Moving rainbow colors, dimming as pressed | Rainbow effect selected by Fn+\\ |
+| Moving rainbow colors, dimming as pressed | Rainbow effect selected by Fn+\\ in keyboard mode; MIDI note keys remain white |
 | Red Caps Lock in keyboard mode over USB | Host reports Caps Lock engaged; otherwise Caps Lock follows the selected effect at normal brightness |
 | Dark MIDI note keys | Unmapped, muted, outside scale or out of MIDI range |
 | Blue bottom-row controls | Octave, pitch, modulation and sustain |

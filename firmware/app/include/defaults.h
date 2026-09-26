@@ -86,6 +86,9 @@
 /* Menu/LED tuning. PWM values are linear 0..255; tuples are RGB. */
 #define DEFAULT_BRIGHTNESS_LEVEL 19u
 #define DEFAULT_LIGHT_EFFECT 0u /* KEYBOARD_LIGHT_WHITE */
+/* 0: MIDI note backlight stays white even when keyboard Rainbow is selected.
+ * Mode/control and Janko indicators remain separate functional overlays. */
+#define MIDI_COLOR_EFFECTS_ENABLED 0u
 #define LIGHT_DIAGNOSTIC_TIMEOUT_MS 600000u
 #define RAINBOW_CYCLE_MS 6000u
 #define RAINBOW_HUE_PERIOD 1536u /* six 256-step RGB segments */

@@ -315,14 +315,17 @@ MIDI or keyboard operation.
 ## LEDs and configuration persistence
 
 Holding Fn+Enter previews the next mode without switching: blue `MIDI` or green
-`KEYBOARD`, matching Enter's target-mode hint. All word letters use 30% PWM, with one character at 100%
+`KEYBOARD`, matching Enter's Fn-menu target-mode hint. All word letters use 30% PWM, with one character at 100%
 for 200 ms, followed by a 500 ms background-only pause between words. Repeated
 letters occupy separate time slots. Release of either chord key executes the
-mode change and stops the preview on the next valid scan; no letter or word must finish first. Enter otherwise remains
-a persistent full-channel-intensity marker (green for keyboard, blue for MIDI),
-matching unpressed note keys before global brightness scaling. Other keys keep
-the selected White or Rainbow inverse-travel effect: lit at rest, dimming as pressed. In MIDI mode only
-configured note keys receive this base lighting; unmapped non-control keys are dark.
+mode change and stops the preview on the next valid scan; no letter or word must finish first.
+In keyboard mode, Enter follows the selected White or Rainbow inverse-travel effect
+like the other keys: lit at rest, dimming as pressed. In MIDI mode, Enter remains
+a full-intensity blue marker. The MIDI note backlight is white even if Rainbow
+is selected, because `MIDI_COLOR_EFFECTS_ENABLED` is 0 in `defaults.h`.
+Changing that compile-time flag to 1 enables Rainbow for MIDI notes; the saved
+effect selection itself is unchanged. Only configured note keys receive base
+lighting in MIDI mode; unmapped non-control keys are dark.
 The mask follows GUI edits without changing note/velocity/aftertouch behavior.
 See [text renderer details](FN_MENU.md#interruptible-text-display).
 Left Ctrl/Windows/Alt, Right Alt/Ctrl and Space use Enter's blue (PWM 0,0,255)

@@ -109,10 +109,8 @@ def main():
             c, r, g, b = maps[profile-1][32]
             pwm = 255 if raw >= 3800 else 255-((3800-raw)*255 + 1485)//2970
             assert (payload[r], payload[g], payload[b]) == (pwm,)*3
-            # Keyboard/MIDI candidate adds the persistent green Enter marker.
-            indicator = int('s_midi' in dev.symbols)
             primary_keys=sum(c==0 for c,_,_,_ in maps[profile-1])
-            assert sum(v != 0 for v in payload) == 3*primary_keys-(0 if pwm else 3)-2*indicator
+            assert sum(v != 0 for v in payload) == 3*primary_keys-(0 if pwm else 3)
         if profile in (1, 2):
             # Rainbow x follows ANSI/ISO keycap centers, not sparse IDs.
             physical = sensor_labels(physical_ids=True)[dev.count]

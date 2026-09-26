@@ -474,14 +474,14 @@ void keyboard_midi_lights(const keyboard_midi_t *s, uint8_t *frame, uint32_t now
                                               : (green > blue ? green : blue);
             keyboard_light_set(s->profile,i,frame,level,level,0u);
         }
-        /* Mode/octave hints remain explicit overlays, not note backlighting. */
-        if (s->role[i] != ROLE_ENTER && !(s->mode && s->role[i]>=ROLE_DOWN)) continue;
+        /* Keyboard-mode Enter follows the selected base effect and travel.
+         * MIDI-mode Enter and the performance controls remain blue hints. */
+        if (!s->mode || (s->role[i] != ROLE_ENTER && s->role[i]<ROLE_DOWN)) continue;
         if (octave_key) {
             if(blink_on) keyboard_light_set(s->profile,i,frame,COLOR_MIDI);
             else keyboard_light_set(s->profile,i,frame,0,0,0);
             continue;
         }
-        if(s->mode) keyboard_light_set(s->profile,i,frame,COLOR_MIDI);
-        else keyboard_light_set(s->profile,i,frame,COLOR_CONFIRM);
+        keyboard_light_set(s->profile,i,frame,COLOR_MIDI);
     }
 }

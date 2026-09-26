@@ -21,6 +21,9 @@ White is the default effect. Each key has inverse endpoint-normalized travel:
 fully lit at rest, dimming toward black as it is pressed. Fn+\\ selects the
 Rainbow effect, a six-segment RGB gradient across physical key columns that
 completes a color cycle every six seconds. It keeps the same travel intensity.
+Enter follows this base effect in keyboard mode. MIDI note keys remain white
+regardless of the saved effect while `MIDI_COLOR_EFFECTS_ENABLED` is 0; this
+compile-time switch is in `defaults.h`.
 Both effects are saved with the device profile. Neither effect uses binary pressed/released state, the FN editor, actuation
 threshold, rapid-trigger hysteresis, gamma correction, or the keyboard engine's
 low-level deadband. MIDI mode/shift and calibration indicators overlay the
@@ -55,7 +58,7 @@ keys independently of their MIDI mappings. In keyboard mode, a released Caps
 Lock key has the normal full-intensity base brightness rather than inheriting a
 dimmed value from a resting sensor slightly below its upper bound. The USB
 host's HID Caps Lock LED bit changes that key to red; a bus reset clears the
-state. Fn menus and calibration still take lighting priority. Enter's mode marker and active
+state. Fn menus and calibration still take lighting priority. MIDI Enter's blue mode marker and active
 octave-shift blink remain explicit overlays. The five octave/wheel controls and Space sustain
 use Enter's full-intensity blue in MIDI mode, with the same global brightness
 scaling as ordinary keys; the active right-side octave indicator

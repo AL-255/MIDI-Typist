@@ -162,7 +162,7 @@ static void velocity_pressure_and_modes(void)
     uint8_t rgb[LIGHTING_FRAME_SIZE]={0};
     keyboard_midi_lights(&midi,rgb,midi.changed_at);
     const lighting_channels_t *c=&g_lighting_channels[0][sensor(0x28,0)];
-    assert(rgb[c->green]==255 && rgb[c->blue]==0 && !menu.text.length);
+    assert(!rgb[c->red] && !rgb[c->green] && !rgb[c->blue] && !menu.text.length);
 }
 static void short_taps_and_overlap(void)
 {
@@ -529,11 +529,11 @@ static void octave_lights(void)
             for(unsigned i=0;i<raw.count;++i) {
                 c=&g_lighting_channels[profile-1][i];
                 unsigned offset=c->controller*192u;
-                if(midi.role[i]==2 || (mode && midi.role[i]>=3)) {
+                if(mode && (midi.role[i]==2 || midi.role[i]>=3)) {
                     assert(rgb[offset+c->red]==0);
-                    assert(rgb[offset+c->green]==(mode?0:pwm));
-                    assert(rgb[offset+c->blue]==(mode?pwm:0));
-                } else if(i==sensor(0x2b,0)) {
+                    assert(rgb[offset+c->green]==0);
+                    assert(rgb[offset+c->blue]==pwm);
+                } else if(midi.role[i]==2 || i==sensor(0x2b,0)) {
                     assert(rgb[offset+c->red]==pwm && rgb[offset+c->green]==pwm && rgb[offset+c->blue]==pwm);
                 }
             }
