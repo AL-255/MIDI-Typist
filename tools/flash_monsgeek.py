@@ -266,6 +266,26 @@ class MonsGeekAdapter:
     def load_image(self, path, destination):
         return iap.load_image(path, destination)
 
+    def preflight_program_access(self, current):
+        # IAP re-enumerates with a different PID and devnum. Only root can be
+        # relied on to retain raw-USB access after that destructive transition;
+        # verify the currently selected node is writable before requesting it.
+        if os.geteuid() != 0:
+            raise PermissionError('M1 flashing requires an elevated GUI worker; no boot-entry request was sent')
+        usb_path = self.sysfs / current.location
+        bus, address = ((usb_path / name).read_text().strip() for name in ('busnum', 'devnum'))
+        if not bus.isdecimal() or not address.isdecimal():
+            raise RuntimeError('Selected M1 USB address disappeared before boot entry')
+        node = self.dev / 'bus' / 'usb' / f'{int(bus):03d}' / f'{int(address):03d}'
+        try:
+            fd = os.open(node, os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
+        except OSError as error:
+            raise PermissionError(f'Cannot open selected M1 raw USB node {node} for writing; no boot-entry request was sent') from error
+        try:
+            self.selected(current.token)
+        finally:
+            os.close(fd)
+
     def flash(self, token, action, path, digest, progress, status):
         # Resolve everything that can fail locally before destructive entry.
         choices = {item.id:item for item in (INSTALL, RESTORE, REFLASH)}
@@ -278,6 +298,7 @@ class MonsGeekAdapter:
         backend = usb.backend.libusb1.get_backend()
         if backend is None: raise RuntimeError('Install libusb before converting the keyboard')
         current=self.selected(token)
+        self.preflight_program_access(current)
         if current.mode=='custom_candidate':
             if action not in ('reflash','restore'):raise ValueError('Use Reflash for a custom M1')
             with self.custom_session(token,enter_boot=True,status=status) as current:pass

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import flash_monsgeek as m1
 from flash_models import adapters
+from flash_models import FirmwareImage
 
 
 def reply(model=m1.MODEL_ID, version=0x0408):
@@ -201,6 +202,41 @@ class IdentityTests(unittest.TestCase):
                              ['reflash','restore'])
             with self.assertRaises(FileNotFoundError):
                 self.adapter.flash(device.token, 'install', '/missing/firmware.bin', '', None, None)
+
+    def test_raw_usb_access_precedes_destructive_entry(self):
+        self.device()
+        current, = self.adapter.discover()
+        node = self.dev / 'bus' / 'usb' / '003' / '022'
+        node.parent.mkdir(parents=True)
+        node.write_bytes(b'')
+        with patch('os.geteuid', return_value=1000), \
+             patch('os.open', side_effect=AssertionError('Unprivileged worker opened USB')):
+            with self.assertRaisesRegex(PermissionError, 'elevated GUI worker'):
+                self.adapter.preflight_program_access(current)
+        with patch('os.geteuid', return_value=0):
+            self.adapter.preflight_program_access(current)
+        node.unlink()
+        with patch('os.geteuid', return_value=0):
+            with self.assertRaisesRegex(PermissionError, 'no boot-entry request'):
+                self.adapter.preflight_program_access(current)
+
+        image = FirmwareImage('fake.bin', b'', 'digest', 'custom', 'test')
+        with patch.object(self.adapter, 'load_image', return_value=image), \
+             patch.object(self.adapter, 'preflight_program_access', side_effect=PermissionError('denied')), \
+             patch.object(self.adapter, 'enter_factory', side_effect=AssertionError('Entered IAP')), \
+             patch('usb.backend.libusb1.get_backend', return_value=object()):
+            with self.assertRaisesRegex(PermissionError, 'denied'):
+                self.adapter.flash(current.token, 'install', 'fake.bin', 'digest', None, lambda _: None)
+        path = self.usb / current.location
+        (path / 'manufacturer').write_text('MIDI-Typist')
+        (path / 'product').write_text('M1 V5 TMR')
+        custom, = self.adapter.discover()
+        with patch.object(self.adapter, 'load_image', return_value=image), \
+             patch.object(self.adapter, 'preflight_program_access', side_effect=PermissionError('denied')), \
+             patch.object(self.adapter, 'custom_session', side_effect=AssertionError('Entered IAP')), \
+             patch('usb.backend.libusb1.get_backend', return_value=object()):
+            with self.assertRaisesRegex(PermissionError, 'denied'):
+                self.adapter.flash(custom.token, 'reflash', 'fake.bin', 'digest', None, lambda _: None)
 
     def test_guarded_boot_entry_packet(self):
         request=m1.boot_request()

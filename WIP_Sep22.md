@@ -15,6 +15,8 @@ application will boot or scan correctly.
 The clean USB-only application build passes the flasher's offline `custom`
 image check (header, vectors, padded size and profile boundary). No M1 is
 currently enumerated for the hardware half of that check.
+The M1 flash worker now rejects missing elevated/raw-USB access before sending
+either boot-entry command; this guard is verified offline, not on hardware.
 
 ## Known blocker
 

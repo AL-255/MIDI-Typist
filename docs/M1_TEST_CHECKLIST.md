@@ -62,11 +62,12 @@ and the digest is the padded application digest the GUI displays — do not
 substitute the raw file hash.
 
 **Run this only with the privilege it needs (the GUI elevates automatically).**
-The worker verifies the model over MIDI and requests guarded IAP entry *before*
-it opens the bootloader over raw USB. Without write access to `/dev/bus/usb/...`
-the entry still happens and only the programming step fails, which leaves the
-keyboard sitting in the factory bootloader until an authorized flash completes
-the transfer. Re-running the same command with privileges is the recovery path.
+The worker requires effective root and opens the selected raw-USB application
+node for writing before it sends either boot-entry command. Failure rejects the
+request while the keyboard is still running the application. The model and
+physical USB port are then verified again for the actual IAP transfer. Access
+after bootloader re-enumeration can still fail for reasons outside this preflight;
+in that case, recovery requires an authorized transfer in the same IAP session.
 
 Expected sequence: the keyboard leaves the application, re-enumerates as the
 factory bootloader on the same port, is programmed in 64-byte blocks without
