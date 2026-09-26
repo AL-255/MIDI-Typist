@@ -6,6 +6,8 @@
 #include "keyboard_calibration.h"
 
 typedef enum { KEYBOARD_SAVE_FAILED, KEYBOARD_SAVE_COMPLETE, KEYBOARD_SAVE_DEFER } keyboard_save_result_t;
+/* Standard one-byte USB HID keyboard LED output report, bit 1. */
+#define KEYBOARD_HID_LED_CAPS_LOCK (1u << 1)
 typedef struct {
     /* Synchronous, single-owner callbacks. Only the board owns storage
      * addresses, erase geometry, current schema and bootloader boundaries. */
@@ -40,7 +42,7 @@ typedef struct keyboard_app {
     bool readback_valid,readback_normalized;
     keyboard_report_t sent;
     uint32_t last_frame,last_report;
-    bool sent_valid,loaded,reset_pending,frame_valid;
+    bool sent_valid,loaded,reset_pending,frame_valid,caps_lock;
     /* Optional board system controls. Input runs after raw acquisition and
      * before the shared Fn menu; true consumes this frame's menu input.
      * Lighting runs last. Serialized with every other application method. */
@@ -69,6 +71,7 @@ void keyboard_app_service(keyboard_app_t *app,uint32_t now,bool healthy,
                           keyboard_send_fn keyboard_send,midi_send_fn midi_send);
 void keyboard_app_lights(keyboard_app_t *app,const uint16_t *lo,const uint16_t *hi,
                          uint8_t *frame,uint32_t now);
+void keyboard_app_set_caps_lock(keyboard_app_t *app,bool engaged);
 /* Common newline-stripped cfg commands. Framing, transport and presentation
  * are board/host concerns; operation validation and safety live here.
  * A recognized but malformed cfg command is consumed without changing ACK. */

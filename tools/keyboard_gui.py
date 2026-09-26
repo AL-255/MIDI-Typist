@@ -20,7 +20,7 @@ from keyboard_capture import press_velocity, velocity_window, VELOCITY_WINDOW
 from keyboard_flash_tab import FlashTab
 import gui_fonts
 from gui_widgets import ScrollArea
-from keyboard_boards import get_board, boards, DEFAULT_TARGET
+from keyboard_boards import get_board, boards, DEFAULT_TARGET, M1_TARGET
 
 AXIS_W = 34  # minimum left gutter for the bottom plot's raw-value axis
 # Fn+Tab (MIDI) trigger point: level 1 is the velocity window's bottom-out
@@ -110,6 +110,10 @@ class App:
         self.enable_button.pack(side='left',padx=3)
         self.disable_button = ttk.Button(bar,text='Disable keyboard',command=lambda:self.enable(False))
         self.disable_button.pack(side='left',padx=3)
+        self.light_test_button = ttk.Button(bar,text='RGBW layout test',command=lambda:self.light_test(True))
+        self.light_test_button.pack(side='left',padx=3)
+        self.light_test_off_button = ttk.Button(bar,text='Stop RGBW test',command=lambda:self.light_test(False))
+        self.light_test_off_button.pack(side='left',padx=3)
         ttk.Button(bar,text='Save profile…',command=self.save_profile).pack(side='right',padx=3)
         self.load_button = ttk.Button(bar,text='Load + apply profile…',command=self.load_profile)
         self.load_button.pack(side='right',padx=3)
@@ -302,6 +306,16 @@ class App:
 
     def toggle_hold(self):
         self.capture.reset()
+
+    def light_test(self, enabled):
+        if not self.usable() or self.board.target not in (DEFAULT_TARGET,M1_TARGET):
+            return
+        try:
+            self.connection.submit('light_test',int(enabled))
+            self.message.set('RGBW layout diagnostic queued' if enabled else
+                             'RGBW layout diagnostic stop queued')
+        except queue.Full:
+            self.message.set('Device command queue is full; try again shortly')
 
     def sync_hold_stream(self):
         """Engage/disengage the full-rate per-key stream to match hold mode."""
@@ -721,6 +735,9 @@ class App:
         for button in (self.enable_button,self.disable_button,self.apply_button,self.load_button):
             button.configure(state='normal' if self.usable() else 'disabled')
         self.apply_all_button.configure(state='normal' if self.usable() else 'disabled')
+        diagnostic_usable = self.usable() and self.board.target in (DEFAULT_TARGET,M1_TARGET)
+        for button in (self.light_test_button,self.light_test_off_button):
+            button.configure(state='normal' if diagnostic_usable else 'disabled')
         midi_usable = self.usable() and next(k.label for k in self.keys if k.sensor == self.selected) not in MIDI_CONTROLS
         self.midi_button.configure(state='normal' if midi_usable else 'disabled')
         key_usable = self.usable() and next(k.label for k in self.keys if k.sensor==self.selected)!='Fn'

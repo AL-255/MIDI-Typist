@@ -28,6 +28,8 @@ extern const uint8_t m1_adc_channels[M1_ADC_RANKS];
 /* PB9/PB8/PB7 output levels packed in bits 2/1/0. */
 extern const uint8_t m1_bank_bits[M1_BANK_COUNT];
 uint8_t m1_led_index(unsigned sensor);
+/* Full-brightness RGBW placement check in physical bottom-row order plus Up. */
+void m1_light_test_bottom(uint8_t frame[M1_LED_BYTES]);
 /* Original per-cell storage is rank-major, unlike DMA's bank-major rows. */
 unsigned m1_factory_cell(unsigned sensor);
 

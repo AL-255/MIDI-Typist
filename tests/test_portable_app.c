@@ -140,6 +140,60 @@ static void performance(void)
     samples[SYN_TAB]=3000; frame(); samples[SYN_TAB]=3900; frame(); frame(); drain();
     assert(midi.music.root==0);
 }
+static void caps_lock_lighting(void)
+{
+    init();
+    /* A resting Caps sensor may sit below its calibrated upper bound. Its
+     * normal keyboard light must still match the full-brightness keys. */
+    samples[SYN_CAPS]=3700;frame();
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]==255 && rgb[SYN_CAPS*3+1]==255 && rgb[SYN_CAPS*3+2]==255);
+    keyboard_app_set_caps_lock(&app,true);
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]==255 && !rgb[SYN_CAPS*3+1] && !rgb[SYN_CAPS*3+2]);
+    assert(rgb[100*3]==rgb[100*3+1] && rgb[100*3+1]==rgb[100*3+2]);
+    keyboard_app_set_caps_lock(&app,false);
+    samples[SYN_CAPS]=3000;frame();
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]<255 && rgb[SYN_CAPS*3]==rgb[SYN_CAPS*3+1] &&
+           rgb[SYN_CAPS*3+1]==rgb[SYN_CAPS*3+2]);
+}
+static void rainbow_lighting(void)
+{
+    init();
+    assert(menu.effect==KEYBOARD_LIGHT_WHITE);
+    chord(SYN_BACKSLASH);
+    assert(menu.effect==KEYBOARD_LIGHT_RAINBOW);
+    keyboard_app_lights(&app,lo,hi,rgb,0u);
+    uint8_t first[3]={rgb[SYN_S*3],rgb[SYN_S*3+1],rgb[SYN_S*3+2]};
+    uint8_t expected[LIGHTING_FRAME_SIZE];
+    lighting_travel_frame(SYN_PROFILE,samples,lo,hi,true,expected);
+    lighting_rainbow_frame(SYN_PROFILE,SYN_COUNT,expected,0u);
+    assert(!memcmp(expected+SYN_ENTER*3,rgb+SYN_ENTER*3,3));
+    assert(first[0]!=first[1] || first[1]!=first[2]);
+    assert(memcmp(first,rgb+SYN_L*3,sizeof(first))!=0); /* spatial gradient */
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS);
+    assert(!memcmp(first,rgb+SYN_S*3,sizeof(first))); /* exact wrap */
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS/2u);
+    assert(memcmp(first,rgb+SYN_S*3,sizeof(first))!=0); /* animation */
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS/6u);
+    assert(rgb[SYN_CAPS*3+1]!=rgb[SYN_CAPS*3+2]); /* unlocked Caps follows rainbow */
+    keyboard_app_set_caps_lock(&app,true);
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS/6u);
+    assert(rgb[SYN_CAPS*3]==255 && !rgb[SYN_CAPS*3+1] && !rgb[SYN_CAPS*3+2]);
+    keyboard_app_set_caps_lock(&app,false);
+    chord(SYN_ENTER);
+    assert(midi.mode && menu.effect==KEYBOARD_LIGHT_RAINBOW);
+    keyboard_app_lights(&app,lo,hi,rgb,RAINBOW_CYCLE_MS/6u);
+#if !MIDI_COLOR_EFFECTS_ENABLED
+    assert(rgb[SYN_S*3]==rgb[SYN_S*3+1] && rgb[SYN_S*3+1]==rgb[SYN_S*3+2]);
+#endif
+    assert(!rgb[SYN_ENTER*3] && !rgb[SYN_ENTER*3+1] && rgb[SYN_ENTER*3+2]);
+    chord(SYN_BACKSLASH);
+    assert(midi.mode && menu.effect==KEYBOARD_LIGHT_WHITE);
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_S*3]==rgb[SYN_S*3+1] && rgb[SYN_S*3+1]==rgb[SYN_S*3+2]);
+}
 static void calibration(void)
 {
     keyboard_calibration_t cal; calibration_init(&cal);
@@ -481,6 +535,6 @@ int main(void)
     editor_entry_observation();
     calibration_observation();
     sensor_readback();
-    normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
+    normalizer(); performance(); caps_lock_lighting(); rainbow_lighting(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

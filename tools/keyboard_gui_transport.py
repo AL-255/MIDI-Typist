@@ -245,8 +245,12 @@ class Connection(threading.Thread):
                         elif power_supported and time.monotonic()-power_at>=D['GUI_POWER_POLL_MS']/1000:
                             self.read_power();power_at=time.monotonic()
                     else:
-                        self.next_id = self.next_id % 0xffffffff+1
-                        self.command('cfg '+action+' '+str(self.next_id)+''.join(' '+str(v) for v in args), action, args)
+                        if action == 'light_test':
+                            self.command('light test '+('bottom' if args[0] else 'off'))
+                            self.notify('RGBW layout test '+('active (10-minute timeout)' if args[0] else 'off'))
+                        else:
+                            self.next_id = self.next_id % 0xffffffff+1
+                            self.command('cfg '+action+' '+str(self.next_id)+''.join(' '+str(v) for v in args), action, args)
                 self.poll()
         except Exception as error:
             self.notify(f'ERROR: {error}')

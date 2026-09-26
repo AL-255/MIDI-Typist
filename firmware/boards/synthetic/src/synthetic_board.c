@@ -22,7 +22,7 @@ void synthetic_rate(uint32_t hz) { layout.sample_hz=hz; }
 void synthetic_board_init(void)
 {
     static const uint8_t usage[]={0,0x2b,0x28,0x2c,0,0x16,0x08,0x0d,0x0b,0x13,0x17,
-                                0x06,0x0e,0x0f,0x29,0x39,0,0,0,0,0};
+                                0x06,0x0e,0x0f,0x29,0x39,0,0,0,0,0,0x31};
     static const uint8_t mod[]={0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,1,8,4,64,16};
     for(unsigned i=0;i<SYN_COUNT;++i) {
         actions[i][0]=(keyboard_action_t){.key=key_id(i),.type=2,
@@ -87,3 +87,5 @@ void keyboard_light_get(uint8_t p,unsigned sensor,const uint8_t *frame,uint8_t *
     if(sensor>=keyboard_layout_count(p)) { *r=*g=*b=0u; return; }
     *r=frame[sensor*3]; *g=frame[sensor*3+1]; *b=frame[sensor*3+2];
 }
+uint8_t keyboard_light_x(uint8_t p,unsigned sensor)
+{ return sensor<keyboard_layout_count(p)?(sensor%15u)*4u:0u; }

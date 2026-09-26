@@ -38,6 +38,8 @@ static keyboard_aux_t auxiliary;
 static bool auxiliary_allowed;
 static bool power_activity;
 static bool usb_abandoned;
+static bool light_diagnostic;
+static uint32_t light_diagnostic_since;
 static const uint16_t auxiliary_mapping[3]={
 #define AUXMAP(index,usage) [index]=usage,
 #include "../config/auxmap.def"
@@ -134,7 +136,7 @@ static void check_epoch(void)
 {
     uint32_t mask=lock(),current=m1_usb_generation();
     bool changed=current!=epoch;
-    if(changed) { epoch=current;midi_control_usb_reset();scan_stream_usb_reset(); }
+    if(changed) { epoch=current;midi_control_usb_reset();scan_stream_usb_reset();light_diagnostic=false; }
     unlock(mask);
     /* A USB GUI reset must not release a key owned by a wireless host. */
     if(changed && controls.current==M1_TRANSPORT_USB && !selection_attempted)cancel_input();
@@ -214,6 +216,13 @@ static bool power_status(keyboard_power_status_t *out)
 static bool command(const char *line)
 {
     if(!enabled || !usb_ready())return false;
+    if(!strcmp(line,"light test bottom")) {
+        if(controls.current!=M1_TRANSPORT_USB || !source_healthy || !app.frame_valid)return false;
+        light_diagnostic=true;light_diagnostic_since=now;light_sent=false;return true;
+    }
+    if(!strcmp(line,"light test off")) {
+        light_diagnostic=false;light_sent=false;return true;
+    }
     if(!strcmp(line,"runtime encoder")) {
         m1_encoder_status_t input;
         if(!m1_encoder_status(&input))return false;
@@ -300,6 +309,7 @@ bool m1_live_init(m1_transport_t current,const m1_transport_ops_t *transports,
     memset(timing,0,sizeof(timing));
     seen=source_healthy=light_sent=selection_attempted=transport_fault=storage_gap=false;
     update_requested=power_activity=usb_abandoned=false;
+    light_diagnostic=false;light_diagnostic_since=0;
     power_state=POWER_AWAKE;
     status=(keyboard_telemetry_status_t){.storage_slot=255,
                                       .calibration_saved=store.saved || factory_result==M1_FACTORY_OK,
@@ -315,6 +325,7 @@ void m1_live_stop(uint32_t now_ms)
 {
     if(!initialized || (!enabled && power_state==POWER_AWAKE))return;
     now=now_ms;enabled=false;
+    light_diagnostic=false;
     /* Do not reclaim peripherals already handed to the power owner. */
     power_state=power_state>=POWER_PARKED?POWER_STOPPED:POWER_AWAKE;
     cancel_input();scan_stream_stop();midi_control_usb_reset();
@@ -334,7 +345,7 @@ static bool power_suspend(uint32_t now_ms,bool source_change)
      * No platform select/pair call has run, so cancel_input can discard that
      * request while preserving the current transport and its release duties.
      * Ordinary sleep must wait; attempted physical selections remain guarded. */
-    now=now_ms;enabled=false;power_state=POWER_DRAINING;
+    now=now_ms;enabled=false;power_state=POWER_DRAINING;light_diagnostic=false;
     cancel_input();scan_stream_lost();++losses;seen=source_healthy=false;
     scan_stream_stop();midi_control_usb_reset();return true;
 }
@@ -600,6 +611,10 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     mark=timing_step(TIMING_FRAME,mark);
     bool fresh=source_healthy && seen && (uint32_t)(now-app.last_frame)<SCAN_STALE_MS;
     if(!fresh)scan_stream_lost();
+    if(light_diagnostic && (controls.current!=M1_TRANSPORT_USB || !fresh ||
+       (uint32_t)(now-light_diagnostic_since)>=LIGHT_DIAGNOSTIC_TIMEOUT_MS)) {
+        light_diagnostic=false;light_sent=false;
+    }
     /* Before queuing this iteration's heartbeat/GUI/LED traffic, so the
      * periodic output refresh cannot starve an otherwise idle pending save. */
     bool saved=persist(fresh);mark=timing_step(TIMING_STORE,mark);
@@ -627,7 +642,10 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     }
     mark=timing_step(TIMING_CONTROLS,mark);
     if(m1_lighting_ready() && (!light_sent || (uint32_t)(now-last_light)>=LIGHTING_FRAME_PERIOD_MS)) {
+        keyboard_app_set_caps_lock(&app,controls.current==M1_TRANSPORT_USB &&
+            (m1_usb_leds() & KEYBOARD_HID_LED_CAPS_LOCK)!=0u);
         keyboard_app_lights(&app,lower,upper,lights,now);
+        if(light_diagnostic)m1_light_test_bottom(lights);
         if(m1_lighting_offer(lights,sizeof(lights),now_us)) { last_light=now;light_sent=true; }
     }
     mark=timing_step(TIMING_LIGHTS,mark);

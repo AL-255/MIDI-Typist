@@ -58,6 +58,7 @@ static void polling_cache(unsigned profile)
     CHECK_CHANGE(midi.janko,!midi.janko);
     CHECK_CHANGE(midi.lower_muted,!midi.lower_muted);
     CHECK_CHANGE(menu.brightness,menu.brightness?0:1);
+    CHECK_CHANGE(menu.effect,menu.effect==KEYBOARD_LIGHT_WHITE?KEYBOARD_LIGHT_RAINBOW:KEYBOARD_LIGHT_WHITE);
     CHECK_CHANGE(midi.velocity_start,midi.velocity_start==1?2:1);
     CHECK_CHANGE(midi.music.root,midi.music.root?0:1);
     CHECK_CHANGE(midi.music.scale,midi.music.scale?0:1);
@@ -96,10 +97,12 @@ int main(void)
         assert(!device_store_service(&s,&app,100,read_page,write_page));
         assert(device_store_service(&s,&app,360,read_page,write_page));
         assert(s.valid && s.generation==1 && writes==1);
+        assert((pages[s.slot][18]&0x70u)==0x70u); /* erased-state White encoding */
         for(unsigned t=400;t<2000;t+=20) assert(!device_store_service(&s,&app,t,read_page,write_page));
         assert(writes==1);
         midi.mode=1;midi.janko=true;midi.lower_muted=true;midi.octave=-3;
         midi.velocity_start=7;midi.music.root=6;midi.music.scale=4;menu.brightness=8;
+        menu.effect=KEYBOARD_LIGHT_RAINBOW;
         unsigned mapped=0;while(midi.mapping[mapped]==MIDI_UNMAPPED)++mapped;
         const uint8_t note=midi.mapping[mapped]+5;midi.mapping[mapped]=note;
         for(unsigned i=0;i<raw.count;++i){raw.press[i]=1000+i;raw.release[i]=2000+i;
@@ -111,8 +114,10 @@ int main(void)
         raw.raw[0]=4000;
         assert(device_store_service(&s,&app,2420,read_page,write_page));
         assert(writes==2 && s.slot==1);
+        assert((pages[s.slot][18]&0x70u)==0x60u); /* Rainbow uses former padding */
         boot(&s,profile);
         assert(midi.mode==1 && midi.janko && midi.lower_muted && midi.octave==-3 && menu.brightness==8);
+        assert(menu.effect==KEYBOARD_LIGHT_RAINBOW);
         assert(midi.velocity_start==7 && midi.music.root==6 && midi.music.scale==4);
         assert(midi.mapping[mapped]==note);
         assert(raw.engine.config.saved_actuation==6 && raw.engine.config.saved_rapid==7);
@@ -128,6 +133,11 @@ int main(void)
         uint8_t foreign[CAL_PAGE_SIZE];memcpy(foreign,good,CAL_PAGE_SIZE);
         foreign[0]^=1;
         uint32_t crc=calibration_crc32(foreign,CAL_PAGE_SIZE-4);
+        for(unsigned byte=0;byte<4;++byte)foreign[CAL_PAGE_SIZE-4+byte]=crc>>(8*byte);
+        assert(!device_record_valid(foreign));
+        memcpy(foreign,good,CAL_PAGE_SIZE);
+        foreign[18]=(foreign[18]&~0x70u)|0x50u; /* unsupported effect ID */
+        crc=calibration_crc32(foreign,CAL_PAGE_SIZE-4);
         for(unsigned byte=0;byte<4;++byte)foreign[CAL_PAGE_SIZE-4+byte]=crc>>(8*byte);
         assert(!device_record_valid(foreign));
         for(cut=0;cut<CAL_PAGE_SIZE;++cut) {

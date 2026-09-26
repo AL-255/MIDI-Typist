@@ -17,20 +17,32 @@ scan attempt after USB configuration, and initializes lighting after ASIC
 layout discovery. No GUI connection or start command is required. NKRO/MIDI
 output arms after neutral samples.
 
-Each key is white with inverse endpoint-normalized travel: fully lit at rest,
-dimming toward black as it is pressed. It does not use binary pressed/released state, the FN editor, actuation
+White is the default effect. Each key has inverse endpoint-normalized travel:
+fully lit at rest, dimming toward black as it is pressed. Fn+\\ selects the
+Rainbow effect, a six-segment RGB gradient across physical key columns that
+completes a color cycle every six seconds. It keeps the same travel intensity.
+Enter follows this base effect in keyboard mode. MIDI note keys remain white
+regardless of the saved effect while `MIDI_COLOR_EFFECTS_ENABLED` is 0; this
+compile-time switch is in `defaults.h`.
+Both effects are saved with the device profile. Neither effect uses binary pressed/released state, the FN editor, actuation
 threshold, rapid-trigger hysteresis, gamma correction, or the keyboard engine's
 low-level deadband. MIDI mode/shift and calibration indicators overlay the
-base white effect. MIDI mode masks keys whose configured note is unmapped;
+base effect. MIDI mode masks keys whose configured note is unmapped;
 the mask follows GUI mapping changes on the next lighting frame. Mode/shift
 indicators remain exceptions as described in [MIDI design](MIDI_DESIGN.md) and
-[calibration](CALIBRATION.md):
+[calibration](CALIBRATION.md). On the Huntsman ANSI/ISO bottom row, Rainbow uses
+keycap-center positions for LCtrl, LWin, LAlt, Space, Fn, RAlt, Menu and RCtrl.
+Other platforms supply their own geometry. The travel relationship is:
 
 ```text
 travel = round(255 * (upper - raw) / (upper - lower)), clamped to 0..255
 PWM = 255 - travel
 raw >= upper: maximum white; raw <= lower: off
 ```
+
+On an attached ANSI Huntsman, the bottom-row RGBW diagnostic visibly matched
+LCtrl white, LWin red, LAlt green, Space white, Fn green, RAlt blue, Menu red
+and RCtrl white. This checks channel/key identity, not Rainbow hue placement.
 
 Invalid input, unsettled scanning, stopped/faulted scanning, USB unconfigured,
 or no new scan for 100 ms requests a black frame. A new full lighting frame is
@@ -42,7 +54,11 @@ uploads use the same frozen snapshot.
 Invalid per-key raw values or endpoints remain dark, not inverted to full
 brightness. `lighting_travel_pwm` retains its press-increasing normalization
 for MIDI aftertouch; only the LED frame inverts it. Keyboard mode lights all
-keys independently of their MIDI mappings. Enter's mode marker and active
+keys independently of their MIDI mappings. In keyboard mode, a released Caps
+Lock key has the normal full-intensity base brightness rather than inheriting a
+dimmed value from a resting sensor slightly below its upper bound. The USB
+host's HID Caps Lock LED bit changes that key to red; a bus reset clears the
+state. Fn menus and calibration still take lighting priority. MIDI Enter's blue mode marker and active
 octave-shift blink remain explicit overlays. The five octave/wheel controls and Space sustain
 use Enter's full-intensity blue in MIDI mode, with the same global brightness
 scaling as ordinary keys; the active right-side octave indicator
@@ -83,6 +99,7 @@ The broken sibling implementation was not consulted.
 | Runtime `0x04000004`, 75 nine-byte records | Key ID, row/column, controller, individual R/G/B channel indices, effect metadata |
 | `0x2000cbf0`, `0x2000e410` | Separate ANSI/ISO FN/right-Alt patches for scan and lighting maps |
 | `0x200098b0` | Actual normal-effect color-to-controller renderer used for differential tests |
+| `0x20017f4a`, type-fifteen effect path | Original five-row, fifteen-column RGB effect plane used as the spatial reference; this project generates its own color wheel rather than copying a vendor table |
 | `0x20016464`, `0x20015dec`, `0x2000e354` | Default endpoints, endpoint calibration, inverse raw normalization |
 
 The RGB channels are **not packed per key**. For example A's red/green/blue
@@ -179,15 +196,28 @@ scan status
 scan sample 20
 light off
 light on
+light test bottom
+light test off
 stream gui
 ```
 
 `light status` reports phase, requested state, layout, transfers, complete frames,
-errors and accepted calibration count. Phases: 0 off/not started, 1 low wait,
+errors, accepted calibration count and diagnostic state. Phases: 0 off/not started, 1 low wait,
 2 high wait, 3 primary init, 4 secondary init, 5 running, 6 maintenance, 7 fault.
 `light off/on` changes the desired effect without hardware reinitialization.
-Diagnostic text is independently framed as LOG messages. The GUI is the only
-supported PC application; logs are best effort and never acknowledgments.
+On Huntsman, `light test bottom` temporarily blanks every other key and drives
+the ANSI bottom row at full pure-channel PWM, left to right: LCtrl white,
+LWin red, LAlt green, Space white, Fn green, RAlt blue, Menu red, RCtrl white.
+On M1 the same command blanks every other key and drives, in physical order:
+LCtrl white, LWin red, LAlt green, Space blue, RAlt white, Fn red,
+RCtrl green, Left blue, Down white, Right red; Up (above Down) green.
+It is available from the GUI's **RGBW layout test** button and is never saved.
+`light test off`, USB reset, stale scan, leaving USB mode, or a ten-minute
+timeout restores the selected White/Rainbow effect on M1. Huntsman also
+supports `light test off`, USB reset, and the ten-minute timeout. Invalid scan
+data still blanks the whole keyboard. Huntsman diagnostic text is independently
+framed as best-effort LOG messages, not acknowledgments. The GUI is the only
+supported PC application.
 
 ## Validation
 

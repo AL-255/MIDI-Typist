@@ -19,7 +19,7 @@ uint32_t calibration_crc32(const uint8_t *p, unsigned n);
  * between independent writers: only a verified new snapshot replaces the old. */
 typedef struct {
     uint16_t press[CAL_KEYS],release[CAL_KEYS];
-    uint8_t notes[CAL_KEYS],keycodes[CAL_KEYS],globals[13],profile,count;
+    uint8_t notes[CAL_KEYS],keycodes[CAL_KEYS],globals[14],profile,count;
 } device_settings_t;
 typedef struct {
     uint8_t record[CAL_PAGE_SIZE];

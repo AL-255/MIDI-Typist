@@ -15,7 +15,7 @@ have a different update-retention contract.
 ## What is saved
 
 Each complete snapshot includes keyboard/MIDI mode, Jankó, lower-row mute,
-brightness, velocity start, root, scale, octave, output enable, committed
+brightness, White/Rainbow effect, velocity start, root, scale, octave, output enable, committed
 trigger/rapid levels, and every sensor's thresholds, keyboard and MIDI mappings, and completed
 calibration bounds. Held keys, sounding notes, wheels, sustain, velocities,
 editor previews and incomplete calibration are not saved.
@@ -70,15 +70,16 @@ over bytes 0…2043 at byte 2044.
 | 5 | Calibration present, 0/1 |
 | 6 | u32 whole-profile generation |
 | 10 | u32 calibration generation |
-| 14–18 | Thirteen packed global fields (below); high four bits of byte 18 are 1 |
+| 14–18 | Fourteen packed global fields (below); highest bit of byte 18 is 1 |
 | 19 | Packed sensor bitstream, in scan order |
 | After last sensor through 507 | All unused bits are 1 |
 | 508 | CRC-32 of bytes 0…507 |
 
 Globals: performance mode, Jankó, lower mute, brightness (0…19), velocity start
 (1…10), root (0…11), scale ID, octave + 10 (0…20), output enable, saved
-actuation, saved rapid, rapid enable and lock.
-Their respective bit widths are `1,1,1,5,4,4,4,5,1,4,4,1,1`.
+actuation, saved rapid, rapid enable, lock and reverse-coded light effect
+(7 = White, 6 = Rainbow; other codes currently invalid).
+Their respective bit widths are `1,1,1,5,4,4,4,5,1,4,4,1,1,3`.
 Fields are packed least-significant bit first, starting at byte 14.
 
 Each sensor stores two ordered pairs, each in 23 bits: thresholds then

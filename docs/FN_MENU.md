@@ -6,9 +6,9 @@ the board supplies layout, editor policy and RGB placement. See
 [architecture](ARCHITECTURE.md) and [porting](PORTING.md).
 
 Hold Fn in keyboard mode: keyboard shortcuts below are **green**, settings
-**C, Tab, Caps, K, L and R** are white, and Enter shows the target mode color
+**C, Tab, Caps, K, L, R and \\** are white, and Enter shows the target mode color
 (blue for MIDI, green for keyboard). Other keys are dark. In MIDI mode only
-the Enter/K/L/R/Left Shift/E/S settings are available; no keyboard shortcuts are advertised.
+the Enter/Tab/K/L/R/\\/Left Shift/E/S/J/V settings are available; no keyboard shortcuts are advertised.
 Unimplemented profile/media functions are not advertised.
 
 Every settings option follows **hold to preview, release to execute once**.
@@ -24,6 +24,7 @@ a confirmation screen instead of clearing immediately.
 | Fn+Enter | MIDI / KEYBOARD | Switch to the displayed target mode |
 | Fn+K | LIGHT- | Lower brightness one step |
 | Fn+L | LIGHT+ | Raise brightness one step |
+| Fn+\\ | RAINBOW / WHITE | Switch to the displayed lighting effect |
 | Fn+R | RESET | Open RESET? confirmation (Y confirms, N cancels) |
 | Fn+Left Shift | LOWER-OFF / LOWER-ON | Toggle Caps/Shift-row MIDI notes (MIDI mode only; ignored in Jankó mode) |
 | Fn+J | JANKO | Toggle the built-in Jankó note layout (MIDI mode only) |

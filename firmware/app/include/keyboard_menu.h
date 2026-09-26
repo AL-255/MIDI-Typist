@@ -7,15 +7,16 @@
 
 enum { MENU_NONE, MENU_CALIBRATION, MENU_TRIGGER, MENU_MODE, MENU_LIGHT_DOWN, MENU_LIGHT_UP,
        MENU_RAPID, MENU_RESET, MENU_LOWER, MENU_KEY, MENU_SCALE, MENU_JANKO,
-       MENU_VELOCITY, MENU_VELOCITY_SET, MENU_SELECT_KEY, MENU_SELECT_SCALE };
-#define MENU_OPTION_COUNT MENU_VELOCITY
+       MENU_VELOCITY, MENU_LIGHT_EFFECT, MENU_VELOCITY_SET, MENU_SELECT_KEY, MENU_SELECT_SCALE };
+#define MENU_OPTION_COUNT MENU_LIGHT_EFFECT
+enum { KEYBOARD_LIGHT_WHITE, KEYBOARD_LIGHT_RAINBOW, KEYBOARD_LIGHT_EFFECT_COUNT };
 
 typedef struct {
     uint32_t bar_at, pending_revision;
     uint8_t profile, keys[RAW_KEY_COUNT], fn, tab, c, enter, k, l, caps, r, y, n, s, e, shift;
     uint8_t option_sensors[MENU_OPTION_COUNT];
     uint16_t previous;
-    uint8_t brightness, bar, pending, pending_sensor;
+    uint8_t brightness, effect, bar, pending, pending_sensor;
     uint8_t music_page, choice_sensor, selection;
     bool choice_ready;
     bool velocity_page;

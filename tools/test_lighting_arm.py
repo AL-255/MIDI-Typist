@@ -4,6 +4,7 @@ import argparse
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from test_optical_bus_arm import ScanArm
 from lighting_reference_tables import recover
+from keyboard_labels import sensor_labels
 
 I2C = 0x40087000
 
@@ -108,10 +109,14 @@ def main():
             c, r, g, b = maps[profile-1][32]
             pwm = 255 if raw >= 3800 else 255-((3800-raw)*255 + 1485)//2970
             assert (payload[r], payload[g], payload[b]) == (pwm,)*3
-            # Keyboard/MIDI candidate adds the persistent green Enter marker.
-            indicator = int('s_midi' in dev.symbols)
             primary_keys=sum(c==0 for c,_,_,_ in maps[profile-1])
-            assert sum(v != 0 for v in payload) == 3*primary_keys-(0 if pwm else 3)-2*indicator
+            assert sum(v != 0 for v in payload) == 3*primary_keys-(0 if pwm else 3)
+        if profile in (1, 2):
+            # Rainbow x follows ANSI/ISO keycap centers, not sparse IDs.
+            physical = sensor_labels(physical_ids=True)[dev.count]
+            for key, x in ((0x3a,3),(0x7f,8),(0x3c,13),(0x3d,28),
+                           (0x3b,43),(0x3e,48),(0x81,53),(0x40,58)):
+                assert dev.call('keyboard_light_x',profile,physical.index(key)) == x, hex(key)
         if profile == 1:
             dev.raw[32] = 2300
             dev.service(100)
@@ -137,6 +142,30 @@ def main():
             assert not any(next(data[2:] for _, data in reversed(dev.transactions) if len(data) == 194))
             dev.raw[0] = 3800
             print('PASS immutable pending I2C payload, next-frame freshness, invalid-sample blanking', flush=True)
+            assert b'LIGHT TEST bottom' in dev.command('light test bottom')
+            dev.service(80)
+            payload = next(data[2:] for _, data in reversed(dev.transactions)
+                           if len(data) == 194 and data[0] == 0xa0)
+            expected = bytearray(192)
+            physical = sensor_labels(physical_ids=True)[61]
+            colors = ((0x3a,(255,255,255)),(0x7f,(255,0,0)),(0x3c,(0,255,0)),
+                      (0x3d,(255,255,255)),(0x3b,(0,255,0)),(0x3e,(0,0,255)),
+                      (0x81,(255,0,0)),(0x40,(255,255,255)))
+            for key, rgb in colors:
+                controller, red, green, blue = maps[0][physical.index(key)]
+                assert controller == 0
+                for channel, value in zip((red,green,blue),rgb): expected[channel] = value
+            assert payload == expected, (payload, expected)
+            dev.raw[0] = 0
+            dev.service(80)
+            assert not any(next(data[2:] for _, data in reversed(dev.transactions)
+                                if len(data) == 194 and data[0] == 0xa0))
+            dev.raw[0] = 3800
+            assert b'LIGHT TEST off' in dev.command('light test off')
+            dev.service(80)
+            assert any(next(data[2:] for _, data in reversed(dev.transactions)
+                            if len(data) == 194 and data[0] == 0xa0))
+            print('PASS SysEx RGBW bottom-row diagnostic, LED mapping, invalid-input blanking, stop', flush=True)
         dev.command('light off'); dev.service(50)
         assert not any(next(data[2:] for _, data in reversed(dev.transactions) if len(data) == 194))
         dev.command('light on'); dev.service(1300)

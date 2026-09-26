@@ -51,6 +51,25 @@ static void mapping(void)
     }
     assert(frame[0]==0 && frame[81*3]==72 && frame[72*3]==81);
 }
+static void bottom_light_diagnostic(void)
+{
+    uint8_t frame[M1_LED_BYTES],r,g,b;
+    static const struct { unsigned sensor; uint8_t r,g,b; } expected[]={
+        {72,255,255,255},{73,255,0,0},{74,0,255,0},{75,0,0,255},
+        {76,255,255,255},{77,255,0,0},{78,0,255,0},
+        {79,0,0,255},{80,255,255,255},{81,255,0,0},{70,0,255,0},
+    };
+    memset(frame,0xa5,sizeof(frame));m1_light_test_bottom(frame);
+    for(unsigned sensor=0;sensor<M1_KEY_COUNT;++sensor) {
+        r=g=b=0xff;
+        keyboard_light_get(M1_PROFILE,sensor,frame,&r,&g,&b);
+        unsigned n=0;
+        while(n<sizeof(expected)/sizeof(expected[0]) && expected[n].sensor!=sensor)++n;
+        if(n==sizeof(expected)/sizeof(expected[0]))assert(!r && !g && !b);
+        else assert(r==expected[n].r && g==expected[n].g && b==expected[n].b);
+    }
+    assert(m1_led_index(70)!=m1_led_index(80));
+}
 static void factory_word(m1_factory_record_t *r,unsigned cell,unsigned value)
 { r->values[cell*2u]=value;r->values[cell*2u+1u]=value>>8; }
 static void factory_calibration(void)
@@ -330,12 +349,29 @@ static void application(void)
     }
     for(unsigned i=0;i<82;++i) samples[i]=3900;
     frame();
+    uint8_t rgb[M1_LED_BYTES], expected[M1_LED_BYTES],r,g,b,er,eg,eb;
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b); /* Enter follows White */
+    assert(r && r==g && g==b);
+    menu.effect=KEYBOARD_LIGHT_RAINBOW;
+    keyboard_app_lights(&app,lo,hi,rgb,0);
+    lighting_travel_frame(M1_PROFILE,raw.raw,app.input_lower,app.input_upper,true,expected);
+    lighting_rainbow_frame(M1_PROFILE,M1_KEY_COUNT,expected,0);
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b);
+    keyboard_light_get(M1_PROFILE,56,expected,&er,&eg,&eb);
+    assert(r==er && g==eg && b==eb); /* no keyboard-mode Enter override */
     /* Fn+Enter selects MIDI on release, not press. */
     samples[M1_FN_SENSOR]=samples[56]=3000; frame(); assert(!midi.mode);
     samples[M1_FN_SENSOR]=samples[56]=3900; frame(); frame(); assert(midi.mode==1);
     assert(midi.mapping[45]!=255); /* A: note mapped by shared default HID map. */
     assert(midi.mapping[81]==255); /* Dedicated Right arrow isn't silently a note. */
-    uint8_t rgb[M1_LED_BYTES]; keyboard_app_lights(&app,lo,hi,rgb,now);
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+#if !MIDI_COLOR_EFFECTS_ENABLED
+    keyboard_light_get(M1_PROFILE,45,rgb,&r,&g,&b);
+    assert(r && r==g && g==b); /* Rainbow is disabled for MIDI notes. */
+#endif
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b);
+    assert(!r && !g && b==255); /* MIDI Enter remains the blue mode hint. */
 }
 static keyboard_save_result_t calibrated(const keyboard_calibration_t *candidate)
 {
@@ -799,7 +835,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); bottom_light_diagnostic(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

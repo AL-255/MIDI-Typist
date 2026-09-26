@@ -23,7 +23,7 @@ power-cycle persistence below must not be assumed for that backend.
 ## 1. Start here
 
 1. Connect USB with all keys released. Saved settings return automatically.
-   A first installation starts in keyboard mode: Enter is green.
+   A first installation starts in keyboard mode: Enter follows the White effect.
 2. To play music, hold **Fn+Enter** to preview blue `MIDI`, then release.
    Release all keys; Enter stays blue.
 3. Select this keyboard's MIDI input in your music application, route channel 1
@@ -65,8 +65,10 @@ layouts rather than mislabelling them.
 
 | Appearance | Meaning |
 | --- | --- |
-| Green / blue Enter | Keyboard / MIDI mode |
-| White keys, dimming as pressed | Ordinary travel lighting |
+| White or Rainbow Enter / blue Enter | Keyboard / MIDI mode; Enter follows the selected effect only in keyboard mode |
+| White keys, dimming as pressed | Default White effect |
+| Moving rainbow colors, dimming as pressed | Rainbow effect selected by Fn+\\ in keyboard mode; MIDI note keys remain white |
+| Red Caps Lock in keyboard mode over USB | Host reports Caps Lock engaged; otherwise Caps Lock follows the selected effect at normal brightness |
 | Dark MIDI note keys | Unmapped, muted, outside scale or out of MIDI range |
 | Blue bottom-row controls | Octave, pitch, modulation and sustain |
 | Blinking Right Alt / Ctrl | Negative / positive octave offset; faster means more octaves |
@@ -74,6 +76,11 @@ layouts rather than mislabelling them.
 | White settings keys while Fn held | Available settings; active Jankó/row choices may be green |
 | Purple → blue → amber → green | Calibration: release/settle → pending → holding → registered |
 | Red calibration feedback | Cancelled, timed out or failed; read GUI status |
+
+The GUI's **RGBW layout test** temporarily replaces normal lighting with pure
+colors to check physical LED placement. On M1 it covers LCtrl through Right,
+plus Up above Down. It is not saved. Use **Stop RGBW test** or wait ten
+minutes to restore normal lighting.
 
 Enter and control indicators remain visible even when their note is filtered.
 Normal markers use global brightness. Fn previews, reset confirmation and
@@ -135,6 +142,7 @@ Hold Fn + settings key → read preview → release either → action
 | Fn+Tab | TRIGGER: open the mode's trigger editor | Both |
 | Fn+Caps | RAPID: compatibility editor, not raw rapid-trigger behavior | Keyboard |
 | Fn+K / Fn+L | LIGHT− / LIGHT+: brightness down / up | Both |
+| Fn+\\ | RAINBOW / WHITE: switch the ordinary key-light effect | Both |
 | Fn+J | JANKO: toggle built-in layout | MIDI |
 | Fn+V | VELOCITY: open velocity-start editor | MIDI |
 | Fn+Left Shift | LOWER-OFF / LOWER-ON: mute / restore lower playing rows | MIDI |
