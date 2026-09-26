@@ -159,7 +159,7 @@ if(CMAKE_CROSSCOMPILING)
         -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Wl,--gc-sections
         -Wl,-e,m1_test_usb_init -T${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
     set_property(TARGET m1_live_audit APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/tests/m1_hal_audit.ld)
-    foreach(symbol m1_hal_periodic_active m1_hal_frame m1_hal_service m1_hal_errors
+    foreach(symbol m1_hal_periodic_active m1_hal_frame m1_hal_service m1_hal_errors m1_hal_queue_state
         m1_battery_hal_service m1_battery_hal_status m1_lighting_service m1_lighting_ready
         m1_lighting_healthy m1_lighting_errors m1_lighting_offer m1_storage_read m1_storage_write
         m1_storage_erase m1_storage_check_recovery)

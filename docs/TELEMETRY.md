@@ -148,7 +148,7 @@ fallback or automatic retry is provided. Key streaming and MTG4 are unchanged.
 ## M1 foreground timing
 
 During normal M1 operation, `runtime stats` queues one read-only `DUMP` with
-magic `M1PF`, version 1. Stop GUI/capture streaming and drain its in-flight
+magic `M1PF`, version 2. Stop GUI/capture streaming and drain its in-flight
 response before requesting this dump: a busy bulk-response slot returns ERROR
 (`unsupported command`); ACK means the dump was queued, not already delivered.
 After a runtime failure, the diagnostic control owner also exposes these
@@ -159,14 +159,15 @@ not restart acquisition. Boot failure before live initialization has no snapshot
 | Offset | Type | Meaning |
 | --- | --- | --- |
 | 0 | 4 bytes | `M1PF` |
-| 4 | u8 | Version 1 |
+| 4 | u8 | Version 2 |
 | 5 | u8 | Eight timing stages |
-| 6 | u16 LE | Total size, 120 bytes |
+| 6 | u16 LE | Total size, 124 bytes |
 | 8 | u32 LE | Current application milliseconds |
 | 12 | u32 LE | Last consumed acquisition sequence |
 | 16 | u32 LE | Loss/gap events, including intentional flash-save pauses |
 | 20 | u32 LE | Scanner HAL error count |
 | 24 | Eight 12-byte records | Calls, total microseconds, maximum microseconds; all u32 LE |
+| 120 | Two u16 LE | Current completed-frame queue depth, then peak depth since scanner initialization; each is at most 32 |
 
 Stage order is HAL services, frame processing, profile storage, report output,
 transport controls, lighting, USB control/telemetry, and the complete live loop.
@@ -175,6 +176,9 @@ preemption. Totals/calls wrap modulo 2³²; use differences for interval average
 Maximums and counters reset at live initialization. Early returns can give stages
 different call counts. This is elapsed software time, not ADC conversion timing;
 no sample or timer is synthesized for the measurement.
+The queue peak resets when the scanner is initialized, not on flash-save pauses;
+it remains readable after a runtime fault. A peak of 32 means the queue has
+reached capacity, even if the current depth has since drained to zero.
 
 ## M1 digital encoder
 

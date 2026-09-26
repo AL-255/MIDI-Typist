@@ -25,6 +25,7 @@ bool __wrap_m1_hal_frame(uint16_t *out,uint32_t *seq)
 }
 void __wrap_m1_hal_service(uint32_t now) { (void)now; }
 uint32_t __wrap_m1_hal_errors(void) { return scan_errors; }
+uint32_t __wrap_m1_hal_queue_state(void) { return 3u<<16 | 1u; }
 void m1_test_live_scan_errors(uint32_t errors) { scan_errors=errors; }
 void __wrap_m1_battery_hal_service(uint32_t now) { (void)now; }
 const m1_battery_t *__wrap_m1_battery_hal_status(void) { return &battery; }

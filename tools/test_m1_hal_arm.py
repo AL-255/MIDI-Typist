@@ -439,6 +439,7 @@ def scanner_queue_overflow(elf):
     assert d.call('m1_hal_periodic_active')==1
     assert d.call('m1_hal_fault_reason')==0
     assert d.call('m1_hal_errors')==2
+    assert d.call('m1_hal_queue_state')==((capacity<<16)|capacity)
     assert d.call('m1_hal_frame',RGB,RGB+200)==1
     assert d.u32(RGB+200)==3  # the loss is observable to the application
     assert struct.unpack('<H',d.cpu.mem_read(RGB,2))[0]==1003
@@ -446,6 +447,7 @@ def scanner_queue_overflow(elf):
         assert d.call('m1_hal_frame',RGB,RGB+200)==1
         assert d.u32(RGB+200)==sequence
     assert d.call('m1_hal_frame',RGB,RGB+200)==0
+    assert d.call('m1_hal_queue_state')==capacity<<16
     print('PASS M1 linked scanner queue: newest complete frames retained, loss visible, acquisition healthy')
 
 

@@ -65,7 +65,7 @@ const void *const m1_test_exports[]={
     m1_lighting_init,m1_lighting_stop,m1_lighting_offer,m1_lighting_service,
     m1_lighting_ready,m1_lighting_healthy,m1_lighting_errors,
     m1_hal_init,m1_hal_start,m1_hal_stop,m1_hal_timer_irq,m1_hal_dma_irq,
-    m1_hal_frame,m1_hal_battery,m1_hal_healthy,m1_hal_periodic_active,m1_hal_errors,m1_hal_pretrigger_counts,m1_hal_fault_reason,
+    m1_hal_frame,m1_hal_battery,m1_hal_healthy,m1_hal_periodic_active,m1_hal_errors,m1_hal_queue_state,m1_hal_pretrigger_counts,m1_hal_fault_reason,
     m1_hal_capture_start,m1_hal_capture_busy,m1_hal_service,
     m1_hal_pause,m1_hal_resume,
     m1_time_start,m1_time_now,m1_time_suspend,m1_time_resume,m1_time_stop,m1_time_healthy,

@@ -26,6 +26,9 @@ The flash-save owner pauses acquisition before its long write, so a long
 `TIMING_STORE` stage alone does not establish that the write filled the queue.
 The foreground linked-ARM check covers loss detection even when the next frame
 sequence appears consecutive; physical timing is still unmeasured.
+The current `runtime stats` response includes queue depth and its peak since
+scanner initialization, allowing the next hardware run to detect near-overflow
+before an error is counted.
 
 Calibration and flash persistence also require further hardware validation.
 The 82-key calibration previously retrieved from hardware had released mean

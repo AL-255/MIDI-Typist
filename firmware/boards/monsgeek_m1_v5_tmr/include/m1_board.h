@@ -39,7 +39,7 @@ typedef struct {
     uint16_t frames[M1_SCAN_QUEUE_FRAMES][M1_KEY_COUNT];
     uint16_t battery;
     uint32_t sequence, errors;
-    uint8_t next_bank, head, pending;
+    uint8_t next_bank, head, pending, peak_pending;
     bool battery_valid;
 } m1_scan_t;
 void m1_scan_init(m1_scan_t *scan);

@@ -321,3 +321,9 @@ uint32_t m1_hal_errors(void)
     uint32_t result=scan.errors;
     __set_PRIMASK(mask); return result;
 }
+uint32_t m1_hal_queue_state(void)
+{
+    uint32_t mask=__get_PRIMASK(); __disable_irq();
+    uint32_t result=scan.pending | (uint32_t)scan.peak_pending<<16;
+    __set_PRIMASK(mask); return result;
+}

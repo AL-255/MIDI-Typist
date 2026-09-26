@@ -35,6 +35,7 @@ bool m1_scan_bank(m1_scan_t *scan,unsigned bank,const uint16_t *values)
     scan->battery_valid=true;
     ++scan->sequence;
     ++scan->pending;
+    if(scan->pending>scan->peak_pending)scan->peak_pending=scan->pending;
     return true;
 }
 bool m1_scan_battery(const m1_scan_t *scan,uint16_t *adc,uint32_t *sequence)

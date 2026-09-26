@@ -41,6 +41,8 @@ bool m1_hal_healthy(void);
 /* One-shot wake captures must never enter the periodic velocity pipeline. */
 bool m1_hal_periodic_active(void);
 uint32_t m1_hal_errors(void);
+/* Current queue depth in bits 0..15, peak since HAL init in bits 16..31. */
+uint32_t m1_hal_queue_state(void);
 enum { M1_SCAN_FAULT_NONE, M1_SCAN_FAULT_ADC_CALIBRATION, M1_SCAN_FAULT_PAUSE_OVERRUN,
        M1_SCAN_FAULT_DMA, M1_SCAN_FAULT_CAPTURE_TIMEOUT, M1_SCAN_FAULT_PERIOD_OVERRUN,
        M1_SCAN_FAULT_BANK };

@@ -201,9 +201,10 @@ def integration(path):
         assert power.flags==29 and power.percent==3
         d.call('m1_test_live_battery',0,0)
         d.command('runtime stats');diagnostic=d.wait(sx.DUMP)[3]
-        assert diagnostic[:8]==b'M1PF\x01\x08\x78\x00' and len(diagnostic)==120
+        assert diagnostic[:8]==b'M1PF\x02\x08\x7c\x00' and len(diagnostic)==124
         stamp,sequence,losses,hal_errors=struct.unpack_from('<4I',diagnostic,8)
         assert stamp and sequence and losses==hal_errors==0
+        assert struct.unpack_from('<I',diagnostic,120)[0]==(3<<16|1)
         for stage in range(8):
             calls,total,maximum=struct.unpack_from('<3I',diagnostic,24+12*stage)
             assert calls and total==maximum==0 # modeled TMR2 is stationary, not physical timing
