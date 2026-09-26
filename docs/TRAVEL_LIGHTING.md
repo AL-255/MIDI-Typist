@@ -27,13 +27,19 @@ low-level deadband. MIDI mode/shift and calibration indicators overlay the
 base effect. MIDI mode masks keys whose configured note is unmapped;
 the mask follows GUI mapping changes on the next lighting frame. Mode/shift
 indicators remain exceptions as described in [MIDI design](MIDI_DESIGN.md) and
-[calibration](CALIBRATION.md):
+[calibration](CALIBRATION.md). On the Huntsman ANSI/ISO bottom row, Rainbow uses
+keycap-center positions for LCtrl, LWin, LAlt, Space, Fn, RAlt, Menu and RCtrl.
+Other platforms supply their own geometry. The travel relationship is:
 
 ```text
 travel = round(255 * (upper - raw) / (upper - lower)), clamped to 0..255
 PWM = 255 - travel
 raw >= upper: maximum white; raw <= lower: off
 ```
+
+On an attached ANSI Huntsman, the bottom-row RGBW diagnostic visibly matched
+LCtrl white, LWin red, LAlt green, Space white, Fn green, RAlt blue, Menu red
+and RCtrl white. This checks channel/key identity, not Rainbow hue placement.
 
 Invalid input, unsettled scanning, stopped/faulted scanning, USB unconfigured,
 or no new scan for 100 ms requests a black frame. A new full lighting frame is

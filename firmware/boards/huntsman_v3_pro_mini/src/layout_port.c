@@ -82,6 +82,18 @@ uint8_t keyboard_light_x(uint8_t profile,unsigned sensor)
 {
     if(sensor>=keyboard_layout_count(profile))return 0u;
     const uint8_t key=keyboard_key_for_sensor(profile,sensor);
+    /* ANSI/ISO bottom-row keycap centers, in quarter-key units. The physical
+     * IDs are not consecutive: LWin (0x7f) and Menu (0x81) are supplemental,
+     * and the ANSI/ISO Fn/RAlt patch changes their scan positions. Reusing the
+     * numeric-ID range below put LWin at the right edge and Fn near LCtrl. */
+    if(profile<=2u) {
+        static const struct { uint8_t key, x; } bottom[] = {
+            {0x3au,3u}, {0x7fu,8u}, {0x3cu,13u}, {0x3du,28u},
+            {KEY_ID_FN,43u}, {0x3eu,48u}, {0x81u,53u}, {0x40u,58u}
+        };
+        for(unsigned i=0;i<sizeof(bottom)/sizeof(bottom[0]);++i)
+            if(key==bottom[i].key)return bottom[i].x;
+    }
     /* The production physical IDs follow the ANSI row sequence even though
      * the ASIC scan order and LED channels do not. Optional ISO/JIS keys use
      * a nearby column when they lack a corresponding ANSI-row position. */

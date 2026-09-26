@@ -113,6 +113,12 @@ def main():
             indicator = int('s_midi' in dev.symbols)
             primary_keys=sum(c==0 for c,_,_,_ in maps[profile-1])
             assert sum(v != 0 for v in payload) == 3*primary_keys-(0 if pwm else 3)-2*indicator
+        if profile in (1, 2):
+            # Rainbow x follows ANSI/ISO keycap centers, not sparse IDs.
+            physical = sensor_labels(physical_ids=True)[dev.count]
+            for key, x in ((0x3a,3),(0x7f,8),(0x3c,13),(0x3d,28),
+                           (0x3b,43),(0x3e,48),(0x81,53),(0x40,58)):
+                assert dev.call('keyboard_light_x',profile,physical.index(key)) == x, hex(key)
         if profile == 1:
             dev.raw[32] = 2300
             dev.service(100)
