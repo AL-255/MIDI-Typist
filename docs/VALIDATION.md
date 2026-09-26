@@ -383,12 +383,14 @@ Both configurations are checked offline:
 
 The wireless build has booted on a physical M1. Bluetooth slot 1 paired and
 delivered three A key-down/up pairs on the host's Bluetooth HID input device;
-Fn+F5 returned to USB and delivered a fresh A key-down/up pair there. During a
-separate slot-2 pairing attempt, the radio advertised but stopped returning
-status for more than 500 ms in state 4, causing the older freshness-as-fault
-policy to stop the application. The current source gates output after 500 ms
-without status and uses a distinct bounded pairing watchdog; that fix still
-requires on-device confirmation. 2.4 GHz report delivery remains unverified.
+Fn+F5 returned to USB and delivered a fresh A key-down/up pair there. Bluetooth
+slot 2 paired across a status-reply gap and delivered a fresh A key-down/up pair
+on its own bonded host HID device. Fn+F5 again returned to USB with fresh key
+delivery. The 2.4 GHz receiver delivered three A key-down/up pairs, and Fn+F5
+returned the device to USB from that mode. The current build gates output after
+500 ms without status and uses a distinct bounded pairing watchdog; the slot-2
+hardware test confirms it no longer fails on the observed pairing gap. Slot 3,
+2.4 GHz pairing/reconnection and wireless sleep/wake remain unverified.
 
 ## Not established
 
