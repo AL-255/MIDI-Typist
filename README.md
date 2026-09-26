@@ -1,17 +1,27 @@
 # MIDI-Typist
 
-Portable C11 firmware that turns an analog keyboard into an NKRO keyboard and
-expressive USB-MIDI controller.
+Portable C11 firmware that turns analog keyboards into NKRO keyboards and
+expressive USB-MIDI controllers.
+
+[![Release](https://img.shields.io/github/v/release/AL-255/MIDI-Typist?include_prereleases&label=release)](https://github.com/AL-255/MIDI-Typist/releases)
+[![Docs CI](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml)
+[![Documentation](https://img.shields.io/website?url=https%3A%2F%2Fal-255.github.io%2FMIDI-Typist%2F&label=docs)](https://al-255.github.io/MIDI-Typist/)
+
+| Supported model | Status | Features |
+| --- | --- | --- |
+| [Razer Huntsman V3 Pro Mini](USER_MANUAL.md) | Primary USB port | NKRO typing; expressive USB MIDI with per-key velocity and aftertouch; per-key lighting, trigger settings and calibration; on-device profiles; GUI configuration and application flashing. |
+| [MonsGeek M1 V5 TMR](docs/MONSGEEK_M1.md) | Experimental; wireless/power qualification ongoing | USB NKRO and expressive MIDI; 82-key lighting, calibration and on-device profiles; optional Bluetooth slots 1–3 and 2.4 GHz keyboard transports, battery display and sleep/wake policy; GUI configuration and application flashing. Wireless MIDI is disabled. |
+
+Each model has its own firmware image. The SDK-free 104-key simulator is a
+development port, not a supported physical keyboard.
 
 [Documentation website](https://al-255.github.io/MIDI-Typist/) ·
 [User manual](USER_MANUAL.md) · [Build guide](docs/BUILDING.md) ·
 [Porting guide](docs/PORTING.md)
 
-The supported physical port is the **Razer Huntsman V3 Pro Mini (LPC5528)**.
-It uses official NXP MCUXpresso USB/peripheral drivers and retains the existing
-bootloader and computer-initiated updater. A synthetic 104-key desktop port
-demonstrates the shared application without NXP dependencies. Other hardware
-requires a board port, not this binary.
+The Huntsman port uses official NXP MCUXpresso USB/peripheral drivers and
+retains its bootloader and computer-initiated updater. Other hardware needs a
+board port, not the Huntsman binary.
 
 The [MonsGeek M1 V5 TMR backend](docs/MONSGEEK_M1.md) provides official-SDK
 scan/lighting/radio/battery/power HAL components, an 82-key application library, offline-tested
