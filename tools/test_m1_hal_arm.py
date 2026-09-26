@@ -1338,7 +1338,10 @@ def wireless(elf):
     d.finish(bytes((0,4,0x10,0,3,0,0x13))) # plausible status, ignored outside a poll
     d.finish()
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
-    assert not d.call('m1_wireless_ready') and not d.call('m1_wireless_healthy')
+    assert not d.call('m1_wireless_ready') and d.call('m1_wireless_healthy')
+    if d.u32(DMA+0x1c)&1:d.finish() # query completed, but no peer status reply
+    d.step(D['M1_RADIO_STATUS_WATCHDOG_US']-D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert not d.call('m1_wireless_healthy')
     assert d.call('m1_wireless_fault_detail')&0xff==4
     d=WirelessArm(elf);d.baseline();assert d.offer((4,))
     d.step(D['M1_RADIO_BT_REPORT_US']);d.put(DMA,8<<8);d.step()
@@ -1431,7 +1434,30 @@ def wireless_reconnect(elf):
         assert not d.call('m1_wireless_healthy')
         assert d.call('m1_wireless_fault_detail')&0xff==7
     d=WirelessArm(elf);d.baseline();d.poll(state=0)
-    d.step(D['M1_RADIO_STATUS_TIMEOUT_US']);assert not d.call('m1_wireless_healthy')
+    d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
+    if d.u32(DMA+0x1c)&1:d.finish()
+    d.step(D['M1_RADIO_STATUS_WATCHDOG_US']-D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert not d.call('m1_wireless_healthy')
+    d=WirelessArm(elf);d.baseline();d.poll(state=4)
+    d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
+    if d.u32(DMA+0x1c)&1:d.finish()
+    d.step(D['M1_RADIO_STATUS_WATCHDOG_US'])
+    assert d.call('m1_wireless_healthy') # pairing may mute peer status briefly
+    if d.u32(DMA+0x1c)&1:d.finish()
+    d.step(D['M1_RADIO_PAIR_WATCHDOG_US'])
+    assert not d.call('m1_wireless_healthy') and d.call('m1_wireless_fault_detail')&0xff==4
+    d=WirelessArm(elf);d.baseline();assert d.offer((4,))
+    d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
+    assert d.call('m1_wireless_reports_sent')==2
+    d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
+    if d.u32(DMA+0x1c)&1:d.finish()
+    d.poll(state=3)
+    assert d.call('m1_wireless_ready') and d.packet()[:10]==bytes((0x81,8,1))+bytes(7)
+    d.finish();assert d.packet()[:18]==bytes((0x81,16,2))+bytes(15)
+    d.finish();assert d.call('m1_wireless_reports_sent')==1
     print('PASS M1 reconnect: normal offline states, dropped queued/committed/partial input, neutral baselines, peer liveness and fault gates')
 
 

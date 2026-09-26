@@ -283,7 +283,19 @@ void m1_wireless_service(uint32_t tick)
         return;
     }
     if(!confirmed && (uint32_t)(now-started)>=M1_RADIO_MODE_TIMEOUT_US) { fail(3);return; }
-    if(confirmed && (uint32_t)(now-status_at)>=M1_RADIO_STATUS_TIMEOUT_US) { fail(4);return; }
+    if(confirmed && have_status) {
+        uint32_t age=(uint32_t)(now-status_at);
+        if(age>=M1_RADIO_STATUS_TIMEOUT_US && linked) {
+            /* The host may have disconnected during the gap. Forget all
+             * previously committed input; on a fresh state-3 reply, send a
+             * neutral baseline before accepting a new physical press. */
+            linked=false;pair_complete=false;battery_sent=false;
+            neutral_baseline();
+        }
+        uint32_t watchdog=status.state==M1_RADIO_STATE_PAIRING?
+            M1_RADIO_PAIR_WATCHDOG_US:M1_RADIO_STATUS_WATCHDOG_US;
+        if(age>=watchdog) { fail(4);return; }
+    }
     if(flight || !m1_radio_ready())return;
     m1_radio_packet_t packet;
     if(m1_radio_data_pending() && (!poll_sent || (uint32_t)(now-last_poll)>=M1_RADIO_POLL_US)) {
