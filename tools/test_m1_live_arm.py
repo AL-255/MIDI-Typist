@@ -412,6 +412,7 @@ def main():
     runtime_reconnect(args.elf)
     persistence(args.elf)
     reset_profile(args.elf)
+    reset_fn_menu(args.elf)
     calibration_persistence(args.elf)
     power_handoff(args.elf)
     source_handoff(args.elf)
@@ -989,6 +990,30 @@ def reset_profile(path):
         d.command('cfg velocity 7 9');advance(d,400)
         assert d.call('m1_test_live_storage_count',2)==written
         print(f'PASS M1 {"HS" if high else "FS"} profile RESET: confirmed clean erases both custom pages, factory bounds return, defaults survive restart and a failed or denied erase never claims success')
+
+
+def reset_fn_menu(path):
+    """Exercise the physical Fn+R, release, Y confirmation path through M1 live."""
+    from keyboard_boards import m1_records
+    keys={record[7]:record[0] for record in m1_records()}
+    for high in (False,True):
+        d=Live(path,high,storage=True)
+        d.send(sx.HELLO);d.wait(sx.READY);d.command('stream gui')
+        d.command('cfg velocity 1 7')
+        assert d.snapshot(1).velocity_start==7
+        d.run(32)
+        d.call('m1_test_live_storage_gate',1,1,0)
+        for _ in range(400):d.tick(step=1000)
+        assert d.call('m1_test_live_storage_count',2)==1
+        d.samples[77]=d.samples[keys['R']]=3000;d.run(8)
+        d.samples[keys['R']]=3900;d.run(8)
+        d.samples[77]=3900;d.run(32)
+        d.samples[keys['Y']]=1000;d.run(8)
+        erased=d.call('m1_test_live_storage_count',3)
+        assert erased==2 and not d.call('m1_live_storage_fault'),(high,erased)
+        d.samples[keys['Y']]=3900;d.messages.clear();d.run(400)
+        assert d.snapshot().velocity_start==D['DEFAULT_MIDI_VELOCITY_START']
+        print(f'PASS M1 {"HS" if high else "FS"} Fn+R/Y: confirmed menu reset erases both custom slots')
 
 
 def wireless_integration(path):

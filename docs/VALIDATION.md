@@ -253,6 +253,15 @@ M1 hardware checks confirm ID2949/v4.08 factory identity, guarded bootloader
 entry, and an application transfer accepted by the bootloader's checksum and
 per-byte readback verdict. Custom USB enumerates at 480 Mb/s with HID and MIDI;
 the control port returns the embedded Git identity and live 82-key GUI snapshots.
+The USB-only `1c3dd52` image also completed a guarded reflash, re-enumerated
+with its embedded identity, and the user confirmed Fn+R/Y works after the
+reflash. That fresh boot had erased custom slots, so a saved-profile reset and
+its persistence across reboot remain hardware-unverified on this image.
+A read-only `runtime stats` sample about 144 seconds after boot reported
+1,154,143 consumed scans, no scanner HAL errors, queue depth 1 and peak 4/32.
+It recorded three gap events and frame/store maxima of about 40.8/40.4 ms;
+the flash-save path pauses scanning during its transaction. This one sample
+does not qualify pressed-key timing or explain the earlier overflow fault.
 The process-isolated GUI transport has completed repeated live connect/stream/
 disconnect cycles without retaining native workers. The GUI flasher's read-only
 USB-bound identity handshake also completes and releases its MIDI owner.
