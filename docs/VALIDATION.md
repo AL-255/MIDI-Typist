@@ -271,7 +271,9 @@ idle-input check, not qualification of pressed-key/polyphonic load, worst-case
 latency or long-term stability. The current build's queue-overflow recovery is
 verified offline only: it drops the oldest frame, reports loss to capture and
 requires neutral input before ordinary key output resumes. Physical recovery
-from a long foreground stall has not been verified.
+from a long foreground stall has not been verified. The linked foreground audit
+also injects an acquisition-error increment with a consecutive frame sequence
+and confirms that held input is released.
 The user confirms working MIDI notes, Jankó and Fn+V. This is functional
 confirmation, not full MIDI timing/load qualification. Shared raw/MIDI work bitmaps
 and per-frame edge lists avoid repeated idle-key state processing without

@@ -22,6 +22,10 @@ frames and exposes a sequence gap. The application invalidates ordinary input
 until neutral and explicitly faults lossless capture. ADC, bank-order and DMA
 faults still stop the scanner. This recovery has offline tests but has **not**
 been flashed or shown to resolve the underlying foreground stall on hardware.
+The flash-save owner pauses acquisition before its long write, so a long
+`TIMING_STORE` stage alone does not establish that the write filled the queue.
+The foreground linked-ARM check covers loss detection even when the next frame
+sequence appears consecutive; physical timing is still unmeasured.
 
 Calibration and flash persistence also require further hardware validation.
 The 82-key calibration previously retrieved from hardware had released mean

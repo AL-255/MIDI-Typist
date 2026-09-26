@@ -12,6 +12,7 @@
 #include <string.h>
 static uint16_t frame[M1_KEY_COUNT];
 static uint32_t sequence;
+static uint32_t scan_errors;
 static bool pending,periodic=true,led_ready=true;
 static uint8_t rgb[M1_LED_BYTES];
 static unsigned light_frames;
@@ -23,7 +24,8 @@ bool __wrap_m1_hal_frame(uint16_t *out,uint32_t *seq)
     memcpy(out,frame,sizeof(frame));*seq=sequence;pending=false;return true;
 }
 void __wrap_m1_hal_service(uint32_t now) { (void)now; }
-uint32_t __wrap_m1_hal_errors(void) { return 0; }
+uint32_t __wrap_m1_hal_errors(void) { return scan_errors; }
+void m1_test_live_scan_errors(uint32_t errors) { scan_errors=errors; }
 void __wrap_m1_battery_hal_service(uint32_t now) { (void)now; }
 const m1_battery_t *__wrap_m1_battery_hal_status(void) { return &battery; }
 void __wrap_m1_lighting_service(uint32_t now) { (void)now; }
@@ -111,6 +113,7 @@ const void *const m1_live_test_exports[]={
     m1_transport_ops,m1_wireless_selected,m1_wireless_switch_ready,m1_wireless_select,
     m1_test_live_storage_count,m1_test_live_storage_page,
     m1_test_live_frame,m1_test_live_periodic,m1_test_live_led,m1_test_live_get,
+    m1_test_live_scan_errors,
     scan_stream_lost,scan_stream_dropped,
     m1_radio_init,m1_radio_service,m1_radio_healthy,m1_radio_ready,
     m1_wireless_init,m1_wireless_stop,m1_wireless_ready,m1_wireless_healthy,m1_wireless_local_idle,

@@ -288,6 +288,12 @@ def integration(path):
     d.samples[45]=3000;d.tick();assert d.held(4)
     d.sequence-=1;d.tick() # duplicate frame is also not a consecutive sample
     assert d.call('m1_live_scan_losses')==1 and not d.held(4)
+    # A queue overflow before the first observed sequence can otherwise look
+    # consecutive; the acquisition-error counter must still invalidate input.
+    d=Live(path,True)
+    d.samples[45]=3000;d.tick();assert d.held(4)
+    d.call('m1_test_live_scan_errors',1);d.tick()
+    assert d.call('m1_live_scan_losses')==1 and not d.held(4)
     print('PASS M1 foreground: independent clock/scan wrap, duplicate rejection and explicit restart after release drain')
 
 
