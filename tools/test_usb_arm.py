@@ -257,6 +257,13 @@ def main():
         print("PASS GET_CONFIGURATION and all GET_INTERFACE/SET_INTERFACE(0)")
         dev.control_out(bytes.fromhex("21 0a 00 00 00 00 00 00"))  # SET_IDLE(0)
         assert dev.control_in(bytes.fromhex("a1 02 00 00 00 00 01 00")) == b"\x00"
+        assert dev.control_in(bytes.fromhex("a1 01 00 02 00 00 01 00")) == b"\x00"
+        dev.control_out(bytes.fromhex("21 09 00 02 00 00 01 00"), b"\x02")
+        assert dev.call("usb_keyboard_leds") == 2
+        assert dev.control_in(bytes.fromhex("a1 01 00 02 00 00 01 00")) == b"\x02"
+        dev.control_out(bytes.fromhex("21 09 00 02 00 00 01 00"), b"\x00")
+        assert dev.call("usb_keyboard_leds") == 0
+        print("PASS keyboard HID Caps Lock LED output report and state")
         dev.complete(4, bytes.fromhex("09 90 3c 7f"))
         dev.packet(4)  # OUT rearmed by the installed callback
         assert dev.call("usb_midi_send", 9, 0x90, 60, 127)

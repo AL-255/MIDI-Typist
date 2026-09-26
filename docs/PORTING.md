@@ -330,7 +330,9 @@ Allocate `keyboard_raw_t`, `keyboard_midi_t`, `keyboard_menu_t`,
 1. Service your USB/peripheral stack and copy/publish completed acquisitions.
 2. For each complete acquisition, call `keyboard_app_frame` with canonical
    samples, layout/count, mutable lower/upper bounds, validity and milliseconds.
-3. Call `keyboard_app_lights`, then submit the board framebuffer safely.
+3. Feed the host's current Caps Lock LED state through
+   `keyboard_app_set_caps_lock` before `keyboard_app_lights`, then submit the
+   board framebuffer safely. Clear the host state on transport reset or loss.
 4. Call `keyboard_app_service` frequently, including between acquisitions,
    with hardware/USB health and keyboard/MIDI send callbacks.
 5. Refresh the actual board watchdog and wait using your platform's mechanism.

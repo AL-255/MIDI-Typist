@@ -13,6 +13,7 @@
 void usb_composite_init(void);
 void usb_composite_service(void);
 bool usb_keyboard_send(const keyboard_report_t *report);
+uint8_t usb_keyboard_leds(void);
 bool usb_midi_send(uint8_t cable_and_cin, uint8_t status, uint8_t data1, uint8_t data2);
 bool usb_midi_write_events(const uint8_t *data, uint32_t length);
 bool usb_composite_ready(void);

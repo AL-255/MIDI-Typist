@@ -186,6 +186,7 @@ void keyboard_live_service(void)
             (void)travel_lighting_start(&s_lighting, s_transport.profile, now);
         travel_lighting_frame(&s_lighting, s_transport.samples, s_scan.lower, s_scan.upper,
                               s_scan.ready && s_scan.valid, now);
+        keyboard_app_set_caps_lock(&s_app,(usb_keyboard_leds() & KEYBOARD_HID_LED_CAPS_LOCK)!=0u);
         keyboard_app_lights(&s_app,s_scan.lower,s_scan.upper,s_lighting.desired,now);
     }
     if (phase != s_transport.phase &&

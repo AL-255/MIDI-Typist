@@ -20,6 +20,7 @@
 static usb_device_handle s_device;
 static volatile bool s_attached;
 static volatile bool s_keyboard_busy;
+static volatile uint8_t s_keyboard_leds;
 static volatile bool s_midi_busy;
 static volatile bool s_bootloader_pending;
 static volatile bool s_bootloader_status_complete;
@@ -27,6 +28,7 @@ static volatile uint32_t s_bootloader_requested_at;
 static usb_device_class_config_struct_t s_classConfig[2];
 
 USB_BUFFER static keyboard_report_t s_keyboard_report;
+USB_BUFFER static uint8_t s_keyboard_led_report[1];
 USB_BUFFER static uint8_t s_updater_request[UPDATER_FRAME_SIZE];
 USB_BUFFER static uint8_t s_updater_response[UPDATER_FRAME_SIZE];
 USB_BUFFER static uint8_t s_midi_tx[USB_HS_BULK_PACKET];
@@ -41,8 +43,28 @@ static usb_status_t keyboard_callback(class_handle_t handle, uint32_t event, voi
             s_keyboard_busy = false;
             return kStatus_USB_Success;
         case kUSB_DeviceHidEventGetReport:
-            report->reportBuffer = (uint8_t *)&s_keyboard_report;
-            report->reportLength = sizeof(s_keyboard_report);
+            if(report->reportId != 0u)return kStatus_USB_InvalidRequest;
+            if(report->reportType == USB_DEVICE_HID_REQUEST_GET_REPORT_TYPE_INPUT) {
+                report->reportBuffer = (uint8_t *)&s_keyboard_report;
+                report->reportLength = sizeof(s_keyboard_report);
+                return kStatus_USB_Success;
+            }
+            if(report->reportType == USB_DEVICE_HID_REQUEST_GET_REPORT_TYPE_OUPUT) {
+                s_keyboard_led_report[0] = s_keyboard_leds;
+                report->reportBuffer = s_keyboard_led_report;
+                report->reportLength = sizeof(s_keyboard_led_report);
+                return kStatus_USB_Success;
+            }
+            return kStatus_USB_InvalidRequest;
+        case kUSB_DeviceHidEventRequestReportBuffer:
+            if(report->reportId != 0u || report->reportType != USB_DEVICE_HID_REQUEST_GET_REPORT_TYPE_OUPUT ||
+               report->reportLength != sizeof(s_keyboard_led_report))return kStatus_USB_InvalidRequest;
+            report->reportBuffer = s_keyboard_led_report;
+            return kStatus_USB_Success;
+        case kUSB_DeviceHidEventSetReport:
+            if(report->reportId != 0u || report->reportType != USB_DEVICE_HID_REQUEST_GET_REPORT_TYPE_OUPUT ||
+               report->reportLength != sizeof(s_keyboard_led_report))return kStatus_USB_InvalidRequest;
+            s_keyboard_leds = report->reportBuffer[0] & 0x1fu;
             return kStatus_USB_Success;
         case kUSB_DeviceHidEventSetIdle:
         case kUSB_DeviceHidEventGetIdle:
@@ -151,6 +173,7 @@ static usb_status_t device_callback(usb_device_handle handle, uint32_t event, vo
             uint8_t speed = USB_SPEED_FULL;
             s_attached = false;
             s_keyboard_busy = s_midi_busy = false;
+            s_keyboard_leds = 0u;
             s_bootloader_pending = s_bootloader_status_complete = false;
             usb_errata_bus_reset();
             if (USB_DeviceClassGetSpeed(USB_CONTROLLER_ID, &speed) == kStatus_USB_Success)
@@ -162,6 +185,7 @@ static usb_status_t device_callback(usb_device_handle handle, uint32_t event, vo
         case kUSB_DeviceEventSetConfiguration:
             midi_control_usb_reset();
             s_attached = false;
+            s_keyboard_leds = 0u;
             s_midi_busy = false;
             (void)USB_DeviceDeinitEndpoint(handle, USB_MIDI_ENDPOINT);
             (void)USB_DeviceDeinitEndpoint(handle, USB_ENDPOINT_IN | USB_MIDI_ENDPOINT);
@@ -247,6 +271,7 @@ void usb_composite_init(void)
     usb_errata_init();
     board_usb_clock_init();
     memset(&s_keyboard_report, 0, sizeof(s_keyboard_report));
+    s_keyboard_leds = 0u;
     memset(s_updater_response, 0, sizeof(s_updater_response));
     (void)midi_control_init(&control_port);
     if (USB_DeviceClassInit(USB_CONTROLLER_ID, &s_config_list, &s_device) != kStatus_USB_Success)
@@ -286,6 +311,8 @@ bool usb_keyboard_send(const keyboard_report_t *report)
     EnableGlobalIRQ(irq);
     return submitted;
 }
+
+uint8_t usb_keyboard_leds(void) { return s_attached ? s_keyboard_leds : 0u; }
 
 bool usb_midi_send(uint8_t cable_and_cin, uint8_t status, uint8_t data1, uint8_t data2)
 {

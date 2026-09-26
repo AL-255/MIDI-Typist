@@ -42,7 +42,11 @@ uploads use the same frozen snapshot.
 Invalid per-key raw values or endpoints remain dark, not inverted to full
 brightness. `lighting_travel_pwm` retains its press-increasing normalization
 for MIDI aftertouch; only the LED frame inverts it. Keyboard mode lights all
-keys independently of their MIDI mappings. Enter's mode marker and active
+keys independently of their MIDI mappings. In keyboard mode, a released Caps
+Lock key has the normal full-white base brightness rather than inheriting a
+dimmed value from a resting sensor slightly below its upper bound. The USB
+host's HID Caps Lock LED bit changes that key to red; a bus reset clears the
+state. Fn menus and calibration still take lighting priority. Enter's mode marker and active
 octave-shift blink remain explicit overlays. The five octave/wheel controls and Space sustain
 use Enter's full-intensity blue in MIDI mode, with the same global brightness
 scaling as ordinary keys; the active right-side octave indicator

@@ -180,10 +180,24 @@ void keyboard_app_lights(keyboard_app_t *s,const uint16_t *lo,const uint16_t *hi
     const keyboard_input_policy_t *policy=keyboard_layout(s->raw->profile)->input;
     if(policy && policy->normalize_travel) { lo=s->input_lower;hi=s->input_upper; }
     lighting_travel_frame(s->raw->profile,s->raw->raw,lo,hi,s->frame_valid,frame);
+    if(!s->midi->mode) {
+        const keyboard_layout_t *layout=keyboard_layout(s->raw->profile);
+        for(unsigned i=0;i<s->raw->count;++i) {
+            if(keyboard_key_for_sensor(s->raw->profile,i)!=layout->caps)continue;
+            if(s->caps_lock)keyboard_light_set(s->raw->profile,i,frame,COLOR_CAPS_LOCK);
+            else if(s->raw->raw[i]>s->raw->release[i])
+                keyboard_light_set(s->raw->profile,i,frame,COLOR_WHITE);
+            break;
+        }
+    }
     keyboard_midi_lights(s->midi,frame,now);
     calibration_lights(s->cal,frame,now);
     keyboard_menu_lights(s->menu,s->raw,lo,hi,frame,now,s->midi->mode,
         calibration_active(s->cal) || (s->cal->state!=CAL_IDLE && (uint32_t)(now-s->cal->since)<CALIBRATION_RESULT_MS),
         s->midi->janko);
     if(s->system_lights)s->system_lights(s,s->system_context,frame,now);
+}
+void keyboard_app_set_caps_lock(keyboard_app_t *s,bool engaged)
+{
+    s->caps_lock=engaged;
 }

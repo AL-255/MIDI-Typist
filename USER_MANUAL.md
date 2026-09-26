@@ -67,6 +67,7 @@ layouts rather than mislabelling them.
 | --- | --- |
 | Green / blue Enter | Keyboard / MIDI mode |
 | White keys, dimming as pressed | Ordinary travel lighting |
+| Red Caps Lock in keyboard mode over USB | Host reports Caps Lock engaged; otherwise Caps Lock is normally lit white |
 | Dark MIDI note keys | Unmapped, muted, outside scale or out of MIDI range |
 | Blue bottom-row controls | Octave, pitch, modulation and sustain |
 | Blinking Right Alt / Ctrl | Negative / positive octave offset; faster means more octaves |

@@ -93,6 +93,7 @@
 #define COLOR_WHITE 255u,255u,255u
 #define COLOR_CONFIRM 0u,255u,0u
 #define COLOR_CANCEL 255u,0u,0u
+#define COLOR_CAPS_LOCK 255u,0u,0u
 #define COLOR_MIDI 0u,0u,255u
 #define COLOR_JANKO 255u,255u,0u
 #define COLOR_RAPID 253u,134u,17u

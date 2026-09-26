@@ -140,6 +140,24 @@ static void performance(void)
     samples[SYN_TAB]=3000; frame(); samples[SYN_TAB]=3900; frame(); frame(); drain();
     assert(midi.music.root==0);
 }
+static void caps_lock_lighting(void)
+{
+    init();
+    /* A resting Caps sensor may sit below its calibrated upper bound. Its
+     * normal keyboard light must still match the full-brightness keys. */
+    samples[SYN_CAPS]=3700;frame();
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]==255 && rgb[SYN_CAPS*3+1]==255 && rgb[SYN_CAPS*3+2]==255);
+    keyboard_app_set_caps_lock(&app,true);
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]==255 && !rgb[SYN_CAPS*3+1] && !rgb[SYN_CAPS*3+2]);
+    assert(rgb[100*3]==rgb[100*3+1] && rgb[100*3+1]==rgb[100*3+2]);
+    keyboard_app_set_caps_lock(&app,false);
+    samples[SYN_CAPS]=3000;frame();
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    assert(rgb[SYN_CAPS*3]<255 && rgb[SYN_CAPS*3]==rgb[SYN_CAPS*3+1] &&
+           rgb[SYN_CAPS*3+1]==rgb[SYN_CAPS*3+2]);
+}
 static void calibration(void)
 {
     keyboard_calibration_t cal; calibration_init(&cal);
@@ -481,6 +499,6 @@ int main(void)
     editor_entry_observation();
     calibration_observation();
     sensor_readback();
-    normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
+    normalizer(); performance(); caps_lock_lighting(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

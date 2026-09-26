@@ -627,6 +627,8 @@ void m1_live_service(uint32_t now_ms,uint32_t now_us)
     }
     mark=timing_step(TIMING_CONTROLS,mark);
     if(m1_lighting_ready() && (!light_sent || (uint32_t)(now-last_light)>=LIGHTING_FRAME_PERIOD_MS)) {
+        keyboard_app_set_caps_lock(&app,controls.current==M1_TRANSPORT_USB &&
+            (m1_usb_leds() & KEYBOARD_HID_LED_CAPS_LOCK)!=0u);
         keyboard_app_lights(&app,lower,upper,lights,now);
         if(m1_lighting_offer(lights,sizeof(lights),now_us)) { last_light=now;light_sent=true; }
     }
