@@ -19,6 +19,8 @@ static keyboard_scan_t s_scan;
 static bool s_host_keys, s_trace;
 static volatile bool s_usb_reset;
 static bool s_stream_requested;
+static bool s_light_diagnostic;
+static uint32_t s_light_diagnostic_since;
 #include "keyboard_app.h"
 #include "keyboard_midi.h"
 #include "keyboard_menu.h"
@@ -116,8 +118,37 @@ static void lighting_status(void)
     value(" profile=", s_lighting.profile); value(" transfers=", s_lighting.transfers);
     value(" frames=", s_lighting.frames); value(" errors=", s_lighting.errors);
     value(" calibrated=", s_scan.calibrated); value(" count=", s_scan.count);
+    value(" diagnostic=", s_light_diagnostic);
     if (s_lighting.fault) { debug_write(" fault="); debug_write(s_lighting.fault); }
     debug_write(" PWM linear in optical endpoints; not measured millimeters\r\n");
+}
+
+/* ANSI bottom row, left to right. Deliberately use physical key IDs, not
+ * scan indices: those differ across the ASIC scan and lighting tables. This
+ * overlay is an optical/LED wiring diagnostic, never a saved light effect. */
+static void light_diagnostic_frame(uint8_t *frame)
+{
+    static const struct { uint8_t key, red, green, blue; } bottom[] = {
+        {0x3au, 255u, 255u, 255u}, /* LCtrl: white */
+        {0x7fu, 255u,   0u,   0u}, /* LWin: red */
+        {0x3cu,   0u, 255u,   0u}, /* LAlt: green */
+        {0x3du, 255u, 255u, 255u}, /* Space: white */
+        {KEY_ID_FN, 0u, 255u,   0u}, /* Fn: green */
+        {0x3eu,   0u,   0u, 255u}, /* RAlt: blue */
+        {0x81u, 255u,   0u,   0u}, /* Menu: red */
+        {0x40u, 255u, 255u, 255u}, /* RCtrl: white */
+    };
+    memset(frame, 0, LIGHTING_FRAME_SIZE);
+    for (unsigned sensor = 0; sensor < s_scan.count; ++sensor) {
+        const uint8_t key = keyboard_key_for_sensor(s_transport.profile, sensor);
+        for (unsigned i = 0; i < sizeof(bottom)/sizeof(bottom[0]); ++i) {
+            if (bottom[i].key == key) {
+                keyboard_light_set(s_transport.profile, sensor, frame,
+                                   bottom[i].red, bottom[i].green, bottom[i].blue);
+                break;
+            }
+        }
+    }
 }
 
 static void release_host(void)
@@ -138,6 +169,7 @@ static void event(uint8_t key, bool down, uint8_t level)
 
 void keyboard_live_init(void)
 {
+    s_light_diagnostic = false;
     optical_transport_init(&s_transport);
     keyboard_scan_init(&s_scan, 0u);
     scan_stream_init();
@@ -161,9 +193,11 @@ void keyboard_live_service(void)
 {
     const uint32_t now = board_millis();
     if (s_usb_reset) {
-        s_usb_reset = false; release_host();
+        s_usb_reset = false; s_light_diagnostic = false; release_host();
         calibration_abort(&s_cal,CAL_INVALID,now);
     }
+    if (s_light_diagnostic && (uint32_t)(now - s_light_diagnostic_since) >= LIGHT_DIAGNOSTIC_TIMEOUT_MS)
+        s_light_diagnostic = false;
     /* USB first; one optical route attempt; never restart on a fault/reset. */
     if (s_transport.phase == OPT_OFF && usb_composite_ready())
         (void)optical_transport_start(&s_transport, now);
@@ -188,6 +222,8 @@ void keyboard_live_service(void)
                               s_scan.ready && s_scan.valid, now);
         keyboard_app_set_caps_lock(&s_app,(usb_keyboard_leds() & KEYBOARD_HID_LED_CAPS_LOCK)!=0u);
         keyboard_app_lights(&s_app,s_scan.lower,s_scan.upper,s_lighting.desired,now);
+        if (s_light_diagnostic && s_scan.ready && s_scan.valid && usb_composite_ready())
+            light_diagnostic_frame(s_lighting.desired);
     }
     if (phase != s_transport.phase &&
         (s_transport.phase == OPT_FAULT || s_transport.phase == OPT_SCAN_READ)) scan_status();
@@ -230,6 +266,17 @@ bool keyboard_live_command(const char *line)
 {
     /* Build identity: version plus build target, e.g. v0.1.0-RZ03-0499. */
     if (!strcmp(line, "version")) { debug_write("build=" MT_BUILD_INFO "\r\n"); return true; }
+    if (!strcmp(line, "light test bottom")) {
+        s_light_diagnostic = true;
+        s_light_diagnostic_since = board_millis();
+        debug_write("LIGHT TEST bottom: LCtrl=W LWin=R LAlt=G Space=W Fn=G RAlt=B Menu=R RCtrl=W; 10 min timeout\r\n");
+        return true;
+    }
+    if (!strcmp(line, "light test off")) {
+        s_light_diagnostic = false;
+        debug_write("LIGHT TEST off\r\n");
+        return true;
+    }
     if (!strncmp(line, "dump read ", 10u)) {
         const char *p = line + 10u;
         uint32_t id = 0, address = 0;
@@ -285,7 +332,7 @@ bool keyboard_live_command(const char *line)
                     "cfg velocity ID LEVEL (1..10, Fn+V: 0% .. 100% transmitted-velocity start)\r\n"
                     "cfg clean ID (erase custom settings and calibration, like Fn+R)\r\n"
                     "Standalone raw keyboard auto-arms after neutral; settings save automatically.\r\n");
-        debug_write("light on | light off | light status\r\n"
+        debug_write("light on | light off | light status | light test bottom | light test off\r\n"
                     "Scanning and travel lighting start automatically after USB configuration.\r\n");
         return true;
     }

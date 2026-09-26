@@ -187,13 +187,21 @@ scan status
 scan sample 20
 light off
 light on
+light test bottom
+light test off
 stream gui
 ```
 
 `light status` reports phase, requested state, layout, transfers, complete frames,
-errors and accepted calibration count. Phases: 0 off/not started, 1 low wait,
+errors, accepted calibration count and diagnostic state. Phases: 0 off/not started, 1 low wait,
 2 high wait, 3 primary init, 4 secondary init, 5 running, 6 maintenance, 7 fault.
 `light off/on` changes the desired effect without hardware reinitialization.
+On Huntsman, `light test bottom` temporarily blanks every other key and drives
+the ANSI bottom row at full pure-channel PWM, left to right: LCtrl white,
+LWin red, LAlt green, Space white, Fn green, RAlt blue, Menu red, RCtrl white.
+It is available from the GUI's **Bottom-row RGBW test** button and is never
+saved. `light test off`, USB reset or a ten-minute timeout restores the selected
+White/Rainbow effect. Invalid scan data still blanks the whole keyboard.
 Diagnostic text is independently framed as LOG messages. The GUI is the only
 supported PC application; logs are best effort and never acknowledgments.
 
