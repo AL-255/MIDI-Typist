@@ -74,7 +74,7 @@ read-only M1 discovery does not imply a working custom USB application.
 | `keyboard_midi`, `midi_music` | Notes, velocity, pressure, wheels, sustain, octave and scale filtering |
 | `keyboard_menu`, `keyboard_text` | Release-triggered menus and interruptible text lighting |
 | `keyboard_calibration` | Parallel calibration holds, endpoints, timeout and feedback |
-| `lighting_travel` | Travel/pressure normalization and inverse lighting |
+| `lighting_travel` | Travel/pressure normalization and White/Rainbow base lighting |
 | `keyboard_sample` | Optional ascending/descending ADC conversion to canonical units |
 
 Application state is supplied by the board as separate allocations. This lets

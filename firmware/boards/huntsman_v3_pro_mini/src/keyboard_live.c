@@ -256,6 +256,7 @@ bool keyboard_live_command(const char *line)
         value(" mode=",s_raw.engine.config.mode);
         value(" level=",s_raw.engine.config.actuation); value(" saved=",s_raw.engine.config.saved_actuation);
         value(" brightness=",s_menu.brightness); value("/19 pwm=",keyboard_menu_brightness(&s_menu));
+        value(" effect=",s_menu.effect);
         value(" reset_confirm=",s_menu.reset_confirmation); value(" ready=",s_menu.confirmation_ready);
         value(" lower_muted=",s_midi.lower_muted);
         value(" root=",s_midi.music.root); value(" scale=",s_midi.music.scale);
@@ -276,7 +277,7 @@ bool keyboard_live_command(const char *line)
                     "keys on requires neutral valid samples; one scan attempt per boot.\r\n");
         debug_write("version | git | stream gui | cfg get ID | cfg set ID SENSOR PRESS RELEASE | cfg all ID PRESS RELEASE | cfg enable ID 0/1\r\n"
                     "menu status; Fn+Tab MIDI trigger point, 1 = bottom-out, 0 = release-1, Esc saves;\r\n"
-                    "Fn+V velocity start, Fn+K/L brightness down/up\r\n"
+                    "Fn+V velocity start, Fn+K/L brightness down/up, Fn+\\ White/Rainbow\r\n"
                     "cfg calibrate ID | cfg calcancel ID; Fn+C calibrates in keyboard mode\r\n"
                     "dump read ID ADDRESS (decimal, aligned 64-byte main-flash read; HBD1 binary response)\r\n"
                     "cfg key ID SENSOR USAGE (0=off, 4..231; Fn fixed)\r\n"

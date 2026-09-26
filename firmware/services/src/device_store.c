@@ -71,11 +71,16 @@ static unsigned sensor_end(unsigned profile,unsigned count)
     for(unsigned i=0;i<count;++i)bits+=46u+map_bits(role(profile,i));
     return bits;
 }
-static const uint8_t global_widths[]={1,1,1,5,4,4,4,5,1,4,4,1,1};
-static void globals_get(const uint8_t *p,uint8_t g[13])
+/* Byte 18 bits 4..6 were erased-state padding. Reverse-coded effect IDs let
+ * existing all-one records load as White and leave six IDs for future modes;
+ * byte 18 bit 7 stays an erased-state sentinel. */
+enum { EFFECT_CODE_WHITE=7u };
+_Static_assert(KEYBOARD_LIGHT_EFFECT_COUNT<=8u,"effect field capacity");
+static const uint8_t global_widths[]={1,1,1,5,4,4,4,5,1,4,4,1,1,3};
+static void globals_get(const uint8_t *p,uint8_t g[14])
 {
     unsigned pos=GLOBAL_OFFSET*8u;
-    for(unsigned i=0;i<13;++i)g[i]=getbits(p,&pos,global_widths[i]);
+    for(unsigned i=0;i<14;++i)g[i]=getbits(p,&pos,global_widths[i]);
     g[7]=(uint8_t)(g[7]-10);
 }
 static bool sensor_get(const uint8_t *p,unsigned *pos,unsigned r,
@@ -109,10 +114,12 @@ bool device_record_valid(const uint8_t *p)
     if(memcmp(p,MT_STORE_MAGIC,4) || !count || count>CAL_KEYS || p[5]>1 ||
        sensor_end(p[4],count)>CRC_OFFSET*8u ||
        u32(p+CRC_OFFSET)!=calibration_crc32(p,CRC_OFFSET))return false;
-    uint8_t g[13];globals_get(p,g);
+    uint8_t g[14];globals_get(p,g);
     if(g[3]>19 || g[4]<1 || g[4]>10 || g[5]>11 || g[6]>=MIDI_SCALE_COUNT ||
        (int8_t)g[7]<-MIDI_OCTAVE_LIMIT || (int8_t)g[7]>MIDI_OCTAVE_LIMIT ||
-       g[9]<1 || g[9]>10 || g[10]<1 || g[10]>10 || (p[18]&0xf0u)!=0xf0u)return false;
+       g[9]<1 || g[9]>10 || g[10]<1 || g[10]>10 ||
+       g[13]<EFFECT_CODE_WHITE-(KEYBOARD_LIGHT_EFFECT_COUNT-1u) ||
+       (p[18]&0x80u)==0u)return false;
     if(!p[5] && u32(p+CAL_GENERATION_OFFSET))return false;
     unsigned pos=SENSOR_OFFSET*8u;
     for(unsigned i=0;i<count;++i) {
@@ -122,19 +129,21 @@ bool device_record_valid(const uint8_t *p)
     while(pos<CRC_OFFSET*8u)if(!getbits(p,&pos,1))return false;
     return true;
 }
-static void current_globals(const keyboard_app_t *app,uint8_t out[13])
+static void current_globals(const keyboard_app_t *app,uint8_t out[14])
 {
     const keyboard_raw_t *r=app->raw; const keyboard_midi_t *m=app->midi;
     const keyboard_config_t *c=&r->engine.config;
     const uint8_t globals[]={m->mode,m->janko,m->lower_muted,app->menu->brightness,m->velocity_start,
         m->music.root,m->music.scale,(uint8_t)(m->octave+10),r->enabled,
-        c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked};
+        c->saved_actuation,c->saved_rapid,c->rapid_enabled,c->locked,
+        EFFECT_CODE_WHITE-app->menu->effect};
     memcpy(out,globals,sizeof(globals));
 }
 static bool current_settings(const keyboard_app_t *app,device_settings_t *out)
 {
     const keyboard_raw_t *r=app->raw;
-    if(!keyboard_layout_valid(r->profile,r->count))return false;
+    if(!keyboard_layout_valid(r->profile,r->count) ||
+       app->menu->effect>=KEYBOARD_LIGHT_EFFECT_COUNT)return false;
     /* Zero unused cells/padding so a complete byte comparison is deterministic
      * across all board capacities. Scan samples and transient menus are not
      * settings and must not make the persistence path do work at scan rate. */
@@ -155,9 +164,9 @@ static bool capture(uint8_t *p,const device_store_t *s,const keyboard_app_t *app
     memset(p,255,CAL_PAGE_SIZE); memcpy(p,MT_STORE_MAGIC,4);p[4]=r->profile;p[5]=cal!=NULL || s->saved;
     put32(p+GENERATION_OFFSET,s->generation+1u);
     put32(p+CAL_GENERATION_OFFSET,s->calibration_generation+(cal!=NULL));
-    uint8_t globals[13];current_globals(app,globals);
+    uint8_t globals[14];current_globals(app,globals);
     unsigned pos=GLOBAL_OFFSET*8u;
-    for(unsigned i=0;i<13;++i) {
+    for(unsigned i=0;i<14;++i) {
         if(globals[i]>=(1u<<global_widths[i]))return false;
         putbits(p,&pos,global_widths[i],globals[i]);
     }
@@ -214,7 +223,7 @@ bool device_store_apply(device_store_t *s,keyboard_app_t *app)
     if(!s->ready || s->applied || app->midi->profile!=app->raw->profile) return false;
     s->applied=true;
     if(!s->valid) return false;
-    uint8_t g[13];globals_get(s->record,g);
+    uint8_t g[14];globals_get(s->record,g);
     keyboard_raw_t *r=app->raw;keyboard_midi_t *m=app->midi;
     unsigned pos=SENSOR_OFFSET*8u;
     for(unsigned i=0;i<r->count;++i) {
@@ -226,6 +235,7 @@ bool device_store_apply(device_store_t *s,keyboard_app_t *app)
     m->music=(midi_music_config_t){g[5],g[6]};m->octave=(int8_t)g[7];r->enabled=g[8];
     r->engine.config.saved_actuation=g[9];r->engine.config.saved_rapid=g[10];
     r->engine.config.rapid_enabled=g[11];r->engine.config.locked=g[12];
+    app->menu->effect=EFFECT_CODE_WHITE-g[13];
     keyboard_raw_invalidate(r);keyboard_midi_abort(m);r->midi_mode=m->mode!=0;
     app->sent_valid=false;
     return true;

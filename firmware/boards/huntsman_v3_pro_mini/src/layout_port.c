@@ -78,3 +78,18 @@ void keyboard_light_get(uint8_t profile, unsigned sensor, const uint8_t *frame,
     const uint8_t *p=frame+(unsigned)c->controller*192u;
     *red=p[c->red]; *green=p[c->green]; *blue=p[c->blue];
 }
+uint8_t keyboard_light_x(uint8_t profile,unsigned sensor)
+{
+    if(sensor>=keyboard_layout_count(profile))return 0u;
+    const uint8_t key=keyboard_key_for_sensor(profile,sensor);
+    /* The production physical IDs follow the ANSI row sequence even though
+     * the ASIC scan order and LED channels do not. Optional ISO/JIS keys use
+     * a nearby column when they lack a corresponding ANSI-row position. */
+    if(key>=1u && key<=0x0fu)return (key-1u)*4u;
+    if(key>=0x10u && key<=0x1du)return (key-0x10u)*4u+1u;
+    if(key>=0x1eu && key<=0x2bu)return (key-0x1eu)*4u+2u;
+    if(key>=0x2cu && key<=0x39u)return (key-0x2cu)*4u+3u;
+    if(key>=0x3au && key<=0x40u)return (key-0x3au)*9u+2u;
+    if(key==KEY_ID_ESC)return 0u;
+    return 56u; /* supplemental layout keys at the right edge */
+}

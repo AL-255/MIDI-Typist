@@ -66,8 +66,9 @@ layouts rather than mislabelling them.
 | Appearance | Meaning |
 | --- | --- |
 | Green / blue Enter | Keyboard / MIDI mode |
-| White keys, dimming as pressed | Ordinary travel lighting |
-| Red Caps Lock in keyboard mode over USB | Host reports Caps Lock engaged; otherwise Caps Lock is normally lit white |
+| White keys, dimming as pressed | Default White effect |
+| Moving rainbow colors, dimming as pressed | Rainbow effect selected by Fn+\\ |
+| Red Caps Lock in keyboard mode over USB | Host reports Caps Lock engaged; otherwise Caps Lock follows the selected effect at normal brightness |
 | Dark MIDI note keys | Unmapped, muted, outside scale or out of MIDI range |
 | Blue bottom-row controls | Octave, pitch, modulation and sustain |
 | Blinking Right Alt / Ctrl | Negative / positive octave offset; faster means more octaves |
@@ -136,6 +137,7 @@ Hold Fn + settings key → read preview → release either → action
 | Fn+Tab | TRIGGER: open the mode's trigger editor | Both |
 | Fn+Caps | RAPID: compatibility editor, not raw rapid-trigger behavior | Keyboard |
 | Fn+K / Fn+L | LIGHT− / LIGHT+: brightness down / up | Both |
+| Fn+\\ | RAINBOW / WHITE: switch the ordinary key-light effect | Both |
 | Fn+J | JANKO: toggle built-in layout | MIDI |
 | Fn+V | VELOCITY: open velocity-start editor | MIDI |
 | Fn+Left Shift | LOWER-OFF / LOWER-ON: mute / restore lower playing rows | MIDI |

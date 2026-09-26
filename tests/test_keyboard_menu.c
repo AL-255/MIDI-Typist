@@ -41,6 +41,22 @@ static void rgb(unsigned i, const uint8_t *p, unsigned r, unsigned g, unsigned b
     p+=c->controller*192u;
     assert(p[c->red]==r && p[c->green]==g && p[c->blue]==b);
 }
+static void light_effect(void)
+{
+    init(1);
+    assert(menu.effect==KEYBOARD_LIGHT_WHITE);
+    key(KEY_ID_FN,true);
+    key(0x1du,true); /* physical backslash */
+    assert(menu.pending==MENU_LIGHT_EFFECT && menu.effect==KEYBOARD_LIGHT_WHITE);
+    key(0x1du,false);
+    assert(last_action==MENU_LIGHT_EFFECT && menu.effect==KEYBOARD_LIGHT_RAINBOW);
+    key(KEY_ID_FN,false);frame();
+    key(KEY_ID_FN,true);key(0x1du,true);
+    assert(menu.pending==MENU_LIGHT_EFFECT);
+    key(0x1du,false);
+    assert(last_action==MENU_LIGHT_EFFECT && menu.effect==KEYBOARD_LIGHT_WHITE);
+    key(KEY_ID_FN,false);
+}
 static void thresholds(void)
 {
     for (unsigned profile=1; profile<=3; ++profile) {
@@ -108,7 +124,8 @@ static void brightness_and_hints(void)
         memset(leds,99,sizeof(leds));
         keyboard_menu_lights(&menu,&raw,lower,upper,leds,now,false,false,false);
         for (unsigned i=0; i<raw.count; ++i) {
-            unsigned v=(i==menu.c || i==menu.tab || i==menu.k || i==menu.l || i==menu.caps || i==menu.r)?255:0;
+            unsigned v=(i==menu.c || i==menu.tab || i==menu.k || i==menu.l || i==menu.caps || i==menu.r ||
+                i==menu.option_sensors[MENU_LIGHT_EFFECT-1u])?255:0;
             rgb(i,leds,v,keyboard_shortcut_usage(profile,menu.keys[i])?255:v,i==menu.enter?255:v);
         }
         samples[menu.k]=500; frame(); assert(menu.brightness==19 && menu.pending==MENU_LIGHT_DOWN);
@@ -269,6 +286,7 @@ static void reset_confirmation(void)
 }
 int main(void)
 {
+    light_effect();
     thresholds(); editor(); brightness_and_hints(); application_keys(); repeated_brightness(); reset_confirmation();
     for (unsigned profile=1;profile<=3;++profile) for (unsigned action=1;action<=MENU_RESET;++action)
         for (unsigned release=0;release<2;++release) {

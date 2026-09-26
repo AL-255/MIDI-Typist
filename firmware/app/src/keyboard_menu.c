@@ -7,6 +7,12 @@
 static const uint8_t brightness_steps[] = DEFAULT_BRIGHTNESS_STEPS;
 #define BRIGHTNESS_LEVELS (sizeof(brightness_steps) / sizeof(brightness_steps[0]))
 _Static_assert(DEFAULT_BRIGHTNESS_LEVEL < BRIGHTNESS_LEVELS, "invalid default brightness");
+_Static_assert(DEFAULT_LIGHT_EFFECT < KEYBOARD_LIGHT_EFFECT_COUNT, "invalid default effect");
+static const char *const light_effect_names[KEYBOARD_LIGHT_EFFECT_COUNT]={
+    [KEYBOARD_LIGHT_WHITE]="WHITE",[KEYBOARD_LIGHT_RAINBOW]="RAINBOW"
+};
+static uint8_t next_effect(uint8_t effect)
+{ return (effect+1u)%KEYBOARD_LIGHT_EFFECT_COUNT; }
 
 enum { OPTION_KEYBOARD=1, OPTION_MIDI=2, OPTION_BOTH=3 };
 typedef struct { uint8_t usage, modifier, modes; const char *word; } menu_option_t;
@@ -25,6 +31,7 @@ static const menu_option_t options[MENU_OPTION_COUNT] = {
     [MENU_SCALE-1]={0x16,0,OPTION_MIDI,"SCALE"},
     [MENU_JANKO-1]={0x0d,0,OPTION_MIDI,"JANKO"}, /* J: staggered layout toggle */
     [MENU_VELOCITY-1]={0x19,0,OPTION_MIDI,"VELOCITY"}, /* V: transmitted-velocity start */
+    [MENU_LIGHT_EFFECT-1]={0x31,0,OPTION_BOTH,NULL}, /* physical backslash */
 };
 _Static_assert(MENU_OPTION_COUNT<=16,"menu edge bitmap too small");
 
@@ -32,6 +39,7 @@ void keyboard_menu_init(keyboard_menu_t *s)
 {
     memset(s,0,sizeof(*s));
     s->brightness=DEFAULT_BRIGHTNESS_LEVEL;
+    s->effect=DEFAULT_LIGHT_EFFECT;
     s->fn=s->tab=s->c=s->enter=s->k=s->l=s->caps=s->r=s->y=s->n=s->s=s->e=s->shift=255;
     memset(s->option_sensors,255,sizeof(s->option_sensors));
     s->choice_sensor=255;
@@ -342,6 +350,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
         }
         if (action==MENU_LIGHT_DOWN && s->brightness) --s->brightness;
         if (action==MENU_LIGHT_UP && s->brightness+1u<BRIGHTNESS_LEVELS) ++s->brightness;
+        if (action==MENU_LIGHT_EFFECT)s->effect=next_effect(s->effect);
         if (action==MENU_TRIGGER || action==MENU_RAPID) {
             raw->engine.config.fn=1;
             keyboard_config_event(&raw->engine.config,
@@ -360,7 +369,9 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     if ((raw->midi_mode && (action==MENU_CALIBRATION || action==MENU_RAPID)) ||
         (raw->engine.config.locked && (action==MENU_TRIGGER || action==MENU_RAPID))) return MENU_NONE;
     const char *name=action==MENU_MODE ? (raw->midi_mode ? "KEYBOARD" : "MIDI") :
-        action==MENU_LOWER ? (lower_muted ? "LOWER-ON" : "LOWER-OFF") : options[index].word;
+        action==MENU_LOWER ? (lower_muted ? "LOWER-ON" : "LOWER-OFF") :
+        action==MENU_LIGHT_EFFECT ? light_effect_names[next_effect(s->effect)] :
+        options[index].word;
     keyboard_text_start(&s->text,raw->profile,name,now);
     if (action==MENU_MODE) {
         static const uint8_t colors[][3]={{COLOR_CONFIRM},{COLOR_MIDI}};

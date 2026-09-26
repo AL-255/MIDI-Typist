@@ -85,6 +85,11 @@
 
 /* Menu/LED tuning. PWM values are linear 0..255; tuples are RGB. */
 #define DEFAULT_BRIGHTNESS_LEVEL 19u
+#define DEFAULT_LIGHT_EFFECT 0u /* KEYBOARD_LIGHT_WHITE */
+#define RAINBOW_CYCLE_MS 6000u
+#define RAINBOW_HUE_PERIOD 1536u /* six 256-step RGB segments */
+#define RAINBOW_HUE_SEGMENT 256u
+#define RAINBOW_LIGHT_X_SPAN 64u /* board x coordinates, quarter-key units */
 #define TEXT_LETTER_MS 200u
 #define TEXT_REPEAT_PAUSE_MS 500u
 #define TEXT_BACKGROUND_PWM 77u

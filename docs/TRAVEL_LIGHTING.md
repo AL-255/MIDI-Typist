@@ -17,11 +17,14 @@ scan attempt after USB configuration, and initializes lighting after ASIC
 layout discovery. No GUI connection or start command is required. NKRO/MIDI
 output arms after neutral samples.
 
-Each key is white with inverse endpoint-normalized travel: fully lit at rest,
-dimming toward black as it is pressed. It does not use binary pressed/released state, the FN editor, actuation
+White is the default effect. Each key has inverse endpoint-normalized travel:
+fully lit at rest, dimming toward black as it is pressed. Fn+\\ selects the
+Rainbow effect, a six-segment RGB gradient across physical key columns that
+completes a color cycle every six seconds. It keeps the same travel intensity.
+Both effects are saved with the device profile. Neither effect uses binary pressed/released state, the FN editor, actuation
 threshold, rapid-trigger hysteresis, gamma correction, or the keyboard engine's
 low-level deadband. MIDI mode/shift and calibration indicators overlay the
-base white effect. MIDI mode masks keys whose configured note is unmapped;
+base effect. MIDI mode masks keys whose configured note is unmapped;
 the mask follows GUI mapping changes on the next lighting frame. Mode/shift
 indicators remain exceptions as described in [MIDI design](MIDI_DESIGN.md) and
 [calibration](CALIBRATION.md):
@@ -43,7 +46,7 @@ Invalid per-key raw values or endpoints remain dark, not inverted to full
 brightness. `lighting_travel_pwm` retains its press-increasing normalization
 for MIDI aftertouch; only the LED frame inverts it. Keyboard mode lights all
 keys independently of their MIDI mappings. In keyboard mode, a released Caps
-Lock key has the normal full-white base brightness rather than inheriting a
+Lock key has the normal full-intensity base brightness rather than inheriting a
 dimmed value from a resting sensor slightly below its upper bound. The USB
 host's HID Caps Lock LED bit changes that key to red; a bus reset clears the
 state. Fn menus and calibration still take lighting priority. Enter's mode marker and active
@@ -87,6 +90,7 @@ The broken sibling implementation was not consulted.
 | Runtime `0x04000004`, 75 nine-byte records | Key ID, row/column, controller, individual R/G/B channel indices, effect metadata |
 | `0x2000cbf0`, `0x2000e410` | Separate ANSI/ISO FN/right-Alt patches for scan and lighting maps |
 | `0x200098b0` | Actual normal-effect color-to-controller renderer used for differential tests |
+| `0x20017f4a`, type-fifteen effect path | Original five-row, fifteen-column RGB effect plane used as the spatial reference; this project generates its own color wheel rather than copying a vendor table |
 | `0x20016464`, `0x20015dec`, `0x2000e354` | Default endpoints, endpoint calibration, inverse raw normalization |
 
 The RGB channels are **not packed per key**. For example A's red/green/blue

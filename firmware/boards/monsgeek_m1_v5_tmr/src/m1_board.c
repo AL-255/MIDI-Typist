@@ -9,6 +9,11 @@ const m1_key_t m1_keys[M1_KEY_COUNT] = {
 #include "m1_keys.def"
 #undef M1_KEY
 };
+static const uint8_t light_x[M1_KEY_COUNT] = {
+#define M1_KEY(id,bank,rank,usage,x,y,w,label) [id]=(x)+(w)/2u,
+#include "m1_keys.def"
+#undef M1_KEY
+};
 const uint8_t m1_adc_channels[M1_ADC_RANKS]={10,11,12,13,0,1,2,3,4,5,6,7,14,15,8};
 /* Verified by executing the reference bank selector, not by reading paired
  * hex halfwords as bytes: its TBB entries are byte-indexed. Bits are B9/B8/B7. */
@@ -100,3 +105,5 @@ void keyboard_light_get(uint8_t profile,unsigned sensor,const uint8_t *frame,uin
     unsigned i=m1_led_index(sensor)*3u;
     *r=frame[i]; *g=frame[i+1]; *b=frame[i+2];
 }
+uint8_t keyboard_light_x(uint8_t profile,unsigned sensor)
+{ return profile==M1_PROFILE && sensor<M1_KEY_COUNT?light_x[sensor]:0u; }

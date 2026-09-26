@@ -544,6 +544,10 @@ application's linear intensity/brightness processing. Preserve a transfer
 snapshot until the peripheral has finished using it.
 The buffer must contain intensity bytes only: shared code clears and scales
 it. Padding is acceptable; controller headers and checksums are not.
+Provide `keyboard_light_x(profile, sensor)` in quarter-key units (0…64),
+using physical positions rather than sensor or LED-chain order. The shared
+Rainbow effect uses this coordinate to distribute hue; White needs no
+geometry. Keep the physical mapping independent of user keycode remapping.
 `keyboard_app_lights` includes the menu brightness pass and feedback
 exceptions, so do not apply global brightness again in the board.
 The board owns refresh cadence, gamma/protocol encoding and explicit light-off.

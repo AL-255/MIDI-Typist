@@ -8,8 +8,8 @@ Open-Source Portable C11 firmware that turns analog keyboards into NKRO keyboard
 
 | Model | Status | Analog? | Features |
 | ---  | --- | --- | --- |
-| [![Huntsman V3 Pro Mini](docs/sprites/RZ03-0499.png)](USER_MANUAL.md) | Stable | ✅ Optical | NKRO; Per-Key RGB |
-| [![MonsGeek M1 V5 TMR ](docs/sprites/MG-M1V5TMR.png)](docs/MONSGEEK_M1.md) | Experimental | ✅ TMR | NKRO; Per-Key RGB; Tri-Mode (USB, Bluetooth, 2.4 GHz) |
+| [![Huntsman V3 Pro Mini](docs/sprites/RZ03-0499.png)](USER_MANUAL.md) | Stable | ✅ Optical | NKRO; White/Rainbow RGB |
+| [![MonsGeek M1 V5 TMR ](docs/sprites/MG-M1V5TMR.png)](docs/MONSGEEK_M1.md) | Experimental | ✅ TMR | NKRO; White/Rainbow RGB; Tri-Mode (USB, Bluetooth, 2.4 GHz) |
 
 Each model has its own firmware image. The SDK-free 104-key simulator is a
 development port, not a supported physical keyboard.
@@ -43,7 +43,7 @@ Each hardware backend builds separately—not one universal binary.
 - Per-key Schmitt thresholds default to **3500 press / 3600 release**;
   lower readback means a deeper press.
 - Fn+C calibrates keys in parallel. Fn+Tab adjusts triggers; Fn+K/L changes
-  brightness. Fn+R requires Y confirmation before clearing custom settings.
+  brightness; Fn+\\ switches White/Rainbow. Fn+R requires Y confirmation before clearing custom settings.
 - Committed settings and calibration persist on-device. Release all keys and
   wait for **settings saved** in the GUI before unplugging; saving waits for
   250 ms without changes. Missing/corrupt saves initialize defaults.

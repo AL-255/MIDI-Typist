@@ -321,7 +321,7 @@ letters occupy separate time slots. Release of either chord key executes the
 mode change and stops the preview on the next valid scan; no letter or word must finish first. Enter otherwise remains
 a persistent full-channel-intensity marker (green for keyboard, blue for MIDI),
 matching unpressed note keys before global brightness scaling. Other keys keep
-white inverse-travel PWM: lit at rest, dimming as pressed. In MIDI mode only
+the selected White or Rainbow inverse-travel effect: lit at rest, dimming as pressed. In MIDI mode only
 configured note keys receive this base lighting; unmapped non-control keys are dark.
 The mask follows GUI edits without changing note/velocity/aftertouch behavior.
 See [text renderer details](FN_MENU.md#interruptible-text-display).
