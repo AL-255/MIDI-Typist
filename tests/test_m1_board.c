@@ -330,12 +330,29 @@ static void application(void)
     }
     for(unsigned i=0;i<82;++i) samples[i]=3900;
     frame();
+    uint8_t rgb[M1_LED_BYTES], expected[M1_LED_BYTES],r,g,b,er,eg,eb;
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b); /* Enter follows White */
+    assert(r && r==g && g==b);
+    menu.effect=KEYBOARD_LIGHT_RAINBOW;
+    keyboard_app_lights(&app,lo,hi,rgb,0);
+    lighting_travel_frame(M1_PROFILE,raw.raw,app.input_lower,app.input_upper,true,expected);
+    lighting_rainbow_frame(M1_PROFILE,M1_KEY_COUNT,expected,0);
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b);
+    keyboard_light_get(M1_PROFILE,56,expected,&er,&eg,&eb);
+    assert(r==er && g==eg && b==eb); /* no keyboard-mode Enter override */
     /* Fn+Enter selects MIDI on release, not press. */
     samples[M1_FN_SENSOR]=samples[56]=3000; frame(); assert(!midi.mode);
     samples[M1_FN_SENSOR]=samples[56]=3900; frame(); frame(); assert(midi.mode==1);
     assert(midi.mapping[45]!=255); /* A: note mapped by shared default HID map. */
     assert(midi.mapping[81]==255); /* Dedicated Right arrow isn't silently a note. */
-    uint8_t rgb[M1_LED_BYTES]; keyboard_app_lights(&app,lo,hi,rgb,now);
+    keyboard_app_lights(&app,lo,hi,rgb,now);
+#if !MIDI_COLOR_EFFECTS_ENABLED
+    keyboard_light_get(M1_PROFILE,45,rgb,&r,&g,&b);
+    assert(r && r==g && g==b); /* Rainbow is disabled for MIDI notes. */
+#endif
+    keyboard_light_get(M1_PROFILE,56,rgb,&r,&g,&b);
+    assert(!r && !g && b==255); /* MIDI Enter remains the blue mode hint. */
 }
 static keyboard_save_result_t calibrated(const keyboard_calibration_t *candidate)
 {

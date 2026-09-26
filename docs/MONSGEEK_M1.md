@@ -214,6 +214,12 @@ entries `0x08007010`, `0x08017C28` and `0x080150BC`. The custom application
 supplies final RGB brightness; it does not copy the stock renderer's channel
 scaling, effect code or color tables.
 
+The shared application gives Enter the selected White/Rainbow effect in
+keyboard mode. With `MIDI_COLOR_EFFECTS_ENABLED` set to 0 in `defaults.h`,
+MIDI note keys use white backlighting even when Rainbow is selected. MIDI
+Enter and performance controls retain their blue function hints; transport,
+battery and Fn-menu overlays still take priority.
+
 The official SPI driver configures SPI2 half-duplex transmit on PA10/AF5:
 8 bits, master, MSB first, low polarity, second edge, APB1 divided by 16.
 At the required 108 MHz APB1 clock this requests 6.75 MHz SPI and approximately
