@@ -78,7 +78,34 @@ class DefaultsTests(unittest.TestCase):
     def test_invalid_defaults_fail_compilation(self):
         for changes in ({'RAW_DEFAULT_PRESS':3600}, {'RAW_DEFAULT_RELEASE':4096},
                         {'RAW_VELOCITY_WINDOW':1}, {'VELOCITY_MAX_COUNTS_PER_SECOND':0},
-                        {'MIDI_WHEEL_RELEASE_RAW':999}, {'CALIBRATION_HOLD_MS':5000}):
+                        {'MIDI_CONTROL_HOST_MESSAGES':0}, {'MIDI_CONTROL_HOST_ERROR_BYTES':1},
+                        {'MIDI_CONTROL_HOST_POLL_MS':0}, {'MIDI_CONTROL_HOST_POLL_MS':500},
+                        {'MIDI_CONTROL_HOST_CLOSE_MS':0}, {'MIDI_CONTROL_HOST_REAP_MS':3001},
+                        {'GUI_POWER_POLL_MS':0}, {'GUI_POWER_STALE_MS':1000},
+                        {'MIDI_WHEEL_RELEASE_RAW':999}, {'CALIBRATION_HOLD_MS':5000},
+                        {'M1_LED_LATCH_US':0}, {'M1_LED_TRANSFER_TIMEOUT_US':0},
+                        {'M1_MAIN_STACK_BYTES':8191}, {'M1_MAIN_STACK_BYTES':8193},
+                        {'M1_MAIN_STACK_BYTES':32776}, {'M1_DEFAULT_WIRELESS_TRANSPORT':3},
+                        {'M1_DEFAULT_WIRELESS_TRANSPORT':6},
+                        {'M1_FLASH_ERASE_WAIT_LOOPS':0}, {'M1_FLASH_ERASE_WAIT_LOOPS':1000001},
+                        {'M1_FLASH_PROGRAM_WAIT_LOOPS':0}, {'M1_FLASH_PROGRAM_WAIT_LOOPS':1000001},
+                        {'M1_USB_PHY_SETTLE_US':999}, {'M1_USB_INIT_DELAY_LIMIT_MS':24},
+                        {'M1_USB_INIT_DELAY_LIMIT_MS':1001}, {'M1_USB_PHY_SETTLE_US':25001},
+                        {'M1_RADIO_START_PULSE_US':0}, {'M1_RADIO_TRANSFER_TIMEOUT_US':0},
+                        {'M1_PAIR_HOLD_MS':0}, {'M1_PAIR_HOLD_MS':0x80000000},
+                        {'M1_PAIR_SWITCH_TIMEOUT_MS':2999}, {'M1_PAIR_SWITCH_TIMEOUT_MS':0x80000000},
+                        {'M1_RADIO_START_PULSE_US':0x80000000},
+                        {'M1_RADIO_TRANSFER_TIMEOUT_US':0x80000000},
+                        {'M1_WAKE_SCAN_TIMEOUT_US':0}, {'M1_WAKE_SCAN_TIMEOUT_US':0x80000000},
+                        {'M1_WAKE_ACQUIRE_FRAMES':0}, {'M1_WAKE_ACQUIRE_FRAMES':256},
+                        {'M1_WAKE_REFRESH_FRAMES':0}, {'M1_WAKE_REFRESH_FRAMES':256},
+                        {'M1_WAKE_DROP_COUNTS':0}, {'M1_WAKE_DROP_COUNTS':4096},
+                        {'M1_RUNTIME_POWER_PERIOD_MS':0}, {'M1_RUNTIME_BT_IDLE_STEPS':65536},
+                        {'M1_RUNTIME_HANDOFF_MS':0}, {'M1_RUNTIME_SLEEP_SETTLE_MS':3000},
+                        {'M1_RUNTIME_SLEEP_TICKS':65537}, {'M1_RUNTIME_SCAN_SETTLE_US':0},
+                        {'M1_RUNTIME_BT_RETAIN_MS':0}, {'M1_RUNTIME_RESTORE_STAGE_MS':3000},
+                        {'M1_RUNTIME_RESTORE_SETTLE_MS':0}, {'M1_SOURCE_DEBOUNCE_MS':0},
+                        {'M1_SOURCE_DEBOUNCE_MS':5000}, {'M1_SOURCE_TRANSITION_MS':0x80000000}):
             with self.subTest(changes=changes):
                 self.compile(changes, run=False)
 

@@ -1,16 +1,24 @@
 #include "defaults.h"
 #include "keyboard_app.h"
 #include "keyboard_layout.h"
+#include "keyboard_sample.h"
 #include <string.h>
 
 static void defaults(keyboard_app_t *s)
 {
     keyboard_raw_init(s->raw); s->raw->menu_managed=true;
     keyboard_midi_init(s->midi); keyboard_menu_init(s->menu);
+    if(!s->ops || !s->ops->save_calibration)s->menu->disabled_options|=1u<<(MENU_CALIBRATION-1u);
+    if(!s->ops || !s->ops->clear_profile)s->menu->disabled_options|=1u<<(MENU_RESET-1u);
     calibration_init(s->cal);
     s->loaded=s->reset_pending=false;
 }
 static void log_message(keyboard_app_t *s,const char *message);
+static bool input_owned(const keyboard_app_t *s)
+{
+    return keyboard_menu_observing(s->menu) ||
+        (s->system_observing && s->system_observing(s,s->system_context));
+}
 bool keyboard_app_reset_profile(keyboard_app_t *s)
 {
     if(!s->ops || !s->ops->clear_profile || !s->ops->clear_profile()) {
@@ -30,17 +38,19 @@ void keyboard_app_init(keyboard_app_t *s,keyboard_raw_t *raw,keyboard_midi_t *mi
                        const keyboard_app_ops_t *ops)
 {
     *s=(keyboard_app_t){.raw=raw,.midi=midi,.menu=menu,.cal=cal,.ops=ops};
+    for(unsigned i=0;i<MT_KEY_CAPACITY;++i) { s->input_lower[i]=1;s->input_upper[i]=4096; }
     defaults(s);
 }
 void keyboard_app_invalidate(keyboard_app_t *s,uint32_t now)
 {
     keyboard_raw_invalidate(s->raw); keyboard_menu_cancel(s->menu);
     calibration_abort(s->cal,CAL_INVALID,now);
-    s->frame_valid=s->sent_valid=false;
+    s->frame_valid=s->sent_valid=s->readback_valid=false;
 }
 bool keyboard_app_calibrate(keyboard_app_t *s,uint32_t now,bool healthy)
 {
-    if(!healthy || !s->frame_valid || (uint32_t)(now-s->last_frame)>=SCAN_STALE_MS ||
+    if(!s->ops || !s->ops->save_calibration || !healthy || !s->frame_valid ||
+       (uint32_t)(now-s->last_frame)>=SCAN_STALE_MS ||
        s->midi->mode || s->raw->engine.config.mode ||
        !calibration_start(s->cal,s->raw->profile,s->raw->count,now)) return false;
     keyboard_raw_invalidate(s->raw); s->sent_valid=false;
@@ -65,13 +75,35 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
         calibration_init(s->cal);
         s->loaded=s->reset_pending=false;
     }
-    raw->midi_mode=s->midi->mode || calibration_active(s->cal);
+    bool calibrating=calibration_active(s->cal);
+    bool observing=calibrating || input_owned(s);
+    raw->midi_mode=s->midi->mode || calibrating;
     const keyboard_config_t before=raw->engine.config;
-    keyboard_raw_frame(raw,samples,count,profile,valid);
+    const keyboard_input_policy_t *policy=keyboard_layout(profile)->input;
+    uint16_t normalized[MT_KEY_CAPACITY];
+    const uint16_t *input=samples;
+    const uint16_t *input_lo=lo,*input_hi=hi;
+    if(policy && policy->normalize_travel) {
+        valid=valid && keyboard_samples_travel(samples,lo,hi,count,
+                                               calibration_min_span(profile),normalized);
+        if(!valid)memset(normalized,0,count*sizeof(*normalized));
+        input=normalized;
+        input_lo=s->input_lower;input_hi=s->input_upper;
+    }
+    if(observing)keyboard_raw_observe(raw,input,count,profile,valid);
+    else keyboard_raw_frame(raw,input,count,profile,valid);
     s->frame_valid=valid && raw->valid;
+    s->readback_valid=s->frame_valid;
+    if(s->readback_valid) {
+        s->readback_profile=profile;s->readback_count=count;
+        s->readback_time=now;++s->readback_sequence;
+        s->readback_normalized=policy && policy->normalize_travel;
+        for(unsigned i=0;i<count;++i)
+            s->readback[i]=(keyboard_readback_key_t){samples[i],lo[i],hi[i],raw->raw[i]};
+    }
     if(s->reset_pending && s->frame_valid) {
         bool neutral=true;
-        for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
+        for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
         /* Output may have been disabled through SysEx. Neutrality, not output
          * arming, controls RESET so disabled keyboards can reset too. */
         if(neutral) {
@@ -80,7 +112,8 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
             s->frame_valid=false; /* wait for freshly initialized board samples */
         }
     }
-    uint8_t action=keyboard_menu_frame(s->menu,raw,lo,hi,&before,now,
+    bool consumed=s->system_input && s->system_input(s,s->system_context,now);
+    uint8_t action=consumed?MENU_NONE:keyboard_menu_frame(s->menu,raw,input_lo,input_hi,&before,now,
         calibration_active(s->cal),s->midi->lower_muted,&s->midi->music,s->midi->velocity_start);
     if(action==MENU_MODE) keyboard_midi_toggle(s->midi,raw,now);
     if(action==MENU_LOWER) keyboard_midi_toggle_lower(s->midi,raw);
@@ -91,23 +124,34 @@ void keyboard_app_frame(keyboard_app_t *s,const uint16_t *samples,uint8_t count,
     if(action==MENU_CALIBRATION) (void)keyboard_app_calibrate(s,now,s->frame_valid);
     if(action==MENU_RESET) (void)keyboard_app_reset_profile(s);
     if(!s->loaded && s->frame_valid) {
-        if(s->ops && s->ops->load_calibration) (void)s->ops->load_calibration(profile,count,lo,hi);
+        if(s->ops && s->ops->load_calibration && s->ops->load_calibration(profile,count,lo,hi))
+            s->readback_valid=false; /* wait for a frame using the restored bounds */
         s->loaded=true;
     }
     bool active=calibration_active(s->cal),neutral=true;
-    if(active) for(unsigned i=0;i<count;++i) if(samples[i]<=raw->release[i]) neutral=false;
+    if(active && observing)neutral=raw->neutral_idle;
+    else if(active) for(unsigned i=0;i<count;++i) if(raw->raw[i]<=raw->release[i]) neutral=false;
     calibration_frame(s->cal,samples,s->frame_valid,neutral,now);
     if(s->cal->state==CAL_SAVE) {
-        bool success=s->ops && s->ops->save_calibration && s->ops->save_calibration(s->cal);
-        if(success) {
+        keyboard_save_result_t result=s->ops && s->ops->save_calibration?
+            s->ops->save_calibration(s->cal):KEYBOARD_SAVE_FAILED;
+        if(result==KEYBOARD_SAVE_COMPLETE) {
             memcpy(lo,s->cal->lower,count*sizeof(*lo));
             memcpy(hi,s->cal->upper,count*sizeof(*hi));
+            s->readback_valid=false; /* candidate is active only in the next frame */
         }
-        calibration_finish(s->cal,success,now);
+        if(result!=KEYBOARD_SAVE_DEFER)calibration_finish(s->cal,result==KEYBOARD_SAVE_COMPLETE,now);
     }
-    if(active && !calibration_active(s->cal)) keyboard_raw_invalidate(raw);
+    if((active || observing) && !calibration_active(s->cal) && !input_owned(s)) {
+        /* Observation ending in this frame disarms performance input, but it
+         * must not discard a configuration the menu committed while releasing
+         * it (production 0x200134fc keeps the newly selected editor). */
+        const keyboard_config_t committed=raw->engine.config;
+        keyboard_raw_invalidate(raw);
+        raw->engine.config=committed;
+    }
     raw->midi_mode=s->midi->mode || calibration_active(s->cal);
-    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,lo,hi,now);
+    if(!calibration_active(s->cal)) keyboard_midi_frame(s->midi,raw,input_lo,input_hi,now);
 }
 void keyboard_app_service(keyboard_app_t *s,uint32_t now,bool healthy,
                           keyboard_send_fn keyboard_send,midi_send_fn midi_send)
@@ -133,10 +177,13 @@ void keyboard_app_lights(keyboard_app_t *s,const uint16_t *lo,const uint16_t *hi
                          uint8_t *frame,uint32_t now)
 {
     if(!s->frame_valid) { memset(frame,0,LIGHTING_FRAME_SIZE); return; }
+    const keyboard_input_policy_t *policy=keyboard_layout(s->raw->profile)->input;
+    if(policy && policy->normalize_travel) { lo=s->input_lower;hi=s->input_upper; }
     lighting_travel_frame(s->raw->profile,s->raw->raw,lo,hi,s->frame_valid,frame);
     keyboard_midi_lights(s->midi,frame,now);
     calibration_lights(s->cal,frame,now);
     keyboard_menu_lights(s->menu,s->raw,lo,hi,frame,now,s->midi->mode,
         calibration_active(s->cal) || (s->cal->state!=CAL_IDLE && (uint32_t)(now-s->cal->since)<CALIBRATION_RESULT_MS),
         s->midi->janko);
+    if(s->system_lights)s->system_lights(s,s->system_context,frame,now);
 }

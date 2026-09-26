@@ -1,8 +1,9 @@
 # Building and testing MIDI-Typist from a fresh checkout
 
 Use `huntsman` for the complete physical keyboard or `simulator` for the
-SDK-free desktop reference. Only the Huntsman cross build needs Arm GNU and
-the pinned NXP components. For another keyboard/MCU, follow the
+SDK-free desktop reference. The Huntsman build uses Arm GNU and the pinned NXP
+components; the M1 HAL libraries use Arm GNU and the pinned Artery submodule.
+For another keyboard/MCU, follow the
 [porting guide](PORTING.md), including its board-manifest and lifecycle examples.
 
 ## Prerequisites
@@ -82,11 +83,98 @@ endpoint layout, strings and HID descriptors. They do not validate an actual
 bootloader's flash mapping or authorize flashing.
 
 The complete application builds without the updater, extraction or private
-device data. The 15 native suites pass. See [validation status](VALIDATION.md)
+device data. See [validation status](VALIDATION.md)
 for the hardware boundary. Newlib may emit linker warnings about unimplemented
 `_close`, `_lseek`, `_read` and `_write`; those functions are absent from the
 final linked image after garbage collection. MIDI SysEx debug output uses the
 application's USB transport, not libc file I/O.
+
+## MonsGeek M1 development build
+
+These commands compile the real shared application with the M1's 82-key layout,
+test its board callbacks natively, and compile its HALs and development ELF for
+Cortex-M4. They never access a keyboard. The application `.bin` is an
+[experimental M1 recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion),
+not a working plug-and-play release.
+
+`MT_M1_WIRELESS` (default `OFF`) selects whether the unverified Bluetooth/2.4 GHz
+stack is built at all. With the default, no radio HAL, peer scheduler, pairing
+request or peer sleep transaction is linked: the artifact is a USB-only keyboard
+that refuses every wireless transport, reports that capability in telemetry and
+can be redistributed without the unverified feature. Development and audit builds
+that need wireless behaviour pass the option explicitly:
+
+```sh
+cmake -S . -B build-m1-hal -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Release \
+      -DMT_M1_WIRELESS=ON
+```
+
+`tools/run_tests.py --m1-dir DIR` runs the M1 audit groups against whichever
+configuration `DIR` was built with, and each audit prints `SKIP` lines for the
+sections that only exist in a wireless build (`--group m1` runs just those
+groups).
+
+```sh
+git submodule update --init third_party/artery
+cmake -S . -B build-m1-host -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-m1-host
+ctest --test-dir build-m1-host --output-on-failure
+cmake -S . -B build-m1-hal -G Ninja -DMT_BOARD=monsgeek_m1_v5_tmr -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-m1-hal
+python tools/test_keyboard_boards.py
+python tools/test_m1_hal_arm.py build-m1-hal/m1_hal_audit.elf
+python tools/test_m1_usb_arm.py build-m1-hal/m1_usb_audit.elf
+python tools/test_m1_live_arm.py build-m1-hal/m1_live_audit.elf
+python tools/test_m1_storage_arm.py build-m1-hal/m1_storage_audit.elf
+python tools/test_m1_save_arm.py build-m1-hal/m1_save_audit.elf
+python tools/test_m1_boot_arm.py build-m1-hal/m1_boot_audit.elf
+python tools/test_m1_image_arm.py build-m1-hal/m1_development.elf
+python tools/test_m1_runtime_power_arm.py build-m1-hal/m1_development.elf
+python tools/test_monsgeek_identity.py
+python tools/test_monsgeek_iap.py
+```
+
+The ARM artifacts are `libm1_boot.a`, `libm1_live.a`, `libm1_save.a`, `libm1_hal.a`, `libm1_storage.a`, `libm1_board.a`, `libat32_sdk.a` and shared
+application archive `libmidi_typist_app.a`, plus `libmidi_typist_services.a`. Native CTest passes an
+actual C-encoded 82-key snapshot through SysEx into the GUI decoder. There is
+a generated `m1_development.bin` for the GUI's M1 factory-conversion action.
+`m1_hal_audit.elf`, `m1_usb_audit.elf`,
+`m1_live_audit.elf`, `m1_save_audit.elf`, `m1_boot_audit.elf` and `m1_storage_audit.elf` have synthetic emulator-only memory maps and no boot header
+or vector table: none is a flash image. Each test
+requires the same Unicorn/pyelftools dependencies as the Huntsman ARM audits.
+`m1_development.elf` and its `.map` use the actual application addresses. The
+link includes a reset/vector table, SRAM-code/data initialization and a basic
+foreground loop. Its separate image audit checks all load ranges, executes the
+reset code and tests main-loop ordering with component calls stubbed. This is
+not end-to-end execution or hardware qualification. The build never flashes.
+The runtime-power audit executes the installed controller, power policy, wake
+filter and SDK GPIO writes. HAL completion, radio status and elapsed sleep time
+are scripted; it does not replace the separate HAL audits or physical power tests.
+The USB audit covers the composite class/GUI path and guarded hardware startup,
+reset-IRQ dispatch and shutdown; clocks, completion flags and delays are modeled.
+The cold-handoff audit composes actual startup, scan pause/resume, USB/radio
+initialization and application binding on both power sources; only profile I/O
+is substituted. It is not a reset-handler or runtime power-management audit.
+The foreground audit connects scripted scan/battery/LED boundaries to the real
+application, USB class, radio scheduler/SPI/DMA drivers and GUI codec, including
+discontinuity, release handling and gated Fn transport selection. External
+host-release/selection callbacks and radio replies are scripted. Profile I/O
+and storage pause/resume gates are scripted in this foreground audit, including
+pending status, neutral autosave, restart restoration and failure handling.
+The factory-calibration reader runs on synthetic read-only flash pages; the
+foreground audit imports those records rather than accepting supplied bounds.
+The storage audit runs the shared journal and official SDK flash driver in RAM
+against modeled erase/program effects. It supplies a synthetic image-end symbol
+and safety gate, not a deployable image or real power/quiescence qualification.
+The save-gate audit composes the actual scanner, timebase, battery and lighting
+HALs with scripted supply/transport inputs; it checks retained links/rails,
+unchanged deferrals, measured pause/resume and terminal ownership failures.
+The HAL audit also executes the wireless report scheduler through actual
+SPI/DMA drivers with scripted status replies; no radio host is simulated.
+The SDK package selector
+enables AT32F405 family headers; it does not establish the physical chip's exact
+package/density. See [M1 contracts and verification limits](MONSGEEK_M1.md).
 
 ## Build provenance
 
@@ -126,12 +214,15 @@ alternate defaults, rejects invalid combinations and checks host consistency.
 
 ## Tests that need no original firmware or device
 
-The 15 CTest suites run in parallel and cover application portability and architecture boundaries,
+The CTest suites run in parallel and cover application portability and architecture boundaries,
 core logic, raw keyboard/velocity, MIDI state and
 interruptible text lighting,
 Fn menu/threshold conversion, parallel calibration/storage, GUI model/MIDI mock transport, image reservation,
 strict capture framing, offline device-flashing validation, build-time Git
 provenance (including incremental rebuilds) and the current-only repository rule.
+Every native board build also runs `tools/test_midi_backend.py`: process-isolated
+MIDI ownership, bounded capture queues, no-retry failures and stuck-child cleanup.
+It opens no physical MIDI ports; its optional widget guard check requires Tk.
 Neither the updater EXE nor proprietary extracted firmware is needed for
 these tests or the application build.
 
@@ -161,6 +252,18 @@ The GUI runtime needs python-rtmidi, but not PySerial or Pillow.
 
 ## Optional reference-backed audits
 
+For M1 scan-bank wiring and provisional calibration policy, execute the original
+selector and startup validity/fallback instructions from your read-only,
+boot-prefixed ID2949/v410 image. Compare GPIO writes with the compiled board
+table and the RAM fallback with current defaults (no device access):
+
+```sh
+python tools/test_m1_scan_reference.py build-m1-hal/m1_development.elf --reference /path/to/private/M1-V5-TMR-ID2949-v410.bin
+```
+
+This tests instruction behavior, not electrical acquisition timing. No original
+image or extracted executable bytes are distributed with the test.
+
 For the complete offline suite, install the optional Python dependencies above
 plus Tk and Xvfb, then run:
 
@@ -168,8 +271,8 @@ plus Tk and Xvfb, then run:
 python3 tools/run_tests.py
 ```
 
-This configures/builds the native and complete `huntsman` targets, then runs
-19 independent audit jobs (including all 15 native CTest suites) with up to
+This configures/builds native tests, the complete `huntsman` target, and the M1
+host/ARM libraries, then runs 23 independent audit jobs with up to
 eight workers. It includes original-reference comparisons, linked ARM USB,
 optical/MIDI/LED/storage/menu tests and the real Tk UI against simulated MIDI peers.
 The total deadline, including builds, is **300 seconds**; failures, missing
@@ -227,9 +330,9 @@ fontconfig/Xft, so for the smoothest text use an interpreter whose Tk has it:
 the distribution `python3` with `python3-tk` and `python3-rtmidi` (the venv
 documented above inherits whatever Tk its base interpreter has). Text
 rendering is a property of that interpreter, not of the keyboard firmware.
-A short window keeps the bottom-left settings panel usable: it scrolls with
-its own scrollbar, and the window refuses to shrink below the point where the
-keyboard, settings and footer fit.
+In a short window, the configuration page scrolls to keep large keyboard layouts,
+settings and the footer reachable. The bottom-left settings panel also has its
+own scrollbar; use the outer page scrollbar to reach that panel when necessary.
 
 Use the port selector for multiple keyboards. Auto-detection chooses only a
 unique paired control port; performance MIDI belongs in the DAW. Linux can
@@ -238,7 +341,7 @@ Only one GUI control session is supported. A new handshake replaces a previous
 owner; it is not an OS-level exclusive lock.
 
 If the GUI rejects telemetry, use the matching GUI from this checkout: the
-1152-byte layout is a fixed contract with no version field, and the device
+count-aware MTG4 layout requires SysEx version 3, and the device
 reports its build identity (`version`) for the record. If waiting for neutral,
 release every key; inspect threshold/raw values without repeatedly resetting
 the keyboard. A MIDI cleanup-pending indicator means the host has not yet

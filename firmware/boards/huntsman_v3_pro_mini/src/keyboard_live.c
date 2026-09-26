@@ -32,7 +32,7 @@ static keyboard_menu_t s_menu;
  * keyboard_live_init explicitly initializes the complete state before use. */
 static keyboard_calibration_t s_cal __attribute__((section(".calibration_state")));
 static device_store_t s_cal_store __attribute__((section(".calibration_state")));
-static keyboard_app_t s_app;
+static keyboard_app_t s_app __attribute__((section(".calibration_state")));
 #define s_sent s_app.sent
 #define s_sent_valid s_app.sent_valid
 static uint32_t s_gui_sequence, s_gui_ack, s_last_gui;
@@ -44,11 +44,11 @@ static bool load_calibration(uint8_t profile,uint8_t count,uint16_t *lo,uint16_t
     if(s_cal_store.saved) s_scan.calibrated=count;
     return s_cal_store.saved;
 }
-static bool save_calibration(const keyboard_calibration_t *cal)
+static keyboard_save_result_t save_calibration(const keyboard_calibration_t *cal)
 {
     bool ok=device_store_update(&s_cal_store,&s_app,cal,flash_calibration_read,flash_calibration_write);
     if(ok) s_scan.calibrated=cal->count;
-    return ok;
+    return ok?KEYBOARD_SAVE_COMPLETE:KEYBOARD_SAVE_FAILED;
 }
 static bool clear_profile(void)
 {
@@ -58,66 +58,23 @@ static void reset_sensors(uint8_t profile) { keyboard_scan_init(&s_scan,profile)
 static const keyboard_app_ops_t app_ops={
     load_calibration,save_calibration,clear_profile,reset_sensors,debug_write
 };
-static void gui16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8u; }
-static void gui32(uint8_t *p, uint32_t v) { gui16(p, v); gui16(p + 2, v >> 16u); }
 static void gui_snapshot(uint32_t now)
 {
     if (!scan_stream_gui_enabled() || (uint32_t)(now - s_last_gui) < GUI_REPORT_PERIOD_MS) return;
     s_last_gui = now;
-    uint8_t out[SCAN_STREAM_GUI_SIZE] = {0};
-    memcpy(out, "HKG", 3u); out[3] = 0u; /* constant magic: frames carry no layout number */
-    gui16(out + 4, sizeof(out));
-    out[6] = s_midi.velocity_start; /* Fn+V transmitted-velocity start, 1..10 */
-    out[7] = s_raw.profile; out[8] = s_raw.count;
-    out[9] = s_raw.enabled | (s_raw.armed << 1u) | (s_raw.valid << 2u) |
-             ((s_transport.phase == OPT_FAULT) << 3u) | ((s_lighting.phase == LIGHT_FAULT) << 4u) |
-             ((s_raw.engine.config.fn != 0u) << 5u) | ((s_midi.janko != 0u) << 6u);
-    out[10] = s_gui_result;
-    out[11] = s_raw.engine.config.mode;
-    gui32(out + 12, s_gui_sequence++); gui32(out + 16, s_raw.revision);
-    gui32(out + 20, s_gui_ack); gui32(out + 24, s_transport.errors);
-    gui32(out + 28, s_lighting.errors);
-    for (unsigned i = 0; i < s_raw.count; ++i) {
-        gui16(out + 32 + i*2, s_raw.raw[i]);
-        gui16(out + 162 + i*2, s_raw.press[i]);
-        gui16(out + 292 + i*2, s_raw.release[i]);
-        if (s_raw.down[i]) out[422 + i/8] |= 1u << (i%8);
-        const keyboard_velocity_t *v = &s_raw.velocity[i];
-        _Static_assert(sizeof(float) == sizeof(uint32_t), "GUI float32 size");
-        uint32_t bits;
-        memcpy(&bits, &v->value, sizeof(bits)); /* preserve IEEE-754 bits */
-        gui32(out + 447 + i*4, bits);
-        gui32(out + 707 + i*4, v->captures);
-        out[967 + i] = v->ready | (v->valid << 1u) | ((v->pending != 0u) << 2u);
-        if (calibration_active(&s_cal) && s_cal.holds[i].active) out[967+i] |= 8u;
-    }
-    memcpy(out + 431, &s_sent, sizeof(s_sent)); /* last accepted USB submission */
-    out[9] &= ~32u;
-    for (unsigned i = 0; i < s_raw.count; ++i) {
-        out[1036 + i] = s_midi.mapping[i];
-        if (s_raw.down[i] && keyboard_key_for_sensor(s_raw.profile, i) == KEY_ID_FN) out[9] |= 32u;
-    }
-    out[1032] = s_midi.mode; out[1033] = (uint8_t)s_midi.octave;
-    out[1034] = 1; out[1035] = s_midi.panic != 0;
-    gui32(out + 1104, s_midi.errors); gui32(out + 1108, s_midi.changes);
-    out[1112]=s_cal.state; out[1113]=s_cal.completed; out[1114]=s_cal.selected;
-    out[1115]=calibration_active(&s_cal) | (s_cal_store.saved<<1u) | 4u;
-    uint32_t elapsed=s_cal.selected<s_cal.count ? (uint32_t)(now-s_cal.holds[s_cal.selected].since) : 0u;
-    uint32_t idle=(uint32_t)(now-s_cal.activity);
-    gui16(out+1116,s_cal.state==CAL_COLLECT && s_cal.selected!=255u ? (elapsed<CALIBRATION_HOLD_MS?elapsed:CALIBRATION_HOLD_MS) : 0u);
-    gui16(out+1118,calibration_active(&s_cal) && idle<CALIBRATION_IDLE_MS ? CALIBRATION_IDLE_MS-idle : 0u);
-    memcpy(out+1120,s_cal.done,9u); out[1129]=s_cal.reason;
-    if (s_cal.selected<s_cal.count) {
-        gui16(out+1130,s_cal.upper[s_cal.selected]); gui16(out+1132,s_cal.lower[s_cal.selected]);
-    }
-    gui32(out+1136,s_cal_store.calibration_generation); gui32(out+1140,s_cal_store.error);
-    out[1144]=s_cal_store.valid | (s_cal_store.pending<<1u) | (s_cal_store.fault<<2u);
-    out[1145]=s_cal_store.slot;
-    gui16(out+1146,(uint16_t)s_cal_store.generation);
-    uint32_t checksum = 0;
-    for (unsigned i = 0; i < sizeof(out)-4u; i += 2u) checksum += out[i] | (uint16_t)out[i+1] << 8u;
-    gui32(out + sizeof(out)-4u, checksum);
-    scan_stream_gui_push(out);
+    keyboard_telemetry_status_t status={
+        .now=now,.sequence=s_gui_sequence++,.ack=s_gui_ack,.result=s_gui_result,
+        .scan_errors=s_transport.errors,.light_errors=s_lighting.errors,
+        .scan_fault=s_transport.phase==OPT_FAULT,.light_fault=s_lighting.phase==LIGHT_FAULT,
+        .calibration_saved=s_cal_store.saved,.calibration_supported=true,
+        .calibration_generation=s_cal_store.calibration_generation,
+        .storage_error=s_cal_store.error,.storage_generation=s_cal_store.generation,
+        .storage_flags=s_cal_store.valid | (s_cal_store.pending<<1u) | (s_cal_store.fault<<2u),
+        .storage_slot=s_cal_store.slot
+    };
+    uint8_t out[MT_GUI_SIZE(MT_KEY_CAPACITY,KEYBOARD_NKRO_REPORT_BYTES)];
+    size_t size=keyboard_telemetry_encode(&s_app,&status,out,sizeof(out));
+    if(size) (void)scan_stream_gui_push(out,size);
 }
 
 static void value(const char *label, uint32_t n)
@@ -193,6 +150,11 @@ void keyboard_live_init(void)
     release_host();
 }
 
+void keyboard_live_control_bind(void)
+{
+    midi_control_command_handler(keyboard_live_command);
+    midi_control_bind_application(&s_app);
+}
 void keyboard_live_usb_reset(void) { s_usb_reset = true; scan_stream_usb_reset(); }
 
 void keyboard_live_service(void)
@@ -287,7 +249,9 @@ bool keyboard_live_command(const char *line)
      * calibration. GUI snapshots and read-only dump commands above still work. */
     if (calibration_active(&s_cal)) { debug_write("ERR calibration active; cfg calcancel ID to cancel\r\n"); return true; }
     if (!strcmp(line,"menu status")) {
-        value("MENU fn=",s_menu.fn<s_raw.count && s_raw.down[s_menu.fn]);
+        /* While a menu owns input the engine stays disarmed, so down[] is not
+         * a live Fn indicator; report the same raw-sample test the menu uses. */
+        value("MENU fn=",s_menu.fn<s_raw.count && s_raw.raw[s_menu.fn]<=s_raw.release[s_menu.fn]);
         value(" mode=",s_raw.engine.config.mode);
         value(" level=",s_raw.engine.config.actuation); value(" saved=",s_raw.engine.config.saved_actuation);
         value(" brightness=",s_menu.brightness); value("/19 pwm=",keyboard_menu_brightness(&s_menu));
@@ -314,6 +278,7 @@ bool keyboard_live_command(const char *line)
                     "Fn+V velocity start, Fn+K/L brightness down/up\r\n"
                     "cfg calibrate ID | cfg calcancel ID; Fn+C calibrates in keyboard mode\r\n"
                     "dump read ID ADDRESS (decimal, aligned 64-byte main-flash read; HBD1 binary response)\r\n"
+                    "cfg key ID SENSOR USAGE (0=off, 4..231; Fn fixed)\r\n"
                     "cfg midi ID SENSOR NOTE (0..127, 255=unmapped); Fn+Enter toggles MIDI; RAlt/RCtrl octave-/+\r\n"
                     "cfg velocity ID LEVEL (1..10, Fn+V: 0% .. 100% transmitted-velocity start)\r\n"
                     "cfg clean ID (erase custom settings and calibration, like Fn+R)\r\n"

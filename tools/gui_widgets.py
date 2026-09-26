@@ -48,7 +48,10 @@ class ScrollArea(ttk.Frame):
         self.scrollbar.set(first, last)
 
     def _content_changed(self, _=None):
-        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        # A child's Configure event can precede the canvas window item's bbox
+        # update. Use the child's real size or wrapped text can leave the
+        # scroll region one resize behind, cutting off the footer at the end.
+        self.canvas.configure(scrollregion=(0,0,self.body.winfo_width(),self.body.winfo_height()))
 
     def _viewport_changed(self, event):
         self.canvas.itemconfigure(self._window, width=max(1, event.width))
@@ -101,8 +104,10 @@ class ScrollArea(ttk.Frame):
         except tk.TclError:  # this area belongs to a window that is gone
             return False
         while widget is not None:
-            if widget is self:
-                return True
+            # Only the innermost area owns the wheel. A containing page must
+            # not steal events from its independently scrolling settings panel.
+            if isinstance(widget,ScrollArea):
+                return widget is self
             widget = getattr(widget, 'master', None)
         return False
 

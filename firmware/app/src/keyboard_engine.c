@@ -49,19 +49,19 @@ uint8_t keyboard_shortcut_usage(uint8_t profile, uint8_t key)
     }
 }
 
-static void report_action(uint8_t profile, uint8_t key, bool fn, bool application,
+static void report_action(uint8_t profile, uint8_t key, bool fn, bool application,const uint8_t *mapped,
                           uint8_t *modifier, uint8_t *usage)
 {
     *modifier=*usage=0;
     if (application) {
         if (fn && (*usage=keyboard_shortcut_usage(profile,key))) return;
-        const keyboard_action_t *base=keyboard_action(profile,key,0);
-        if (base && base->type==2 && keyboard_layout(profile)->compact_navigation) {
-            if (base->arg0==64) *usage=0x50; /* Right Alt -> Left */
-            else if (base->arg0==16) *usage=0x4f; /* Right Ctrl -> Right */
-            else if (base->arg0==32) *usage=0x52; /* Right Shift -> Up */
-            else if (!base->arg0 && base->arg1==0x65) *usage=0x51; /* Menu -> Down */
-            if (*usage) return;
+        if (!fn) {
+            const keyboard_layout_t *layout=keyboard_layout(profile);
+            *usage=mapped?*mapped:layout->keymap[key];
+            if(*usage>=0xe0u && *usage<=0xe7u) {
+                *modifier=1u<<(*usage-0xe0u); *usage=0;
+            }
+            return;
         }
     }
     const keyboard_action_t *action=keyboard_action(profile,key,fn);
@@ -77,7 +77,7 @@ static void report_action(uint8_t profile, uint8_t key, bool fn, bool applicatio
     }
 }
 
-static bool engine_event(keyboard_engine_t *engine, uint8_t key, bool down, bool application)
+static bool engine_event(keyboard_engine_t *engine, uint8_t key, bool down, bool application,const uint8_t *mapped)
 {
     if (key == 0u || engine->pressed[key] == down ||
         keyboard_action(engine->config.profile, key, 0u) == NULL) return false;
@@ -89,7 +89,7 @@ static bool engine_event(keyboard_engine_t *engine, uint8_t key, bool down, bool
     engine->modifiers[key] = engine->usages[key] = 0u;
     if (!consumed && down)
     {
-        report_action(engine->config.profile,key,fn,application && !mode,
+        report_action(engine->config.profile,key,fn,application && !mode,mapped,
                       &engine->modifiers[key],&engine->usages[key]);
         /* Non-keyboard actions (media, profile, lighting) are not guessed. */
     }
@@ -108,8 +108,8 @@ static bool engine_event(keyboard_engine_t *engine, uint8_t key, bool down, bool
         {
             if (!engine->pressed[id] || !engine->fn_at_press[id]) continue;
             uint8_t base_mod,base_usage,layer_mod,layer_usage;
-            report_action(engine->config.profile,id,false,application,&base_mod,&base_usage);
-            report_action(engine->config.profile,id,true,application,&layer_mod,&layer_usage);
+            report_action(engine->config.profile,id,false,application,NULL,&base_mod,&base_usage);
+            report_action(engine->config.profile,id,true,application,NULL,&layer_mod,&layer_usage);
             if (base_mod!=layer_mod || base_usage!=layer_usage)
                 engine->modifiers[id] = engine->usages[id] = 0u;
         }
@@ -120,10 +120,15 @@ static bool engine_event(keyboard_engine_t *engine, uint8_t key, bool down, bool
 
 bool keyboard_engine_event(keyboard_engine_t *engine, uint8_t key, bool down)
 {
-    return engine_event(engine,key,down,false);
+    return engine_event(engine,key,down,false,NULL);
 }
 
 bool keyboard_application_event(keyboard_engine_t *engine, uint8_t key, bool down)
 {
-    return engine_event(engine,key,down,true);
+    return engine_event(engine,key,down,true,NULL);
+}
+bool keyboard_application_mapped_event(keyboard_engine_t *engine,uint8_t key,bool down,uint8_t usage)
+{
+    if(!keyboard_keycode_valid(usage))return false;
+    return engine_event(engine,key,down,true,&usage);
 }

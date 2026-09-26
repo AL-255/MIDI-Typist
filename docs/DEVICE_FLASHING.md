@@ -6,8 +6,10 @@ to detect a Razer keyboard or its bootloader.
 
 ## Choose a keyboard and destination
 
-The model dropdown currently contains **Razer Huntsman Pro Mini V3** (the
-Huntsman V3 Pro Mini, RZ03-0499). Detection shows product, reported serial,
+The model dropdown offers **Razer Huntsman Pro Mini V3** (the
+Huntsman V3 Pro Mini, RZ03-0499) and **MonsGeek M1 V5 TMR (experimental)**.
+The M1 has a separate [experimental conversion path](#monsgeek-m1-experimental-conversion).
+The conversion instructions below apply to Huntsman. Detection shows product, reported serial,
 software build when available, USB VID/PID, physical port, speed and USB revision.
 The firmware identity includes its embedded full Git commit and clean/dirty
 state. Use that commit when identifying a build; a dirty build also contains
@@ -71,6 +73,9 @@ restoring the supplied application, not rewriting every factory region.
 view in `keyboard_flash_tab.py` only renders these contracts. Register future
 models in `adapters()` and implement their discovery, identity, image validation,
 allowed transitions and updater boundary in a separate adapter.
+Each adapter declares its inspectable modes; remembered image paths are scoped
+to the model and destination. `flash_monsgeek.py` verifies M1 ID2949 through
+vendor HID before allowing its guarded factory-to-IAP transition.
 
 `flash_huntsman.py` owns Linux detection and the Razer-specific application
 updater. Before any write it revalidates the device token and confirmed image
@@ -85,3 +90,47 @@ actions, confirmation and validation invalidation without device access.
 The live GUI reflash path is checked on a connected MIDI-Typist keyboard.
 Stock restoration and an initially bootloader-only device are covered offline,
 not claimed as separate physical conversion tests. See [validation](VALIDATION.md).
+
+## MonsGeek M1 experimental conversion
+
+**Factory IAP transfers and live 82-key USB telemetry are physically checked.
+A/S presses, releases and simultaneous detection are checked, not the full layout
+or pressed-key performance. The on-demand update/cold-boot policy below has compiled
+offline coverage but awaits hardware qualification. Complete wireless/power behavior
+remains unverified. Do not install this experimental build for normal use.**
+
+Select the M1 model and use **Read firmware details…** to confirm internal
+ID2949 for factory firmware, or the embedded build target over the selected
+device's USB-bound MIDI control port for custom firmware. Verified factory
+devices offer installation/restoration; custom devices offer reflash/restoration.
+Configuration disconnects before custom inspection or flashing. Choose
+`build-m1-hal/m1_development.bin` for the current application, or supply your own
+ID2949 factory `.bin`. A factory file may be application-only or boot-prefixed;
+only its application slice from `0x5000` through at most `0x28000` is sent.
+No vendor image is bundled. Linux needs libusb and the GUI Python dependencies.
+
+**Factory entry resets stock user settings.** It preserves sensor-calibration
+pages `0x08032000/0x08032800` and bootloader code. The bootloader erases the
+application and both custom save slots before enumerating. The adapter binds
+the transition to the same physical port, serializes 64-byte writes without
+automatic retries, and requires the bootloader's checksum/readback verdict.
+That verdict confirms transfer, not working keyboard functionality.
+
+**Normal reset preserves the application and custom saves.** Startup only checks
+that the boot-flag page is erased. The explicit SysEx `bootloader` command checks
+that the page is blank, or contains exactly the IAP magic with an erased tail.
+The foreground owner requires external power, stops scan/lighting/radio/USB,
+then programs and verifies only `0x55aa55aa` at `0x08004800` from SRAM. Only after
+successful verification does it reset. Shutdown/write failure prevents reset;
+unknown metadata is rejected, never erased. The factory loader retains this flag
+during transfer and clears it only on successful completion, protecting an
+interrupted header-first update. A command ACK alone is not proof of IAP entry.
+
+This does **not** provide forced bootloader recovery on every power cycle.
+Early clock/startup failures may require hardware debugging. Both normal reboot
+persistence and on-demand flag programming need physical qualification before
+this build is treated as recoverable without a debugger.
+
+A pre-existing shared bootloader PID is not sufficient model/recovery proof,
+so the GUI does not offer direct recovery of an unidentified bootloader.
+Full transport switching and power management remain incompletely qualified.

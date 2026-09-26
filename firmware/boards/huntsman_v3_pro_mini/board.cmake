@@ -27,7 +27,7 @@ set(KEYBOARD_LOGIC_SOURCES
     ${MT_APP_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/layout_port.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_scan.c
-    firmware/boards/huntsman_v3_pro_mini/src/device_store.c
+    firmware/services/src/device_store.c
     firmware/boards/huntsman_v3_pro_mini/src/optical_key.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_layout.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c
@@ -35,7 +35,7 @@ set(KEYBOARD_LOGIC_SOURCES
 )
 add_library(midi_typist_app OBJECT ${MT_APP_SOURCES})
 target_include_directories(midi_typist_app PUBLIC firmware/app/include)
-target_compile_definitions(midi_typist_app PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
+target_compile_definitions(midi_typist_app PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204)
 target_compile_definitions(midi_typist_app PUBLIC MT_BUILD_VERSION="${PROJECT_VERSION}" MT_BUILD_TARGET="${MT_BOARD_TARGET}")
 target_compile_options(midi_typist_app PRIVATE -Wall -Wextra -Werror)
 
@@ -47,8 +47,10 @@ add_library(huntsman_core STATIC
     ${HUNTSMAN_BOARD_SOURCES}
     firmware/boards/huntsman_v3_pro_mini/src/updater_protocol.c
 )
-target_include_directories(huntsman_core PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
-target_compile_definitions(huntsman_core PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
+target_include_directories(huntsman_core PUBLIC firmware/app/include firmware/services/include firmware/boards/huntsman_v3_pro_mini/include)
+set(HUNTSMAN_STORE_DEFINITIONS MT_STORE_PAGE_SIZE=512 MT_STORE_MAGIC="MTP2" MT_STORE_INVALID_READ=116)
+target_compile_definitions(huntsman_core PUBLIC ${HUNTSMAN_STORE_DEFINITIONS})
+target_compile_definitions(huntsman_core PUBLIC MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204)
 target_compile_definitions(huntsman_core PUBLIC MT_BUILD_VERSION="${PROJECT_VERSION}" MT_BUILD_TARGET="${MT_BOARD_TARGET}")
 target_compile_options(huntsman_core PRIVATE -Wall -Wextra -Werror)
 
@@ -91,12 +93,15 @@ if(NOT HUNTSMAN_BUILD_FIRMWARE)
     add_test(NAME latest_only COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_latest_only.py)
     add_test(NAME build_identity COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_build_identity.py)
     add_test(NAME device_flashing COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_device_flashing.py)
+    add_test(NAME monsgeek_identity COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_monsgeek_identity.py)
+    add_test(NAME keyboard_boards COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_keyboard_boards.py)
     add_test(NAME image_reservation COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_image_reservation.py)
     add_test(NAME midi_sysex COMMAND python3 -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_midi_sysex.py)
     # Host ABI for comparison against executed production ARM instructions.
     add_library(keyboard_logic SHARED ${KEYBOARD_LOGIC_SOURCES})
-    target_include_directories(keyboard_logic PUBLIC firmware/app/include firmware/boards/huntsman_v3_pro_mini/include)
-    target_compile_definitions(keyboard_logic PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204 MT_HID_USAGE_MAX=0x73)
+    target_include_directories(keyboard_logic PUBLIC firmware/app/include firmware/services/include firmware/boards/huntsman_v3_pro_mini/include)
+    target_compile_definitions(keyboard_logic PRIVATE ${HUNTSMAN_STORE_DEFINITIONS})
+    target_compile_definitions(keyboard_logic PRIVATE MT_KEY_CAPACITY=65 MT_LIGHT_FRAME_BYTES=204)
     target_compile_options(keyboard_logic PRIVATE -Wall -Wextra -Werror)
     mt_audit_target(audit-keyboard reference-keyboard)
     mt_audit_target(audit-lighting reference-lighting)
@@ -131,7 +136,7 @@ add_executable(huntsman_firmware
     ${NXP_ROOT}/component/lists/fsl_component_generic_list.c
     firmware/boards/huntsman_v3_pro_mini/src/board.c
     firmware/platform/nxp_lpc55/src/debug.c
-    firmware/platform/nxp_lpc55/src/midi_control.c
+    firmware/services/src/midi_control.c
     firmware/platform/nxp_lpc55/src/usb_composite.c
     firmware/boards/huntsman_v3_pro_mini/src/usb_descriptors.c
     firmware/platform/nxp_lpc55/src/usb_errata.c
@@ -142,7 +147,7 @@ target_sources(huntsman_firmware PRIVATE
     firmware/boards/huntsman_v3_pro_mini/src/optical_bus.c
     firmware/boards/huntsman_v3_pro_mini/src/optical_transport.c
     firmware/boards/huntsman_v3_pro_mini/src/keyboard_live.c
-    firmware/platform/nxp_lpc55/src/scan_stream.c
+    firmware/services/src/scan_stream.c
     firmware/boards/huntsman_v3_pro_mini/src/flash_dump.c
     firmware/boards/huntsman_v3_pro_mini/src/travel_lighting.c
     firmware/boards/huntsman_v3_pro_mini/src/lighting_bus.c
@@ -156,6 +161,7 @@ mt_audit_target(audit-lighting lighting)
 target_link_libraries(huntsman_firmware PRIVATE huntsman_core)
 
 target_include_directories(huntsman_firmware PRIVATE
+    firmware/services/include
     firmware/app/include
     firmware/boards/huntsman_v3_pro_mini/include
     firmware/platform/nxp_lpc55/include

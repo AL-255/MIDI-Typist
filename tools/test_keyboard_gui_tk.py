@@ -35,7 +35,8 @@ def main():
         from flash_models import ConnectedDevice, FirmwareImage
         tab=app.flash_tab
         assert len(app.notebook.tabs())==2
-        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3']
+        assert list(tab.model_picker['values'])==['Razer Huntsman Pro Mini V3',
+                                                'MonsGeek M1 V5 TMR (experimental)']
         with patch.object(tab.adapter,'discover',side_effect=AssertionError('demo accessed USB')):
             app.notebook.select(tab);root.update()
         assert str(tab.flash_button['state'])=='disabled'
@@ -58,6 +59,27 @@ def main():
             from dataclasses import replace
             tab.show_device(replace(device,mode=mode));tab.set_options()
             assert [w['text'] for w in tab.action_widgets]==['Install MIDI-Typist','Restore Razer firmware']
+        huntsman_name=tab.model.get()
+        tab.model.set('MonsGeek M1 V5 TMR (experimental)')
+        for mode in ('candidate','factory','custom_candidate','custom','unverified_bootloader'):
+            tab.show_device(replace(device,model=tab.adapter.id,mode=mode,version='v4.08'))
+            tab.set_options()
+            if mode=='factory':
+                assert [w['text'] for w in tab.action_widgets]==[
+                    'Install experimental MIDI-Typist','Install MonsGeek factory application']
+            elif mode=='custom':
+                assert [w['text'] for w in tab.action_widgets]==[
+                    'Reflash experimental MIDI-Typist','Install MonsGeek factory application']
+            else:assert not tab.action_widgets and tab.option is None
+            assert str(tab.flash_button['state'])=='disabled'
+            assert str(tab.inspect_button['state'])==('disabled' if mode=='unverified_bootloader' else 'normal')
+            assert tab.identity['Firmware'].get()=='v4.08'
+        tab.show_device(replace(device,model=tab.adapter.id,mode='custom_candidate'))
+        with patch.object(tab,'close_configuration',return_value=False),patch.object(tab,'launch_worker') as launch:
+            tab.inspect();launch.assert_not_called()
+        with patch.object(tab,'close_configuration',return_value=True),patch.object(tab,'launch_worker') as launch:
+            tab.inspect();launch.assert_called_once_with('inspect')
+        tab.model.set(huntsman_name);tab.device=None;tab.set_options()
         app.demo=True;app.notebook.select(0);root.update()
         assert len(app.items) == 61 and len(app.canvas.find_all()) == 244
         assert app.usable() is False
@@ -94,7 +116,7 @@ def main():
         assert app.device.get() == '/dev/fake' and 'Detected' in app.message.get()
         with patch('keyboard_gui.find_midi_device',return_value=None):
             app.detect()
-        assert app.device.get() == '' and 'No USB 1532:02b0' in app.message.get()
+            assert app.device.get() == '' and 'No unique MIDI-Typist control port' in app.message.get()
         app.hold_button.invoke()
         assert app.hold_mode.get() and app.capture.armed
         root.update()
@@ -106,6 +128,8 @@ def main():
             ImageGrab.grab(xdisplay=os.environ['DISPLAY']).save(args.screenshot)
         root.geometry('900x700'); root.update()
         assert len(app.items) == 61
+        assert app.page_area.overflowing() and app.page_area.showing_scrollbar()
+        app.page_area.canvas.yview_moveto(1.0);root.update()
         assert app.footer.winfo_rooty()+app.footer.winfo_height() < root.winfo_height()
         assert int(app.status_label.cget('wraplength')) <= root.winfo_width()  # status follows the window
         # The bottom-left settings region scrolls instead of clipping: its
@@ -113,6 +137,15 @@ def main():
         # window, and the scrollbar is only shown while the content overflows.
         area = app.panel_area
         assert area.overflowing() and area.showing_scrollbar()
+        assert int(app.page_area.canvas.cget('scrollregion').split()[3])==app.page_area.body.winfo_height()
+        area.canvas.yview_moveto(0.0);root.update()
+        wheel=SimpleNamespace(x_root=area.canvas.winfo_rootx()+20,
+            y_root=area.canvas.winfo_rooty()+20,delta=-120,num=0)
+        before=app.page_area.canvas.yview()
+        assert app.page_area._wheel(wheel) is None
+        assert area._wheel(wheel)=='break'
+        root.update()
+        assert app.page_area.canvas.yview()==before and area.canvas.yview()[0]>0
         # At the minimum window height the panel viewport is short, so every
         # field, button and the shortcut reference must be scrollable into it.
         for target in (app.details_label,app.apply_button,app.help_label):
@@ -144,6 +177,148 @@ def main():
         app.close(); root = None
         print('PASS Tk: 61-key physical geometry, click-to-select, threshold fields, disabled demo controls, '
               'scrollable settings panel, resolved typography, resize')
+        from keyboard_boards import M1_TARGET, DEFAULT_TARGET
+        root=tk.Tk(); app=App(root,demo=True,board_target=M1_TARGET);root.update()
+        assert app.board.count==82 and len(app.items)==82 and app.snapshot.count==82
+        app.device_build='v0.1.0-MG-M1V5TMR git='+'a'*40+' state=clean'
+        assert app.recovery_label.winfo_ismapped() and 'bootloader' in app.recovery_label['text']
+        assert 'Normalized travel' in app.coordinate_label['text']
+        assert 'Fn+F1' in app.help_label['text'] and 'clears custom state' in app.help_label['text']
+        assert 'before unplugging' in app.help_label['text']
+        assert 'normal reset does not' in app.help_label['text']
+        assert 'hardware qualification' in app.recovery_label['text']
+        assert len(app.canvas.find_all())==328
+        for width,height in ((1180,920),(900,700)):
+            root.geometry(f'{width}x{height}');root.update()
+            app.update();root.update()
+            for key in app.keys:
+                x1,y1,x2,y2=app.canvas.coords(app.items[key.sensor][0])
+                assert 0 <= x1 < x2 <= app.canvas.winfo_width(),key
+                assert 0 <= y1 < y2 <= app.canvas.winfo_height(),key
+                app.select(key.sensor)
+                assert key.label in app.key_title.get()
+                assert app.press.get()=='3500'
+            assert str(app.apply_button['state'])=='disabled'
+            app.message.set('Wrapped status line\nSecond line\nThird line')
+            root.update()
+            app.page_area.canvas.yview_moveto(1.0);root.update()
+            assert int(app.page_area.canvas.cget('scrollregion').split()[3])==app.page_area.body.winfo_height()
+            assert app.panel_area.winfo_ismapped() and app.page_area.visible(app.footer)
+            assert app.footer.winfo_rooty()+app.footer.winfo_height()-root.winfo_rooty()<=root.winfo_height()
+            assert app.page_area.visible(app.panel_area)
+        app.select(81);root.update()
+        assert 'Right' in app.key_title.get() and 'Sensor:' in app.details.get()
+        app.set_board(DEFAULT_TARGET);root.update()
+        assert len(app.items)==61 and app.board.count==61
+        assert not app.recovery_label.winfo_ismapped()
+        assert 'Fn+F1' not in app.help_label['text']
+        assert 'before unplugging' in app.help_label['text']
+        app.set_board(M1_TARGET);root.update()
+        assert len(app.items)==82 and app.selected==45
+        assert app.recovery_label.winfo_ismapped()
+        app.close();root=None
+        print('PASS Tk M1: 82 keys, six physical rows, all selections, resize, target switching; no device access')
+        device = Device(board_target=M1_TARGET); device.start()
+        try:
+            with patch('keyboard_gui.Connection',side_effect=lambda name: Connection(name,backend_factory=lambda _:device)):
+                root=tk.Tk();app=App(root,device='Fake M1 Control')
+                app.toggle_connection()
+                def m1_until(predicate,seconds=5):
+                    deadline=time.monotonic()+seconds
+                    while time.monotonic()<deadline:
+                        root.update()
+                        if predicate(): return
+                        time.sleep(.01)
+                    raise AssertionError('M1 GUI condition timed out')
+                m1_until(app.usable)
+                assert app.board.target==M1_TARGET and len(app.items)==82
+                assert app.recovery_label.winfo_ismapped()
+                assert 'unsaved bounds' in app.calibration_status.get()
+                assert 'factory bounds' not in app.calibration_status.get()
+                m1_until(lambda:'87% (estimate)' in app.power_status.get())
+                assert 'polarity unverified' in app.power_status.get()
+                with app.connection.lock:
+                    power=app.connection.latest_power
+                    app.connection.latest_power=(time.monotonic()-10,power[1])
+                app.update();assert 'stale' in app.power_status.get()
+                with app.connection.lock:app.connection.latest_power=power
+                app.select(81);app.press.set('2500');app.release.set('2800')
+                app.apply_button.invoke()
+                m1_until(lambda:app.snapshot.press[81]==2500 and app.snapshot.release[81]==2800)
+                assert 'Right' in app.key_title.get()
+                app.midi_note.set('C4');app.midi_button.invoke()
+                m1_until(lambda:app.snapshot.midi_mapping[81]==60)
+                from keyboard_keycodes import keycode_name
+                app.keyboard_code.set(keycode_name(0x87));app.keyboard_button.invoke()
+                m1_until(lambda:app.snapshot.keyboard_mapping[81]==0x87)
+                app.select(77);app.update()
+                assert str(app.keyboard_button['state'])=='disabled'
+                assert str(app.keyboard_entry['state'])=='disabled'
+                app.select(81);app.update()
+                # Entire board-sized profiles include all three per-key
+                # settings. Verify the actual UI queues a complete batch.
+                import json
+                from keyboard_gui_model import profile_from_snapshot
+                profile=profile_from_snapshot(app.snapshot,M1_TARGET)
+                queued=[]
+                with patch('keyboard_gui.filedialog.askopenfilename',return_value='mock.json'), \
+                     patch('keyboard_gui.Path.read_text',return_value=json.dumps(profile)), \
+                     patch('keyboard_gui.messagebox.askyesno',return_value=True), \
+                     patch.object(app.connection,'submit',side_effect=lambda *args:queued.append(args)):
+                    app.load_profile()
+                assert queued[0]==('enable',0) and queued[-1]==('enable',1)
+                assert len([q for q in queued if q[0]=='key'])==81
+                assert ('key',81,0x87) in queued
+                assert not any(q[:2]==('key',77) for q in queued)
+                assert len(queued)<app.connection.requests.maxsize
+                with patch('keyboard_gui.messagebox.askyesno',return_value=True):
+                    app.apply_all_button.invoke()
+                m1_until(lambda:app.snapshot.press==(2500,)*82 and app.snapshot.release==(2800,)*82)
+                m1_until(lambda:app.current_bounds() is not None)
+                assert 'Released bound: 4000' in app.bounds_status.get()
+                with patch('keyboard_gui.filedialog.asksaveasfilename',return_value='readback.device-dump.json'), \
+                     patch('keyboard_gui.Path.write_text') as output:
+                    app.bounds_button.invoke()
+                    report=json.loads(output.call_args.args[0])
+                    assert len(report['keys'])==82 and report['keys'][45]['key']=='A'
+                    assert report['keys'][81]['sample']==3900 and report['keys'][81]['span']==3000
+                app.hold_button.invoke()
+                m1_until(lambda:app.connection.stream_mode=='key' and app.capture.armed)
+                m1_until(lambda:'paused' in app.power_status.get())
+                assert 'paused' in app.bounds_status.get() and str(app.bounds_button['state'])=='disabled'
+                assert app.connection.key_sensor==81
+                device.key_raw=2000
+                m1_until(lambda:app.capture.done)
+                assert len(app.capture.points)==CAPTURE_POINTS
+                assert set(app.capture.points)=={2000}
+                app.hold_button.invoke()
+                m1_until(lambda:app.connection.stream_mode=='gui' and app.usable())
+                m1_until(lambda:str(app.calibrate_button['state'])=='normal')
+                with patch('keyboard_gui.messagebox.askyesno',return_value=True) as confirm:
+                    app.calibrate_button.invoke()
+                    assert 'erases custom saves' in confirm.call_args.args[1]
+                m1_until(lambda:app.snapshot.calibration_state==3)
+                assert '0/82' in app.calibration_status.get()
+                app.cancel_calibration_button.invoke()
+                m1_until(lambda:app.snapshot.calibration_state==7)
+                device.calibration_state=8;device.calibration_flags=6;device.storage_flags=4
+                m1_until(lambda:app.snapshot.storage_flags==4 and 'Save failed: check storage status' in app.calibration_status.get())
+                assert str(app.calibrate_button['state'])=='disabled'
+                assert 'settings SAVE FAILED' in app.calibration_status.get()
+                device.storage_flags=0
+                device.calibration_state=0;device.calibration_flags=2
+                m1_until(lambda:app.snapshot.calibration_flags==2 and 'read-only' in app.calibration_status.get())
+                assert str(app.calibrate_button['state'])=='disabled'
+                assert str(app.cancel_calibration_button['state'])=='disabled'
+                assert 'settings not confirmed saved' in app.calibration_status.get()
+                assert 'flash generation' not in app.calibration_status.get()
+                device.calibration_flags=0
+                m1_until(lambda:'Calibration: unavailable' in app.calibration_status.get())
+                app.close();root=None
+                assert device.error is None
+        finally:
+            device.stop_event.set();device.join(1)
+        print('PASS Tk M1+SysEx mock: identity-selected geometry, sensor 81 edits/capture, all 82 thresholds, calibration')
         device = Device(); device.start()
         transport_patch = patch('keyboard_gui.Connection', side_effect=lambda name: Connection(name, backend_factory=lambda _:device))
         transport_patch.start()

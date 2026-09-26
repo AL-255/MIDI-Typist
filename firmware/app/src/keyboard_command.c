@@ -42,6 +42,8 @@ bool keyboard_app_command(keyboard_app_t *s,const char *line,uint32_t now,
             !*p && keyboard_raw_set_all(s->raw,a,b)) *result=1u;
     else if(!strncmp(line,"cfg midi ",9) && argument(&p,&a) && argument(&p,&b) &&
             !*p && keyboard_midi_map(s->midi,s->raw,a,b)) *result=1u;
+    else if(!strncmp(line,"cfg key ",8) && argument(&p,&a) && argument(&p,&b) &&
+            !*p && keyboard_raw_map(s->raw,a,b)) *result=1u;
     else if(!strncmp(line,"cfg velocity ",13) && argument(&p,&a) && !*p && a>=1u && a<=10u) {
         keyboard_midi_set_velocity_start(s->midi,a); *result=1u;
     }

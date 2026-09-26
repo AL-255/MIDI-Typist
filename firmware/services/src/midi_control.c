@@ -1,9 +1,6 @@
 #include "midi_control.h"
 #include "defaults.h"
 #include "keyboard_build.h"
-#include "usb_composite.h"
-#include "board.h"
-#include "fsl_common.h"
 #include <string.h>
 #include "scan_stream.h"
 
@@ -11,15 +8,19 @@
  * One complete command mailbox: host must wait for ACK before another command.
  * TX holds one immutable SysEx; usb_midi_write_events copies each submitted
  * chunk into its own DMA buffer. Cable-0 notes get first use of the endpoint. */
+static const midi_control_port_t *s_port;
 static uint8_t s_rx[MT_SYSEX_WIRE_SIZE(MIDI_CONTROL_COMMAND_MAX)];
 static volatile size_t s_rx_used,s_rx_ready;
 static volatile bool s_receiving,s_reset,s_active;
 static volatile uint32_t s_rx_at;
-static uint8_t s_tx[MT_SYSEX_MAX_WIRE];
+static uint8_t s_tx[MT_SYSEX_WIRE_SIZE(SCAN_STREAM_PAYLOAD_SIZE)];
 static size_t s_tx_size,s_tx_at;
 static uint32_t s_session,s_sequence,s_activity;
 static bool (*s_command)(const char *);
-static uint8_t s_reply_kind,s_reply[128];
+static bool (*s_power)(keyboard_power_status_t *);
+static const keyboard_app_t *s_app;
+static uint8_t s_reply_kind,s_reply[MT_BOUNDS_SIZE(MT_KEY_CAPACITY)];
+_Static_assert(sizeof(s_reply)<=SCAN_STREAM_PAYLOAD_SIZE,"readback must fit SysEx TX");
 _Static_assert(sizeof("build=" MT_BUILD_INFO)-1 <= sizeof(s_reply), "build identity exceeds READY payload");
 static size_t s_reply_size;
 static uint32_t s_reply_sequence;
@@ -28,21 +29,29 @@ static void stop_streams(void)
 {
     scan_stream_stop();
 }
-void midi_control_init(void)
+bool midi_control_init(const midi_control_port_t *port)
 {
     s_rx_used=s_rx_ready=s_tx_size=s_tx_at=0;
     s_receiving=s_reset=s_active=false;s_session=s_sequence=s_activity=0;
-    s_reply_kind=0;s_command=NULL;
+    s_reply_kind=0;s_command=NULL;s_power=NULL;s_app=NULL;
+    s_port=NULL;
+    if(!port || !port->millis || !port->ready || !port->write_events ||
+       !port->lock || !port->unlock)return false;
+    s_port=port;
+    return true;
 }
 void midi_control_command_handler(bool (*handler)(const char *)) { s_command=handler; }
+void midi_control_bind_application(const keyboard_app_t *app) { s_app=app; }
+void midi_control_power_handler(bool (*handler)(keyboard_power_status_t *)) { s_power=handler; }
 void midi_control_usb_reset(void)
 {
     s_active=false;s_reset=true;s_receiving=false;s_rx_used=s_rx_ready=0;
 }
-bool midi_control_ready(void) { return s_active && usb_composite_ready(); }
+bool midi_control_ready(void) { return s_port && s_active && s_port->ready(); }
 
 void midi_control_receive_usb(const uint8_t *events,size_t length)
 {
+    if(!s_port)return;
     if(!events || length%4) { s_receiving=false;s_rx_used=0;return; }
     for(size_t at=0;at<length;at+=4) {
         const uint8_t *event=events+at;
@@ -54,7 +63,7 @@ void midi_control_receive_usb(const uint8_t *events,size_t length)
         if(cin!=4u && event[count]!=0xf7u) { s_receiving=false;s_rx_used=0;continue; }
         for(unsigned i=1;i<=count;++i) {
             uint8_t byte=event[i];
-            if(byte==0xf0u) { s_receiving=true;s_rx_used=0;s_rx_at=board_millis(); }
+            if(byte==0xf0u) { s_receiving=true;s_rx_used=0;s_rx_at=s_port->millis(); }
             if(!s_receiving) continue;
             if((byte&128u) && byte!=0xf0u && byte!=0xf7u) { s_receiving=false;s_rx_used=0;break; }
             if(s_rx_used==sizeof(s_rx)) { s_receiving=false;s_rx_used=0;break; }
@@ -75,13 +84,13 @@ static void reply(uint8_t kind,uint32_t sequence,const char *message)
 static void receive_command(uint32_t now)
 {
     uint8_t wire[sizeof(s_rx)],payload[MIDI_CONTROL_COMMAND_MAX+1u];size_t size;
-    uint32_t irq=DisableGlobalIRQ();
+    uint32_t irq=s_port->lock();
     size=s_rx_ready;
     if(size) { memcpy(wire,s_rx,size);s_rx_ready=0; }
     if(s_receiving && (uint32_t)(now-s_rx_at)>=MIDI_CONTROL_RX_TIMEOUT_MS) {
         s_receiving=false;s_rx_used=0;
     }
-    EnableGlobalIRQ(irq);
+    s_port->unlock(irq);
     midi_sysex_info_t info;
     if(!size || !midi_sysex_decode(wire,size,&info,payload,MIDI_CONTROL_COMMAND_MAX))return;
     if(info.kind==MT_HELLO && !info.sequence && !info.length) {
@@ -103,19 +112,33 @@ static void receive_command(uint32_t now)
     if(!strcmp((const char *)payload,"git")) {
         reply(MT_ACK,info.sequence,MT_GIT_REPLY);return;
     }
+    if(!strcmp((const char *)payload,"power status")) {
+        keyboard_power_status_t status;
+        size_t n=s_power && s_power(&status)?keyboard_power_encode(&status,s_reply,sizeof(s_reply)):0;
+        if(!n) { reply(MT_ERROR,info.sequence,"power status unavailable");return; }
+        s_reply_kind=MT_ACK;s_reply_sequence=info.sequence;s_reply_size=n;return;
+    }
+    if(!strcmp((const char *)payload,"calibration read")) {
+        size_t n=keyboard_bounds_encode(s_app,now,s_reply,sizeof(s_reply));
+        if(!n) { reply(MT_ERROR,info.sequence,"application readback unavailable");return; }
+        s_reply_kind=MT_ACK;s_reply_sequence=info.sequence;s_reply_size=n;return;
+    }
     bool ok=s_command && s_command((const char *)payload);
     reply(ok?MT_ACK:MT_ERROR,info.sequence,ok?"":"unsupported command");
 }
+bool midi_control_publish_ready(void)
+{ return midi_control_ready() && !s_reply_kind && s_tx_at==s_tx_size; }
 bool midi_control_publish(uint8_t kind,const uint8_t *data,size_t length)
 {
-    if(!midi_control_ready() || s_reply_kind || s_tx_at<s_tx_size)return false;
+    if(!midi_control_publish_ready())return false;
     s_tx_size=midi_sysex_encode(kind,s_session,0,data,length,s_tx,sizeof(s_tx));s_tx_at=0;
     return s_tx_size!=0;
 }
 void midi_control_service(void)
 {
+    if(!s_port)return;
     if(s_reset) { s_reset=false;s_active=false;s_tx_size=s_tx_at=0;s_reply_kind=0;stop_streams(); }
-    uint32_t now=board_millis();
+    uint32_t now=s_port->millis();
     if(s_active && (uint32_t)(now-s_activity)>=MIDI_CONTROL_LEASE_MS) { s_active=false;stop_streams(); }
     receive_command(now);
     if(!midi_control_ready()) { s_tx_size=s_tx_at=0;s_reply_kind=0;return; }
@@ -132,5 +155,5 @@ void midi_control_service(void)
         events[used++]=(MT_SYSEX_CABLE<<4)|(remain<=3?4u+count:4u);
         for(unsigned i=0;i<3;++i)events[used++]=i<count?s_tx[position++]:0;
     }
-    if(usb_midi_write_events(events,used))s_tx_at=position;
+    if(s_port->write_events(events,(uint32_t)used))s_tx_at=position;
 }

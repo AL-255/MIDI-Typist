@@ -2,7 +2,7 @@
 #include "board.h"
 #include "board_config.h"
 #include "fsl_iap.h"
-#include "device_store.h"
+#include "profile_storage.h"
 #include <string.h>
 
 /* No ROM calls: the original application uses the controller command path,

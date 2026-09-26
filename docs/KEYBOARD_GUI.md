@@ -1,7 +1,9 @@
 # Keyboard configuration GUI
 
-The Linux/POSIX Tk GUI targets the Huntsman ANSI layout and the complete
-`huntsman` firmware. It edits thresholds/mappings, displays per-key velocity,
+The Linux/POSIX Tk GUI selects board geometry from the device's build target.
+Live configuration supports Huntsman ANSI and the experimental M1's 82-key 75%
+layout. Preview M1 without hardware using `--demo --board MG-M1V5TMR`.
+The GUI edits thresholds/mappings, displays per-key velocity,
 starts parallel calibration, exports JSON profiles and can explicitly flash
 an application. ISO/JIS editing is rejected rather than mislabelling keys.
 
@@ -25,13 +27,51 @@ cable. Use the first, performance cable in the DAW. No serial node is exposed.
 Only one GUI owner is supported; a fresh handshake replaces the previous
 session. MIDI access does not normally need root on a desktop session.
 Confirmed flashing uses raw USB and may request PolicyKit authorization.
-Linux is hardware-tested; other RtMidi backends are not validated.
+M1 live telemetry and control-owner handoff are checked on Linux hardware;
+Huntsman integration and other RtMidi backends have separate
+[validation limits](VALIDATION.md).
+
+An internal child process owns the open native MIDI ports. It runs only while
+the GUI or its flashing worker needs a control connection; it is not a service
+or another user application. Capture queues are bounded and overflow terminates
+the capture. Native open/send failures do not cause automatic command retries.
+Disconnect has a bounded shutdown window, then terminates and reaps a stuck
+MIDI child before permitting another owner. It never terminates a flash worker
+or resets the keyboard. Failure to release the owner blocks reconnect/flashing.
+Host queue, polling and shutdown limits come from `defaults.h`.
 
 Connect and select a key. The drawing uses recovered sensor identities and
-60% key geometry, with Fn immediately right of Space and Right Alt next.
-Tiles show raw values, down state and latest velocity. The panel shows
+the selected board's geometry (60% Huntsman or 75% M1).
+Tiles show control-domain readings, down state and latest velocity; M1 readings
+use per-key travel normalization. The panel shows
 thresholds, mapping/control role, waveform, last submitted HID report,
 calibration and storage status. Submission is not proof of host receipt.
+The selected-key panel also shows pre-travel sensor input, active released and
+bottom-out bounds, their span and the corresponding control value. This shared
+readback works on every application platform and refreshes once per second by
+default. It is independent of keyboard-output arming and pauses during full-rate
+capture. **Export all sensor readings and bounds…** saves a diagnostic JSON for
+all keys, not an importable calibration backup. See [calibration inspection](CALIBRATION.md#inspect-a-completed-run).
+
+Board guidance comes from the verified build target, not the key count. The M1
+configuration page distinguishes normal reset, which retains firmware/settings,
+from explicit factory-bootloader entry, which erases them. The warning states that
+early startup failures can require hardware debugging and the cold-boot/update
+transition awaits physical qualification. Calibration and profile-apply confirmations
+repeat the update-loss contract; **settings saved** confirms a flash write, not a power-cut test.
+Unsaved bounds are labelled **unsaved**, not factory calibration. M1 help lists
+Fn transport/pairing/battery controls and states that Fn+R or `cfg clean` clears
+custom state.
+
+On M1, the settings panel also shows estimated battery percentage, external or
+battery power, low/critical warnings and the raw charger-pin state. Unknown,
+stale and disconnected readings are explicit. Charger polarity is unverified,
+so raw high/low must not be interpreted as charging/full. Power readback updates
+once per second while configuration is idle and pauses during full-rate capture.
+Boards without this capability display that power telemetry is unavailable.
+See the [power-status contract](TELEMETRY.md#power-status).
+The M1 display/readback and capture coexistence are physically checked over USB;
+battery-percentage accuracy and charging behavior remain unverified.
 
 Text uses the best family the platform's Tk build can really render: the
 Windows system UI face, the macOS system face, or
@@ -48,11 +88,13 @@ scale a face it does not have. Antialiased text needs a Tk built against
 fontconfig/Xft, which the distribution `python3` provides.
 See [GUI access and troubleshooting](BUILDING.md#gui-access-and-troubleshooting).
 
-The window opens at the largest comfortable size for the screen and never
-below the size at which the keyboard, settings row and footer still fit. The
-bottom-left settings panel scrolls with its own scrollbar (mouse wheel, arrows
-and Page Up/Down) whenever its fields, buttons or the shortcut reference are
-taller than the window, so nothing is clipped in a small window.
+The window opens at a comfortable screen size. The whole configuration page
+scrolls when a large keyboard layout or wrapped status text exceeds the window;
+the settings and footer remain reachable at 900×700. The bottom-left settings
+panel has its own scrollbar for fields and shortcut help. Mouse-wheel events
+belong to the innermost scroll region under the pointer; arrow keys and Page
+Up/Down work when its canvas has focus. Use the page scrollbar to move between
+the keyboard drawing, settings and footer.
 
 ## Key behavior
 
@@ -67,6 +109,18 @@ taller than the window, so nothing is clipped in a small window.
   [Fn shortcuts](FN_MENU.md#keyboard-shortcuts) use green hints.
 - Fn, Left Ctrl/Windows/Alt, Right Alt/Ctrl and Space are reserved MIDI controls.
   Other keys accept note numbers 0…127, names (including flats), or Off.
+
+For keyboard mode, select a physical tile, choose the **Keyboard** keycode
+dropdown, then **Apply keycode**. It offers Disabled, keyboard/keypad usages
+04…DF, and modifiers E0…E7; uncommon usages have hexadecimal labels. Host OS
+support determines how a usage is interpreted. Consumer-page/media controls
+and macros are not keyboard keycodes and are not offered.
+Fn is locked. All Fn shortcuts/settings remain attached to their physical keys,
+even if the base output is disabled or remapped. MIDI mappings and calibration
+are independent. Duplicate destinations are supported: releasing one source
+does not release an output still held by another. Edits release outputs and
+wait for neutral. Check the device-confirmed mapping in the selected-key panel,
+then wait for **settings saved** before unplugging.
 
 Disable output while tuning if desired, enter values and apply to one key or
 confirm **Apply thresholds to all keys**. The MCU all-key operation is atomic.
@@ -85,7 +139,11 @@ Wheels use fixed 3800…1000 endpoints. Space uses its editable Schmitt pair.
 **Calibrate keys → device flash** starts the keyboard-only routine. Release all
 keys for 500 ms, then fully hold blue keys for one second; parallel holds are
 amber and completed keys green. Completion saves; cancellation/timeout discards
-staged data. Ordinary edits are disabled while collecting. See [calibration](CALIBRATION.md).
+staged data. Ordinary edits are disabled while collecting or waiting to save.
+A latched storage fault disables new calibration; the status includes its error
+code. A failed hardware resume can follow a successful flash write, so the error
+message does not promise rollback to the previous saved record.
+See [calibration](CALIBRATION.md).
 
 ## Flashing from the GUI
 
@@ -94,6 +152,29 @@ MIDI-Typist or a supplied Razer application, validate the image and review the
 confirmation. It supports application and bootloader states, including custom
 reflashing. See [Device flashing](DEVICE_FLASHING.md) for accepted files,
 protected regions, permission requirements and restoration limits.
+The **MonsGeek M1 V5 TMR (experimental)** option verifies the factory model
+before offering experimental conversion, or checks USB-bound SysEx identity for custom
+reflashing. Live 82-key telemetry and released-key 8 kHz acquisition are checked;
+pressed-key performance and complete wireless/power operation remain unverified;
+see [M1 flashing limits](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+The M1 status line identifies the selected USB/Bluetooth-slot/2.4 GHz keyboard
+transport and whether it is ready, waiting for a host, switching, or pairing
+requested/searching. Searching is not confirmation of a paired host. USB control
+connection does not imply that keyboard output is routed to USB. Select the
+transport with Fn+F1–F5; MIDI remains USB-only. Holding Fn+F1–F4 for three
+seconds changes the preview to a pairing request, issued on release; see the
+[M1 transport controls](MONSGEEK_M1.md#power-and-transport-components).
+On an ordinary wireless host disconnect the GUI remains usable over USB. When
+the host returns, release all keys before typing; offline key holds and knob
+movement are discarded rather than replayed. Radio faults remain distinct from
+waiting for a host and may require the documented recovery workflow.
+If an experimental backend reports `Boot failed: …` or `Runtime failed: …` over SysEx, the GUI shows
+the failure and leaves configuration disabled. This is not a connected keyboard
+snapshot; recovery must use the flashing workflow supported by that backend.
+
+M1 key readouts, thresholds and captures use normalized travel: 4096 released,
+1 pressed. Calibration candidates retain electrical ADC+1 units. An unsaved
+calibration flag can mean provisional startup bounds, not a failed settings save.
 
 Initialize the updater submodule first:
 
@@ -107,6 +188,10 @@ confirmation, and tests/builds never flash. Compatible settings/calibration are
 retained; firmware initializes missing/corrupt saves. The tab refreshes device identity after completion; reconnect configuration separately.
 Razer primary settings/serial, bootloader, factory/security and ASIC firmware
 are outside the application write path.
+
+Backends may report **stored bounds (read-only)** without writable calibration
+support. Calibration buttons stay disabled; this does not mean other edits were
+saved. **Settings not confirmed saved** must not be treated as persistence.
 
 ## Fn+Tab and Fn+V settings
 
@@ -160,7 +245,9 @@ Host JSON exports thresholds and mappings, not calibration or all menu settings.
 Import validates the entire file before sending commands, temporarily disables
 output and checks each edit. The batch is not atomic: a failure can leave
 already-confirmed changes and disabled output. Inspect and retry deliberately.
-Only version-2 profiles containing thresholds and MIDI mappings are accepted.
+Only version-4 profiles containing the exact board `target`, numeric `layout`,
+and complete per-key thresholds/keyboard/MIDI mappings are accepted. Cross-board imports
+and earlier profile formats are rejected before any commands are sent.
 
 ## MIDI SysEx protocol
 
@@ -175,8 +262,8 @@ SysEx message types and can coexist without corrupting one another.
 Commands have one outstanding nonzero decimal ID; snapshots carry the latest
 ACK/result. Malformed IDs receive no ACK. See [commands and JSON](MIDI_PROTOCOL.md).
 
-The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines 1152-byte
-latest-only snapshots, at most one per 33 ms. GUI gaps are expected.
+The [wire layout](TELEMETRY.md#gui-snapshot-stream-gui) defines count-aware MTG4
+latest-only snapshots (Huntsman: at most one per 33 ms). GUI gaps are expected.
 After initial synchronization, framing/checksum errors fail the connection.
 Pinned `stream key THRESHOLD SESSION SENSOR` uses 20-byte HKL1 records and
 requires continuity; stream changes discard the previous unsent session.

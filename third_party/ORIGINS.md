@@ -1,4 +1,23 @@
-# MIDI-Typist: vendored NXP sources
+# MIDI-Typist: official SDK provenance
+
+## Artery AT32F405
+
+`third_party/artery` is the unmodified official
+[AT32F402/405 Firmware Library](https://github.com/ArteryTek/AT32F402_405_Firmware_Library)
+submodule, pinned to SDK v2.1.5 commit
+`5dd9d55a2ce9ffa8fe0cb2652ac142920f2094a3`. M1 CMake checks this revision and
+compiles its ADC, CRM, DMA, GPIO, SPI, timer, ERTC, EXINT, power and USB modules,
+plus the official USB device core, standard requests and interrupt driver with CMSIS headers. Original
+license notices remain in those upstream files. No code or tables from the
+original MonsGeek executable are vendored. Board-owned USB descriptors/class
+and request-validation linker wrappers sit above the unchanged library.
+Board-owned startup uses CMSIS cycle-counter delay hooks. Additional wrappers
+provide the PHY power-up delay and defer attachment until SDK initialization
+postconditions pass; the SDK files remain unmodified. Complete runtime binding
+and physical validation are pending; the M1 library/audit builds are not a
+complete firmware.
+
+## NXP LPC55
 
 The Huntsman board build is self-contained. Its board manifest selects the
 NXP components; shared application and synthetic-port sources do not depend

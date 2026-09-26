@@ -14,11 +14,22 @@
 typedef struct {
     uint8_t key, type, length, arg0, arg1, arg2, arg3, arg4;
 } keyboard_action_t;
+/* Optional sensor-domain policy. Calibration always stores electrical samples
+ * (1..4096). Travel-normalized ports map those bounds to 1..4096 before key
+ * thresholds, velocity and MIDI controls; they do not alter the saved bounds.
+ * A zero press_drop uses the default fractional hold criterion. */
+typedef struct {
+    bool normalize_travel;
+    uint16_t minimum_span, minimum_release, press_drop;
+} keyboard_input_policy_t;
 typedef struct {
     uint8_t count, fn, tab, caps, escape;
     uint32_t sample_hz;
     const uint16_t *actuation_levels, *rapid_levels; /* eleven entries, 1..10 used */
-    bool compact_navigation; /* replace right modifiers/Menu with arrows */
+    /* Board config/keymap.def: 256 entries indexed by opaque physical key ID,
+     * not sensor index or HID usage. Fn routing never consults this map. */
+    const uint8_t *keymap;
+    const keyboard_input_policy_t *input; /* NULL: electrical-domain controls */
 } keyboard_layout_t;
 
 /* Immutable board description; NULL means unknown/unavailable layout.
@@ -39,7 +50,7 @@ uint8_t keyboard_travel_level(uint16_t lower, uint16_t upper, uint16_t raw);
 static inline unsigned keyboard_layout_count(uint8_t profile)
 {
     const keyboard_layout_t *layout=keyboard_layout(profile);
-    return layout && layout->sample_hz && layout->actuation_levels && layout->rapid_levels &&
+    return layout && layout->sample_hz && layout->actuation_levels && layout->rapid_levels && layout->keymap &&
            layout->count<=MT_KEY_CAPACITY ? layout->count : 0u;
 }
 static inline bool keyboard_layout_valid(uint8_t profile, unsigned count)

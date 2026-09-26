@@ -26,6 +26,15 @@
 #define DEFAULT_MIDI_OCTAVE 0
 #define DEFAULT_MIDI_VELOCITY_START 1u
 
+/* Digital auxiliary inputs: consecutive samples, separate from analog keys. */
+#define ENCODER_PHASE_STABLE_SAMPLES 2u
+#define ENCODER_BUTTON_DEBOUNCE_MS 5u
+#define ENCODER_EVENT_CAPACITY 32u
+#define AUX_PULSE_MS 20u
+#define DEFAULT_M1_ENCODER_POSITIVE_USAGE 0x00e9u
+#define DEFAULT_M1_ENCODER_NEGATIVE_USAGE 0x00eau
+#define DEFAULT_M1_ENCODER_BUTTON_USAGE 0x00e2u
+
 /* Velocity: triggering sample is included, bottom-out sample normally isn't. */
 #define RAW_BOTTOM_OUT 1500u
 #define RAW_VELOCITY_WINDOW 10u
@@ -41,6 +50,7 @@
 #define MIDI_PRESSURE_PERIOD_MS 10u
 #define MIDI_OCTAVE_BLINK_STEP_MS 60u
 #define MIDI_QUEUE 128u
+#define MIDI_PENDING_STRIKES 5u
 #define KEYBOARD_TEXT_MAX 32u
 #define DEFAULT_MIDI_LEFT_SHIFT_NOTE 60u
 #define JANKO_LEFT_SHIFT 61u
@@ -151,11 +161,142 @@
 #define MIDI_CONTROL_RX_TIMEOUT_MS 1000u
 #define MIDI_CONTROL_HEARTBEAT_MS 500u
 #define MIDI_CONTROL_COMMAND_TIMEOUT_MS 3000u
+#define GUI_POWER_POLL_MS 1000u
+#define GUI_POWER_STALE_MS 3000u
+#define GUI_BOUNDS_POLL_MS 1000u
+#define GUI_BOUNDS_STALE_MS 3000u
+#if GUI_BOUNDS_POLL_MS < 100u || GUI_BOUNDS_POLL_MS >= GUI_BOUNDS_STALE_MS || GUI_BOUNDS_STALE_MS > 60000u
+#error Invalid GUI calibration readback defaults
+#endif
+#if GUI_POWER_POLL_MS < 100u || GUI_POWER_POLL_MS >= GUI_POWER_STALE_MS || GUI_POWER_STALE_MS > 60000u
+#error Invalid GUI power status defaults
+#endif
 #define MIDI_CONTROL_HOST_MESSAGES 512u
+#define MIDI_CONTROL_HOST_POLL_MS 2u
+#define MIDI_CONTROL_HOST_CLOSE_MS 250u
+#define MIDI_CONTROL_HOST_REAP_MS 1000u
+#define MIDI_CONTROL_HOST_ERROR_BYTES 512u
 #define MIDI_CONTROL_CAPTURE_SAMPLES 16384u
 #define MIDI_CONTROL_TX_EVENTS 16u
 #define MIDI_CONTROL_DEVICE_RECORDS 256u
 #define MIDI_CONTROL_SAMPLE_BATCH 32u
+
+/* M1 acquisition cadence is a requested custom rate, not a stock measurement. */
+#define M1_SCAN_HZ 8000u
+/* Absorb short foreground LED/control work without losing velocity samples. */
+#define M1_SCAN_QUEUE_FRAMES 32u
+#define M1_ADC_CALIBRATION_WAIT_LOOPS 1000000u
+/* Finite SDK polling budgets. Physical flash timing still needs validation. */
+#define M1_FLASH_ERASE_WAIT_LOOPS 1000000u
+#define M1_FLASH_PROGRAM_WAIT_LOOPS 100000u
+/* Native ADC baseline range admitted by the factory sample-startup path. */
+#define M1_FACTORY_RELEASE_MIN_RAW 1000u
+#define M1_FACTORY_RELEASE_MAX_RAW 4000u
+/* Provisional cold-start travel when stock records cannot be interpreted.
+ * The reference startup uses current ADC - 700 in RAM, never in flash. */
+#define M1_STARTUP_TRAVEL_RAW 700u
+#define M1_CALIBRATION_MIN_SPAN_RAW 128u
+#define M1_CALIBRATION_MIN_RELEASE_RAW 1001u
+#define M1_CALIBRATION_PRESS_DROP_RAW 128u
+/* Custom LED scheduling bounds, not measured electrical timing. */
+#define M1_LED_LATCH_US 1000u
+#define M1_LED_TRANSFER_TIMEOUT_US 10000u
+#define M1_POWER_STAGE_MS 10u
+#define M1_MAIN_STACK_BYTES 8192u
+#define M1_DEFAULT_WIRELESS_TRANSPORT 0u
+#if M1_MAIN_STACK_BYTES < 8192u || M1_MAIN_STACK_BYTES > 32768u || (M1_MAIN_STACK_BYTES % 8u) != 0
+#error "invalid M1 application stack reservation"
+#endif
+#if M1_DEFAULT_WIRELESS_TRANSPORT != 0u && M1_DEFAULT_WIRELESS_TRANSPORT != 1u && M1_DEFAULT_WIRELESS_TRANSPORT != 2u && M1_DEFAULT_WIRELESS_TRANSPORT != 5u
+#error "invalid M1 default wireless transport"
+#endif
+#define M1_SENSOR_SETTLE_MS 1u
+#define M1_COLD_SLEEP_TICKS 25u
+/* Measure the low-speed RTC against TMR2 before using it to bridge sleep.
+ * Window/timeout are policy; no assumed 40 kHz oscillator rate is used. */
+#define M1_SLEEP_CLOCK_WINDOW_US 20000u
+#define M1_SLEEP_CLOCK_TIMEOUT_US 1000000u
+#define M1_SLEEP_CLOCK_SLOP_TICKS 2u
+#define M1_SLEEP_CLOCK_RESUME_MARGIN_US 100000u
+#if M1_SLEEP_CLOCK_WINDOW_US < 10000u || M1_SLEEP_CLOCK_TIMEOUT_US < M1_SLEEP_CLOCK_WINDOW_US || M1_SLEEP_CLOCK_TIMEOUT_US > 1000000u || M1_SLEEP_CLOCK_SLOP_TICKS > 8u
+#error "invalid M1 sleep clock measurement window"
+#endif
+#if M1_SLEEP_CLOCK_RESUME_MARGIN_US == 0 || M1_SLEEP_CLOCK_RESUME_MARGIN_US > 1000000u
+#error "invalid M1 sleep clock resume allowance"
+#endif
+#define M1_COLD_SCAN_SETTLE_US 10u
+#define M1_TRANSPORT_SWITCH_TIMEOUT_MS 3000u
+#define M1_PAIR_HOLD_MS 3000u
+#define M1_PAIR_SWITCH_TIMEOUT_MS 6000u
+#define M1_BT_PAIR_NAME "MIDI-Typist"
+#define M1_RADIO_START_PULSE_US 10000u
+#define M1_RADIO_TRANSFER_TIMEOUT_US 10000u
+/* Custom foreground scheduling, not inferred stock timer units. */
+#define M1_RADIO_POLL_US 1000u
+#define M1_RADIO_QUERY_US 100000u
+#define M1_RADIO_MODE_TIMEOUT_US 3000000u
+/* A stale reply gates output immediately; it is not a fatal link failure.
+ * The peer can pause status replies while Bluetooth bonding/searching. */
+#define M1_RADIO_STATUS_TIMEOUT_US 500000u
+#define M1_RADIO_SLEEP_TIMEOUT_US 20000u
+#define M1_RADIO_BT_REPORT_US 10000u
+#define M1_RADIO_RF_REPORT_US 1000u
+#define M1_WAKE_SCAN_TIMEOUT_US 2000u
+#define M1_WAKE_ACQUIRE_FRAMES 10u
+#define M1_WAKE_REFRESH_FRAMES 50u
+#define M1_WAKE_DROP_COUNTS 300u
+#define M1_BATTERY_SAMPLE_MS 30u
+#define M1_BATTERY_FILTER_SAMPLES 8u
+#define M1_BATTERY_CONFIRM_BATCHES 10u
+#define M1_CHARGER_CONFIRM_SAMPLES 10u
+#define M1_BATTERY_LOW_PERCENT 20u
+#define M1_BATTERY_CRITICAL_PERCENT 5u
+/* Custom save qualification: defer on low/unknown battery; external power
+ * still needs a qualified source. These are policy, not measured flash limits. */
+#define M1_FLASH_MIN_BATTERY_PERCENT 21u
+#define M1_FLASH_MAX_PAUSE_US 100000u
+#if M1_FLASH_MIN_BATTERY_PERCENT <= M1_BATTERY_LOW_PERCENT || M1_FLASH_MIN_BATTERY_PERCENT > 100u || M1_FLASH_MAX_PAUSE_US == 0 || M1_FLASH_MAX_PAUSE_US >= M1_RADIO_STATUS_TIMEOUT_US
+#error "invalid M1 flash-save power/pause qualification"
+#endif
+#define M1_BATTERY_BLINK_MS 400u
+#define M1_BATTERY_DISPLAY_PWM 100u
+/* Reference power-policy qualification counts, not wall-clock durations. */
+#define M1_POWER_QUALIFY_TICKS 100u
+#define M1_POWER_FAST_QUALIFY_TICKS 8u
+#define M1_POWER_CRITICAL_STEPS 5u
+#define M1_POWER_UNSELECTED_STEPS 10u
+#define M1_POWER_BT_SEARCH_STEPS 120u
+#define M1_POWER_RADIO_SEARCH_STEPS 30u
+/* Custom runtime cadence/idle defaults; not inferred stock timer units. */
+#define M1_RUNTIME_POWER_PERIOD_MS 10u
+#define M1_RUNTIME_BT_IDLE_STEPS 300u
+#define M1_RUNTIME_RADIO_IDLE_STEPS 300u
+#define M1_RUNTIME_HANDOFF_MS 3000u
+#define M1_RUNTIME_SLEEP_SETTLE_MS 100u
+#define M1_RUNTIME_SLEEP_TICKS 30u
+#define M1_RUNTIME_SCAN_SETTLE_US 100u
+#define M1_RUNTIME_BT_RETAIN_MS 30000u
+#define M1_RUNTIME_RESTORE_STAGE_MS 10u
+#define M1_RUNTIME_RESTORE_SETTLE_MS 5u
+#define M1_FAULT_POLL_MS 50u
+#define M1_FAULT_CABLE_CONFIRM_TICKS 2u
+#if M1_FAULT_POLL_MS < 1u || M1_FAULT_CABLE_CONFIRM_TICKS < 2u
+#error Invalid M1 battery fault-wait defaults
+#endif
+#define M1_SOURCE_DEBOUNCE_MS 20u
+#define M1_SOURCE_TRANSITION_MS 5000u
+#if M1_SOURCE_DEBOUNCE_MS < 1 || M1_SOURCE_DEBOUNCE_MS >= M1_SOURCE_TRANSITION_MS || M1_SOURCE_TRANSITION_MS >= 0x80000000u
+#error Invalid M1 source transition defaults
+#endif
+#if M1_RUNTIME_POWER_PERIOD_MS < 1 || M1_RUNTIME_POWER_PERIOD_MS > 1000u || M1_RUNTIME_BT_IDLE_STEPS > 65535u || M1_RUNTIME_RADIO_IDLE_STEPS > 65535u || M1_RUNTIME_HANDOFF_MS < 100u || M1_RUNTIME_HANDOFF_MS >= 0x80000000u || M1_RUNTIME_SLEEP_SETTLE_MS < 1 || M1_RUNTIME_SLEEP_SETTLE_MS >= M1_RUNTIME_HANDOFF_MS || M1_RUNTIME_SLEEP_TICKS < 1 || M1_RUNTIME_SLEEP_TICKS > 65536u || M1_RUNTIME_SCAN_SETTLE_US < 1 || M1_RUNTIME_SCAN_SETTLE_US >= 0x80000000u || M1_RUNTIME_BT_RETAIN_MS < 1 || M1_RUNTIME_BT_RETAIN_MS >= 0x80000000u || M1_RUNTIME_RESTORE_STAGE_MS < 1 || M1_RUNTIME_RESTORE_STAGE_MS >= M1_RUNTIME_HANDOFF_MS || M1_RUNTIME_RESTORE_SETTLE_MS < 1 || M1_RUNTIME_RESTORE_SETTLE_MS >= M1_RUNTIME_HANDOFF_MS
+#error Invalid M1 runtime power defaults
+#endif
+#define AT32_CLOCK_WAIT_LOOPS 12288u
+#define M1_USB_PHY_SETTLE_US 1000u
+#define M1_USB_INIT_DELAY_LIMIT_MS 25u
+#define M1_RELEASE_GAP_LEVEL 8u
+#define M1_ACTUATION_LEVELS { \
+    0,2048,4096,8192,12288,16384,24576,32768,40960,49152,57344 }
 
 /* SDK-free reference port: intentionally different editor response. */
 #define SYNTHETIC_CALIBRATION_LOWER_RAW 1000u
@@ -165,6 +306,60 @@
 
 #if RAW_DEFAULT_PRESS < 1 || RAW_DEFAULT_PRESS >= RAW_DEFAULT_RELEASE || RAW_DEFAULT_RELEASE >= 4096
 #error "Default Schmitt thresholds must satisfy 1 <= press < release < 4096"
+#endif
+#if M1_SCAN_QUEUE_FRAMES < 2 || M1_SCAN_QUEUE_FRAMES > 255
+#error "M1 scan queue must fit its bounded counter"
+#endif
+#if MIDI_PENDING_STRIKES < 1 || MIDI_PENDING_STRIKES > 8
+#error "Pending MIDI strikes must fit the per-key slot bitmap"
+#endif
+#if M1_FLASH_ERASE_WAIT_LOOPS < 1 || M1_FLASH_PROGRAM_WAIT_LOOPS < 1 || M1_FLASH_ERASE_WAIT_LOOPS > 1000000u || M1_FLASH_PROGRAM_WAIT_LOOPS > 1000000u
+#error "Invalid M1 flash polling budget"
+#endif
+#if M1_LED_LATCH_US < 1 || M1_LED_TRANSFER_TIMEOUT_US < 1 || M1_LED_LATCH_US >= 0x80000000u || M1_LED_TRANSFER_TIMEOUT_US >= 0x80000000u
+#error "M1 LED timing must fit wrapping microsecond comparisons"
+#endif
+#if AT32_CLOCK_WAIT_LOOPS < 1 || M1_POWER_STAGE_MS < 1 || M1_SENSOR_SETTLE_MS < 1 || M1_POWER_STAGE_MS >= 0x80000000u || M1_SENSOR_SETTLE_MS >= 0x80000000u
+#error "M1 startup waits must be bounded and positive"
+#endif
+#if M1_USB_PHY_SETTLE_US < 1000 || M1_USB_INIT_DELAY_LIMIT_MS < 25 || M1_USB_INIT_DELAY_LIMIT_MS > 1000 || M1_USB_PHY_SETTLE_US > M1_USB_INIT_DELAY_LIMIT_MS * 1000u
+#error "M1 USB startup delays must cover SDK requirements and stay bounded"
+#endif
+#if M1_BATTERY_FILTER_SAMPLES < 1 || M1_BATTERY_FILTER_SAMPLES > 255 || M1_BATTERY_CONFIRM_BATCHES < 1 || M1_BATTERY_CONFIRM_BATCHES > 255 || M1_CHARGER_CONFIRM_SAMPLES < 1 || M1_CHARGER_CONFIRM_SAMPLES > 255
+#error "invalid M1 battery filter/debounce"
+#endif
+#if M1_BATTERY_SAMPLE_MS < 1 || M1_BATTERY_SAMPLE_MS >= 0x80000000u || M1_BATTERY_BLINK_MS < 1 || M1_BATTERY_BLINK_MS >= 0x80000000u || M1_BATTERY_DISPLAY_PWM > 255 || M1_BATTERY_CRITICAL_PERCENT < 1 || M1_BATTERY_CRITICAL_PERCENT > M1_BATTERY_LOW_PERCENT || M1_BATTERY_LOW_PERCENT >= 100
+#error "invalid M1 battery policy"
+#endif
+#if M1_TRANSPORT_SWITCH_TIMEOUT_MS < 1 || M1_TRANSPORT_SWITCH_TIMEOUT_MS >= 0x80000000u
+#error "invalid M1 transport timeout"
+#endif
+#if M1_PAIR_HOLD_MS < 1 || M1_PAIR_HOLD_MS >= 0x80000000u || M1_PAIR_SWITCH_TIMEOUT_MS < M1_TRANSPORT_SWITCH_TIMEOUT_MS || M1_PAIR_SWITCH_TIMEOUT_MS >= 0x80000000u
+#error "invalid M1 pairing timing"
+#endif
+#if M1_RADIO_START_PULSE_US < 1 || M1_RADIO_START_PULSE_US >= 0x80000000u || M1_RADIO_TRANSFER_TIMEOUT_US < 1 || M1_RADIO_TRANSFER_TIMEOUT_US >= 0x80000000u
+#error "invalid M1 radio timing"
+#endif
+#if M1_RADIO_POLL_US < 1 || M1_RADIO_POLL_US >= M1_RADIO_QUERY_US || M1_RADIO_QUERY_US >= M1_RADIO_STATUS_TIMEOUT_US || M1_RADIO_STATUS_TIMEOUT_US >= M1_RADIO_MODE_TIMEOUT_US || M1_RADIO_MODE_TIMEOUT_US >= 0x80000000u || M1_RADIO_RF_REPORT_US < 1 || M1_RADIO_BT_REPORT_US < 1 || M1_RADIO_RF_REPORT_US >= M1_RADIO_STATUS_TIMEOUT_US || M1_RADIO_BT_REPORT_US >= M1_RADIO_STATUS_TIMEOUT_US
+#error "invalid M1 wireless scheduling"
+#endif
+#if M1_RADIO_SLEEP_TIMEOUT_US <= M1_RADIO_TRANSFER_TIMEOUT_US || M1_RADIO_SLEEP_TIMEOUT_US >= 0x80000000u
+#error "invalid M1 radio sleep handoff timeout"
+#endif
+#if M1_FACTORY_RELEASE_MIN_RAW < 1 || M1_FACTORY_RELEASE_MAX_RAW > 4095u || M1_FACTORY_RELEASE_MIN_RAW > M1_FACTORY_RELEASE_MAX_RAW
+#error "invalid M1 factory baseline range"
+#endif
+#if M1_STARTUP_TRAVEL_RAW >= M1_FACTORY_RELEASE_MIN_RAW || M1_STARTUP_TRAVEL_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_MIN_SPAN_RAW < 1 || M1_CALIBRATION_PRESS_DROP_RAW < M1_CALIBRATION_MIN_SPAN_RAW || M1_CALIBRATION_PRESS_DROP_RAW >= M1_CALIBRATION_MIN_RELEASE_RAW || M1_CALIBRATION_MIN_RELEASE_RAW > 4096u
+#error "invalid M1 electrical calibration policy"
+#endif
+#if M1_COLD_SLEEP_TICKS < 1 || M1_COLD_SLEEP_TICKS > 65536u || M1_COLD_SCAN_SETTLE_US < 1 || M1_COLD_SCAN_SETTLE_US >= 0x80000000u
+#error "invalid M1 battery cold-start timing"
+#endif
+#if M1_WAKE_SCAN_TIMEOUT_US < 1 || M1_WAKE_SCAN_TIMEOUT_US >= 0x80000000u || M1_WAKE_ACQUIRE_FRAMES < 1 || M1_WAKE_ACQUIRE_FRAMES > 255 || M1_WAKE_REFRESH_FRAMES < 1 || M1_WAKE_REFRESH_FRAMES > 255 || M1_WAKE_DROP_COUNTS < 1 || M1_WAKE_DROP_COUNTS >= 4096
+#error "invalid M1 wake scan policy"
+#endif
+#if M1_POWER_QUALIFY_TICKS < 1 || M1_POWER_QUALIFY_TICKS > 255 || M1_POWER_FAST_QUALIFY_TICKS < 1 || M1_POWER_FAST_QUALIFY_TICKS > 255 || M1_POWER_CRITICAL_STEPS < 1 || M1_POWER_UNSELECTED_STEPS < 1 || M1_POWER_BT_SEARCH_STEPS < 1 || M1_POWER_RADIO_SEARCH_STEPS < 1
+#error "invalid M1 power qualification"
 #endif
 #if RAW_VELOCITY_WINDOW < 2 || RAW_VELOCITY_WINDOW > 255 || VELOCITY_MAX_COUNTS_PER_SECOND < 1
 #error "Invalid velocity window or normalization scale"
@@ -198,6 +393,12 @@
 #endif
 #if OPTICAL_SETTLING_FRAMES < 1 || OPTICAL_SETTLING_FRAMES > 255 || LIGHTING_MAINTENANCE_FRAMES < 1 || LIGHTING_MAINTENANCE_FRAMES > 255
 #error "Optical settling and lighting cadence must fit their frame counters"
+#endif
+#if MIDI_CONTROL_HOST_MESSAGES < 1 || MIDI_CONTROL_HOST_MESSAGES > 65535 || MIDI_CONTROL_HOST_ERROR_BYTES < 2 || MIDI_CONTROL_HOST_ERROR_BYTES > 4096
+#error "MIDI host queues and failure messages must be bounded"
+#endif
+#if MIDI_CONTROL_HOST_POLL_MS < 1 || MIDI_CONTROL_HOST_POLL_MS >= MIDI_CONTROL_HEARTBEAT_MS || MIDI_CONTROL_HOST_CLOSE_MS < 1 || MIDI_CONTROL_HOST_REAP_MS < 1 || MIDI_CONTROL_HOST_CLOSE_MS > MIDI_CONTROL_COMMAND_TIMEOUT_MS || MIDI_CONTROL_HOST_REAP_MS > MIDI_CONTROL_COMMAND_TIMEOUT_MS
+#error "MIDI host scheduling and shutdown deadlines must be bounded"
 #endif
 
 #endif

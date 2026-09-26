@@ -1,10 +1,11 @@
-"""Version-one MIDI-Typist experimental SysEx envelope (matching midi_sysex.h)."""
+"""Current MIDI-Typist experimental SysEx envelope (matching midi_sysex.h)."""
 import struct
 import zlib
 
 HELLO, READY, COMMAND, ACK, SNAPSHOT, SAMPLES, LOG, ERROR, DUMP, KEEPALIVE, CLOSE = range(1, 12)
-PREFIX = b'\xf0\x7dMT\x01'
-MAX_PAYLOAD = 1152
+PREFIX = b'\xf0\x7dMT\x03'
+MAX_PAYLOAD = 2292
+MAX_WIRE = 7 + MAX_PAYLOAD + 14 + (MAX_PAYLOAD + 20)//7
 
 
 def encode(kind, session, sequence=0, payload=b''):
@@ -23,7 +24,7 @@ def encode(kind, session, sequence=0, payload=b''):
 
 def decode(wire):
     wire = bytes(wire)
-    if len(wire) < 23 or len(wire) > 1340 or wire[:5] != PREFIX or wire[-1] != 0xf7:
+    if len(wire) < 23 or len(wire) > MAX_WIRE or wire[:5] != PREFIX or wire[-1] != 0xf7:
         raise ValueError('invalid SysEx framing')
     if any(byte & 128 for byte in wire[1:-1]) or not 1 <= wire[5] <= CLOSE:
         raise ValueError('invalid SysEx data')

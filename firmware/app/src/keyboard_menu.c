@@ -48,6 +48,20 @@ void keyboard_menu_cancel(keyboard_menu_t *s)
     keyboard_text_stop(&s->text);
 }
 
+bool keyboard_menu_observing(const keyboard_menu_t *s)
+{
+    return s->pending || s->brightness_session || s->reset_confirmation ||
+        s->music_page || s->press_page || s->velocity_page;
+}
+
+static void suppress_input(keyboard_raw_t *raw)
+{
+    /* Entry cancels outputs/fits once. While the application observes menu
+     * samples, do not rebuild and clear the complete key engine at 8 kHz. */
+    if(raw->armed || raw->changed_count)keyboard_raw_invalidate(raw);
+    else raw->valid=false;
+}
+
 uint8_t keyboard_menu_control(uint8_t profile, uint8_t key)
 {
     const keyboard_action_t *a=keyboard_action(profile,key,0);
@@ -158,8 +172,8 @@ static uint8_t press_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -188,8 +202,8 @@ static uint8_t velocity_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw)
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -209,8 +223,8 @@ static uint8_t music_page_frame(keyboard_menu_t *s, keyboard_raw_t *raw, uint32_
         keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     const bool ready=s->choice_ready;
-    if(raw->armed) s->choice_ready=true; /* all keys released after page entry */
-    keyboard_raw_invalidate(raw); /* menu input never reaches HID/MIDI */
+    if(raw->neutral_idle) s->choice_ready=true; /* all keys released after page entry */
+    suppress_input(raw); /* menu input never reaches HID/MIDI */
     if(!ready) return MENU_NONE;
     unsigned held=0, sensor=0;
     for(unsigned i=0;i<raw->count;++i) if(raw->raw[i]<raw->press[i]) {
@@ -250,6 +264,7 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     /* Menu edges retain their own Schmitt history when preview entry clears
      * raw.down[]. A still-held key must not become a fresh press afterward. */
     for (unsigned i=0;i<MENU_OPTION_COUNT;++i) {
+        if((i+1u==MENU_MODE && s->midi_blocked) || (s->disabled_options&(1u<<i)))continue;
         if(!(options[i].modes & (raw->midi_mode?OPTION_MIDI:OPTION_KEYBOARD))) continue;
         unsigned sensor=sensors[i];
         if (sensor<raw->count && (s->previous & (1u<<i) ?
@@ -260,6 +275,10 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
     s->previous=held;
     if (!raw->valid || !raw->enabled || calibration || raw->engine.config.mode) {
         keyboard_menu_cancel(s); return MENU_NONE;
+    }
+    if((s->midi_blocked && s->pending==MENU_MODE) ||
+       (s->pending && (s->disabled_options&(1u<<(s->pending-1u))))) {
+        keyboard_menu_cancel(s); keyboard_raw_invalidate(raw); return MENU_NONE;
     }
     if(s->music_page) return music_page_frame(s,raw,now);
     if(s->press_page) return press_page_frame(s,raw);
@@ -273,8 +292,8 @@ uint8_t keyboard_menu_frame(keyboard_menu_t *s, keyboard_raw_t *raw,
         bool ready=s->confirmation_ready;
         /* Require all keys released once, then consume all confirmation input.
          * A Y held before entry cannot erase; simultaneous Y/N cancels. */
-        if (raw->armed) s->confirmation_ready=true;
-        keyboard_raw_invalidate(raw);
+        if (raw->neutral_idle) s->confirmation_ready=true;
+        suppress_input(raw);
         if (ready && (yes || no)) {
             keyboard_menu_cancel(s);
             return no ? MENU_NONE : MENU_RESET;
@@ -448,14 +467,15 @@ void keyboard_menu_lights(keyboard_menu_t *s, const keyboard_raw_t *raw,
                 if (keyboard_shortcut_usage(s->profile,s->keys[i])) color(s->profile,i,frame,COLOR_CONFIRM);
         }
         for(unsigned i=0;i<MENU_OPTION_COUNT;++i)
-            if(options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) {
+            if((options[i].modes & (midi?OPTION_MIDI:OPTION_KEYBOARD)) &&
+               !(i+1u==MENU_MODE && s->midi_blocked) && !(s->disabled_options&(1u<<i))) {
                 /* The active Jankó layout uses a yellow hint. */
                 const bool active = (i+1u)==MENU_JANKO && janko;
                 if(active) color(s->profile,s->option_sensors[i],frame,COLOR_JANKO);
                 else color(s->profile,s->option_sensors[i],frame,COLOR_WHITE);
             }
         if(midi) color(s->profile,s->enter,frame,COLOR_CONFIRM);
-        else color(s->profile,s->enter,frame,COLOR_MIDI);
+        else if(!s->midi_blocked) color(s->profile,s->enter,frame,COLOR_MIDI);
         if (brightness<MENU_DIM_PWM) brightness=MENU_DIM_PWM; /* keep brightness-up discoverable */
     }
     if (brightness!=255u)

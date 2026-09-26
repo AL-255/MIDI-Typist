@@ -1,16 +1,22 @@
-# Huntsman device settings storage
+# Device settings storage
 
 The complete application persists settings and calibration in two reserved
 **512-byte tail pages: 0x78000 and 0x78200**. The Razer primary settings and
 serial-number region at **0x49000..0x49400** is never a write target.
 Bootloader, application image, factory/security/PFR and secondary ASIC storage
 are also outside this writer.
+M1 has a [read-only factory calibration importer](MONSGEEK_M1.md#read-only-factory-calibration)
+and an audited application-tail writer connected to foreground restore/autosave.
+Writing requires explicit outer-owner power/quiescence/resume callbacks; without
+them, edits remain pending in RAM. The operational instructions below apply to the complete
+Huntsman application; [M1's reservation and writer](#m1-application-tail-backend)
+have a different update-retention contract.
 
 ## What is saved
 
 Each complete snapshot includes keyboard/MIDI mode, Jankó, lower-row mute,
 brightness, velocity start, root, scale, octave, output enable, committed
-trigger/rapid levels, and every sensor's thresholds, MIDI mapping and completed
+trigger/rapid levels, and every sensor's thresholds, keyboard and MIDI mappings, and completed
 calibration bounds. Held keys, sounding notes, wheels, sustain, velocities,
 editor previews and incomplete calibration are not saved.
 
@@ -32,7 +38,7 @@ First installation or two invalid/incompatible snapshots initializes defaults
 and automatically erases/programs/verifies a fresh snapshot in the owned tail
 area. One valid snapshot is sufficient for recovery; a bad peer never causes
 the good snapshot to be erased. Compatible application updates retain settings.
-Only the current MTP1 schema and matching layout are accepted. Unsupported
+Only the current MTP2 schema and matching layout are accepted. Unsupported
 records are invalid input, not migration sources; current valid saves survive
 application updates.
 
@@ -42,32 +48,56 @@ Save failures latch for the session, avoiding infinite retries and wear.
 
 ## Complete snapshot format
 
-One little-endian MTP1 record occupies one page.
+The SDK-free `firmware/services/src/device_store.c` owns the codec and two-slot
+journal. Board builds select record size, identity and recoverable read error;
+board callbacks alone own physical addresses and controller operations.
+
+| Board | Identity | Record size | CRC offset | Integration |
+| --- | --- | --- | --- | --- |
+| Huntsman | MTP2 | 512 | 508 | Application and bounded NXP writer |
+| M1 | M1P2 | 2048 | 2044 | Electrical calibration plus travel-domain thresholds; SDK writer and gated foreground autosave |
+
+The distinct identities bind board-local layout numbers to their physical
+namespace. Neither format accepts the other or migrates older records.
+Both use the following little-endian fields; page-end offsets below describe
+Huntsman. M1 extends the all-ones padding through byte 2043 and stores its CRC
+over bytes 0…2043 at byte 2044.
 
 | Offset | Field |
 | --- | --- |
-| 0 | Magic MTP1 |
-| 4 | Format 1 |
-| 5, 6 | Optical profile, sensor count |
-| 7 | Calibration present, 0/1 |
-| 8 | u32 whole-profile generation |
-| 12 | u32 schema identity 0x3150544d |
-| 16–28 | Thirteen global bytes (below) |
-| 29 | u32 calibration generation |
-| 33 | Up to 65 seven-byte sensor entries |
-| After last sensor through 507 | FF padding |
+| 0 | Four-byte format identity |
+| 4 | Board-local layout; sensor count derived from the board description |
+| 5 | Calibration present, 0/1 |
+| 6 | u32 whole-profile generation |
+| 10 | u32 calibration generation |
+| 14–18 | Thirteen packed global fields (below); high four bits of byte 18 are 1 |
+| 19 | Packed sensor bitstream, in scan order |
+| After last sensor through 507 | All unused bits are 1 |
 | 508 | CRC-32 of bytes 0…507 |
 
 Globals: performance mode, Jankó, lower mute, brightness (0…19), velocity start
-(1…10), root (0…11), scale ID, signed octave (−10…10), output enable, saved
+(1…10), root (0…11), scale ID, octave + 10 (0…20), output enable, saved
 actuation, saved rapid, rapid enable and lock.
+Their respective bit widths are `1,1,1,5,4,4,4,5,1,4,4,1,1`.
+Fields are packed least-significant bit first, starting at byte 14.
 
-Sensor entries: two packed 12-bit thresholds in three bytes, two packed 12-bit
-calibration endpoints in three bytes, then a MIDI mapping byte (0…127 or 255).
-Samples 1…4096 encode as value minus one; first/second values occupy bits
-0…11/12…23 of a little-endian 24-bit pair. Thresholds satisfy press < release
-< 4096; calibration lower/upper have at least 512 counts of separation.
-Absent calibration uses three zero bytes. Reserved MIDI controls are unmapped.
+Each sensor stores two ordered pairs, each in 23 bits: thresholds then
+calibration endpoints. For `1 <= a < b <= 4096`, encode the pair losslessly as
+`(b-1)*(b-2)/2 + a-1`. Threshold release must be below 4096; calibration span
+must be at least 512. Absent calibration uses 23 zero bits.
+
+Mapping fields follow, according to immutable physical role:
+
+- Fn: no mapping bits; keyboard disabled and MIDI unmapped implicitly.
+- Six MIDI controls (LCtrl, LGUI, LAlt, RCtrl, RAlt, Space): an eight-bit
+  keyboard usage; MIDI remains unmapped.
+- Other keys: 15 bits encoding `keyboard_index*129 + note_index`.
+  Keyboard index is 0 for disabled, otherwise usage minus 3 (usages 04…E7).
+  Note index is 0…127 or 128 for unmapped.
+
+Role selection never uses the user mapping. Including header and CRC, ANSI,
+ISO and JIS require 481, 489 and 512 bytes respectively. No endpoint precision
+or settings are discarded, and no additional flash pages are reserved.
 
 ## Atomic replacement and controller safety
 
@@ -77,7 +107,7 @@ sole good snapshot as a fallback after failure. Interrupted writes recover the
 old or complete new snapshot, not mixed settings/calibration. An interrupted
 first save can leave no valid record and reinitialize defaults.
 
-The adapter uses official NXP SDK registers/status codes and the original
+The Huntsman adapter uses official NXP SDK registers/status codes and the original
 working application's CMD4 erase, 32 CMD8 buffer loads and CMD12 program
 sequence. Code/stack execute from RAM; IRQ state is preserved, cache flushed,
 watchdog serviced and all polls bounded. Slot index, geometry, clock and
@@ -90,6 +120,126 @@ confirmed blank-check success; the diagnostic dumper still reports real
 per-word errors. See [NXP's explanation](https://community.nxp.com/t5/LPC-Microcontrollers-Knowledge/LPC55xx-Erased-Memory-State-0-or-1/ta-p/1135084).
 
 The application-image 1 KiB reservation stays FF and unused.
+
+## M1 application-tail backend
+
+`m1_storage` reserves **0x08027000 and 0x08027800**, two 2048-byte pages inside
+the custom application region. The reference boot erase loop at `0x08000420`
+erases 70 pages from `0x08005000`, stopping before stock settings at `0x08028000`.
+Factory calibration at `0x08032000/0x08032800`, key types, boot flag, bootloader
+and all other stock storage are outside this writer.
+
+**The factory bootloader erases both profiles on every application reflash.**
+This backend does not promise update-time retention or implement backup/restore.
+
+The caller supplies only slot 0/1 and must explicitly qualify power,
+locally drained neutral outputs and quiescent acquisition/transport DMA. Additional
+guards reject active DMA1/2 channels, ADC1, scan timers or busy LED/radio SPI,
+unexpected controller state, invalid records and non-foreground/unprivileged
+calls. The read-only size register must report the 256 KiB part, matching the
+2 KiB erase geometry; see [Artery's reference manual, §1.3.1](https://www.arterychip.com/download/RM/RM_AT32F402_405_EN_V2.01.pdf)
+and [datasheet, table 19](https://www.arterychip.com/download/DS/DS_AT32F405_402_V2.01_EN.pdf).
+No actual chip-density measurement is claimed by these checks.
+
+The linker must define the real flash load-image end below the first slot,
+including initialized RAM code/data. `linker/storage_ram.ld` places the
+transaction and official SDK flash functions in SRAM, with a separate code
+load address; startup must copy them before use. During erase/program, IRQs
+are masked and a temporary SRAM vector table directs NMI/HardFault to an SRAM
+stop handler. Successful and completed-error paths relock and restore VTOR/IRQ
+state. Erase is blank-verified and each programmed word is checked; the journal
+then compares the whole readback and CRC before accepting the generation.
+
+SDK erase/program polling is bounded by `M1_FLASH_*_WAIT_LOOPS` in `defaults.h`,
+applied through a forced-include configuration without editing vendor source.
+These are iteration budgets, not measured time guarantees. If flash stays busy
+after timeout, returning to flash-resident code is unsafe: stop in SRAM, leave
+IRQs masked, disable SysTick and do not retry. There is no option-byte operation,
+mass erase, protection change or automatic reset.
+
+`m1_live_init` loads the journal before accepting a real frame. Valid custom
+calibration takes precedence; otherwise validated factory bounds are used. If
+neither is usable, a real released startup frame permits provisional RAM bounds
+as described in [M1 calibration](MONSGEEK_M1.md#read-only-factory-calibration).
+They are not marked saved or included as calibration in settings-only snapshots.
+M1 thresholds are in normalized travel units; stored endpoints remain electrical
+ADC+1 values and accept the board's 128-count minimum span. Unknown schemas are
+rejected, never migrated or reinterpreted.
+Saved MIDI mode is suppressed for wireless operation. GUI fields report the
+actual journal slot, generation, pending state and latched error independently
+of the imported-calibration flag.
+
+`device_store_poll` marks pending changes without writing. On each scheduled
+settings check, it compares all current persisted inputs against an exact
+RAM cache of the last validated polling inputs. Unchanged inputs skip profile
+bit-packing and CRC work; pending changes still mature through the normal quiet
+window. Each threshold, mapping and global setting participates in the comparison.
+Reverting to the saved settings cancels pending work. Accepting a verified record
+invalidates the cache; explicit calibration and the final write still serialize
+and validate the complete snapshot. The cache changes neither flash format nor
+owned storage addresses.
+
+Before a write, the foreground additionally checks completed neutral output,
+MIDI cleanup, local transport drain, idle lighting and no transport selection.
+The supplied `m1_live_storage_ops_t.begin` qualifies power and pauses hardware:
+`M1_SAVE_DEFER` leaves hardware unchanged, `M1_SAVE_READY` acquires ownership,
+and `M1_SAVE_FAULT` is terminal before any write. After a ready begin and bounded
+write/readback, `end` must discard pre-pause acquisitions, resume hardware and
+preserve accurate outer clocks across masked-IRQ time. The deliberate scan gap
+invalidates capture/velocity and requires neutral before rearming. A failed
+resume is terminal; reinitialization cannot silently clear it. No unchanged
+settings are rewritten, and a write failure is not retried in that session.
+
+Fn+C or GUI calibration saves all 82 staged endpoints with the current settings
+through this same gate. It waits for neutral host output, but completed keys may
+stay physically held. Busy gates defer without writes; the shared five-second
+inactivity deadline still applies. Only a verified write and successful resume
+publish the new active bounds. A resume failure can leave a valid new record in
+flash while the application fails closed with its old RAM bounds; the GUI reports
+the error and must not promise rollback. Calibration entry is disabled after a
+latched storage fault. Without storage callbacks, imported bounds remain read-only.
+
+Pass `m1_save_ops()` to `m1_live_init` for the hardware save gate. It requires
+fresh, qualified source/battery status, normal power-pin ownership, idle LED
+and local USB/radio transfers, no other DMA, no USB DMA, and stopped SysTick.
+On battery, both the filtered percentage and newest raw battery reading must
+meet `M1_FLASH_MIN_BATTERY_PERCENT` (21%); external power does not require a
+charged battery. Unknown, stale, low or changing supplies defer the save.
+This is a custom conservative policy, not a stock flash threshold or a
+physical brownout guarantee.
+
+Clock and whole-bus qualification run before the gate masks interrupts, so scan
+IRQs can run between the timebase's short read locks. The gate then rechecks
+power and transport readiness under PRIMASK before pausing. A transfer/source
+change during preflight defers without discarding frames or a completed
+calibration candidate. Once paused, the gate rechecks stopped peripherals,
+all DMA channels, power-pin ownership and the retained source before granting
+write ownership; an unexpected change at this stage is terminal.
+
+The gate holds PRIMASK across the transaction and pauses only the scanner,
+discarding partial/unread frames and battery samples. The
+[TMR2 timebase](MONSGEEK_M1.md#foreground-timebase) continues counting. End
+checks elapsed time against `M1_FLASH_MAX_PAUSE_US` (100 ms), unchanged source,
+retained power/bus ownership and fresh periodic restart, then restores PRIMASK.
+The measured-duration check does not replace bounded SDK waits; stuck-busy
+flash still cannot return from SRAM. Rails, USB identity/endpoints and radio
+state remain intact. A locally completed neutral radio report is **not** a
+host-delivery acknowledgement, but saving does not switch hosts or shut down
+the peer that may still be delivering that report.
+
+The development ELF copies the SRAM writer at reset and bounds its actual
+flash load image below the profile slots. Runtime power/transport recovery,
+profile RESET and installation support remain unfinished. The save
+gate audit runs actual scanner/time/battery/LED HALs with scripted transport
+readiness and electrical inputs. Foreground audits script profile I/O and the
+gate; the separate backend audit runs the actual SDK against modeled flash
+effects. None proves physical supply adequacy or persistence.
+
+Normal M1 reset leaves the factory IAP flag blank and restores the application
+journal. Only explicit updater entry arms that flag and causes the factory loader
+to erase the application/custom slots. This cold-boot/update transition has
+compiled offline coverage, not physical qualification; see the
+[M1 recovery contract](DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
 
 ## Reset, flashing and telemetry
 
@@ -105,18 +255,28 @@ a fresh valid scan. Its ACK confirms erase, not the neutral gate. Neither
 path touches Razer data. Recover deleted calibration by recalibrating or using
 a private backup.
 
-GUI offsets 1144…1147 report valid/pending/fault flags, slot and low 16 bits of
-whole-profile generation; 1136/1140 retain calibration generation/error.
-See [telemetry](TELEMETRY.md). GUI flashing preserves compatible records by default; confirmed Fn+R
-explicitly clears them. Stock firmware may
-reclaim this custom tail space.
+MTG4 header offsets 46/47 report valid/pending/fault flags and slot; offset 72
+reports the full 32-bit profile generation, and 64/68 calibration generation/error.
+See [telemetry](TELEMETRY.md). Huntsman GUI flashing preserves compatible records
+by default; confirmed Fn+R explicitly clears them. M1 factory-IAP flashing
+always erases both custom slots. Confirmed M1 Fn+R or `cfg clean` erases exactly
+those two pages and returns to defaults with the factory electrical bounds; it
+cannot reach stock settings, stock calibration or the bootloader. Stock firmware
+may reclaim custom application-tail space.
 
 ## Validation
 
 Native tests cover all layouts, packed fields, unchanged-state wear,
 neutral debounce, settings/calibration preservation, corruption, controller
-faults and all 512 byte-cut points in an inactive-page write.
-Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity, reboot,
+faults and all 512 byte-cut points in an inactive-page write. The same native
+suite tests all 82 M1 sensors and all 2048 byte-cut points, including calibration
+and mappings, wrong-format records with valid CRCs, and board-specific error
+handling. A separate M1 ARM audit runs the real journal, SRAM transaction and
+official SDK with modeled controller effects: exact slot targets, IRQ/vector
+restoration, denied contexts/geometry/activity, blank/program verification,
+fault latching, reboot fallback and stuck-busy fail-stop. It does not save on a
+device or qualify physical power-loss behavior.
+Compiled ARM tests drive Fn+Enter/Fn+J, MIDI SysEx thresholds/velocity/keycodes, reboot,
 blank-ECC initialization, corrupt-page recovery and unsupported-schema rejection.
 The controller model rejects commands outside the tail pages and compares
 erase/program transactions against executed original code, separately

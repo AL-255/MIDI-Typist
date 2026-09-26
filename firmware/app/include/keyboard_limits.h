@@ -10,5 +10,6 @@
 #define MT_LIGHT_FRAME_BYTES (MT_KEY_CAPACITY * 3u)
 #endif
 #define MT_KEY_BITMAP_BYTES ((MT_KEY_CAPACITY + 7u) / 8u)
+#define MT_KEY_BITMAP_WORDS ((MT_KEY_CAPACITY + 31u) / 32u)
 _Static_assert(MT_KEY_CAPACITY > 0 && MT_KEY_CAPACITY < 255, "unsupported key capacity");
 #endif

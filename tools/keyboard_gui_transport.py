@@ -5,13 +5,12 @@ import secrets
 import threading
 import time
 from firmware_defaults import DEFAULTS as D
-from keyboard_gui_model import decode, parse_build
+from keyboard_gui_model import decode, decode_power, decode_bounds, parse_build, MAX_KEYS
+from keyboard_boards import get_board
 from keyboard_capture import KeyDecoder
 from midi_backend import MidiBackend, find_midi_device
 import midi_sysex as sx
 
-USB_VENDOR_ID = 0x1532
-USB_PRODUCT_ID = 0x02b0
 SAMPLE_CAPACITY = D['MIDI_CONTROL_CAPTURE_SAMPLES']
 
 class Connection(threading.Thread):
@@ -22,16 +21,21 @@ class Connection(threading.Thread):
         self.session = secrets.randbelow(0xffffffff)+1
         self.sequence = 0
         self.stop_event = threading.Event()
-        self.requests = queue.Queue(maxsize=128)
+        # A profile queues thresholds plus MIDI and keyboard maps for every
+        # protocol-supported sensor, with disable/enable around the batch.
+        self.requests = queue.Queue(maxsize=3*MAX_KEYS+2)
         self.events = queue.Queue(maxsize=128)
         self.lock = threading.Lock()
         self.latest = None
+        self.latest_power = None
+        self.latest_bounds = None
         self.build = None        # build identity from `version`, e.g. v0.1.0-RZ03-0499
         self.build_target = None # its board target, e.g. RZ03-0499
         self.connected = False
+        self.release_error = None  # a stopped thread alone does not prove port release
         self.next_id = secrets.randbelow(0xfffffffe)+1
         self.stream_requests = deque(maxlen=1)  # latest requested display mode wins
-        self.stream_mode = 'gui'  # 'gui' (HKG telemetry) or 'key' (HKL1 8 ksps)
+        self.stream_mode = 'gui'  # 'gui' (MTG4 telemetry) or 'key' (HKL1 samples)
         self.key_threshold = self.key_sensor = self.key_session = None
         self.samples = deque(maxlen=SAMPLE_CAPACITY)
         self.samples_lock = threading.Lock()
@@ -44,7 +48,7 @@ class Connection(threading.Thread):
         self.requests.put_nowait((action,args))
 
     def stream_key(self,threshold,sensor):
-        """Switch the device to the 8 ksps per-key stream for one sensor."""
+        """Switch the device to the full-rate per-key stream for one sensor."""
         self.stream_requests.append(('key',threshold,sensor,secrets.randbelow(0xfffffffe)+1))
 
     def stream_gui(self):
@@ -72,6 +76,28 @@ class Connection(threading.Thread):
     def snapshot(self):
         with self.lock: return self.latest
 
+    def power_snapshot(self):
+        with self.lock: return self.latest_power
+
+    def bounds_snapshot(self):
+        with self.lock: return self.latest_bounds
+
+    def read_bounds(self):
+        payload=self.command('calibration read')
+        if self.stop_event.is_set():return
+        bounds=decode_bounds(payload)
+        if bounds.count and (bounds.profile,bounds.count) not in get_board(self.build_target).wire_layouts:
+            raise ValueError('Calibration readback contradicts the identified board')
+        with self.lock: self.latest_bounds=(time.monotonic(),bounds)
+
+    def read_power(self):
+        payload=self.command('power status')
+        # Disconnect may cancel the ACK wait. That is not a malformed device
+        # reply and must not publish a new reading or report a protocol error.
+        if self.stop_event.is_set():return
+        power=decode_power(payload)
+        with self.lock: self.latest_power=(time.monotonic(),power)
+
     def stop(self): self.stop_event.set()
 
     def confirm(self, snapshot, action, args):
@@ -88,6 +114,10 @@ class Connection(threading.Thread):
             index,note = args
             if index >= snapshot.count or snapshot.midi_mapping[index] != note:
                 raise ValueError('MIDI mapping readback differs from requested values')
+        if action == 'key':
+            index,usage = args
+            if index >= snapshot.count or snapshot.keyboard_mapping[index] != usage:
+                raise ValueError('Keyboard mapping readback differs from requested value')
         # `clean` is confirmed by its ACK alone: the device
         # verified the erase by reading both pages back blank
         # before answering result 1.
@@ -139,6 +169,8 @@ class Connection(threading.Thread):
             kind, _, _, payload = message
             if kind == sx.SNAPSHOT and self.stream_mode == 'gui':
                 snapshot = decode(payload)
+                if not self.build_target or not get_board(self.build_target).validates_wire(snapshot):
+                    raise ValueError('Snapshot layout/report/rate contradicts the identified board')
                 self.last_rx = time.monotonic()
                 with self.lock: self.latest = self.last_rx, snapshot
             elif kind == sx.SAMPLES and self.stream_mode == 'key':
@@ -149,7 +181,10 @@ class Connection(threading.Thread):
                         if self.key_decoder.key != self.key_sensor: raise ValueError('Unexpected capture sensor')
                         self.push_sample(raw)
             elif kind == sx.LOG:
-                self.notify(payload.decode('ascii', 'replace').strip())
+                message_text=payload.decode('ascii', 'replace').strip()
+                if message_text.startswith(('Boot failed: ', 'Runtime failed: ')):
+                    raise RuntimeError(message_text+'; configuration is unavailable. The control USB link remains available for recovery.')
+                self.notify(message_text)
             elif kind == sx.ERROR:
                 raise ValueError('Device control error: '+payload.decode('ascii', 'replace'))
         if time.monotonic()-self.last_rx > D['MIDI_CONTROL_LEASE_MS']/1000:
@@ -169,6 +204,7 @@ class Connection(threading.Thread):
                     found = parse_build(message[3]+b'\n')
                     if not found: raise ValueError('Invalid device build identity')
                     self.build, self.build_target = found[0], found[2]
+                    get_board(self.build_target)  # reject an unknown board before configuration commands
                     self.notify(f'Device build {self.build}')
                     break
                 if time.monotonic() >= deadline: raise TimeoutError('MIDI SysEx handshake timed out')
@@ -176,6 +212,8 @@ class Connection(threading.Thread):
             self.heartbeat = self.last_rx = time.monotonic()
             self.command('stream gui')
             self.command(f'cfg get {self.next_id}', 'get')
+            power_supported=get_board(self.build_target).power_status
+            power_at=bounds_at=0.0
             while not self.stop_event.is_set():
                 if self.stream_requests and (self.stream_mode == 'key' or self.requests.empty()):
                     request = self.stream_requests.popleft()
@@ -192,7 +230,7 @@ class Connection(threading.Thread):
                         with self.samples_lock:
                             self.key_threshold, self.key_sensor, self.key_session = threshold, sensor, session
                             self.samples.clear()
-                        self.key_decoder = KeyDecoder(threshold, session)
+                        self.key_decoder = KeyDecoder(threshold, session, self.snapshot()[1].count)
                         self.command(f'stream key {threshold} {session} {sensor}')
                     else:
                         self.stream_mode = 'gui'
@@ -201,7 +239,11 @@ class Connection(threading.Thread):
                         self.command('stream gui')
                 elif self.stream_mode == 'gui':
                     try: action, args = self.requests.get_nowait()
-                    except queue.Empty: pass
+                    except queue.Empty:
+                        if time.monotonic()-bounds_at>=D['GUI_BOUNDS_POLL_MS']/1000:
+                            self.read_bounds();bounds_at=time.monotonic()
+                        elif power_supported and time.monotonic()-power_at>=D['GUI_POWER_POLL_MS']/1000:
+                            self.read_power();power_at=time.monotonic()
                     else:
                         self.next_id = self.next_id % 0xffffffff+1
                         self.command('cfg '+action+' '+str(self.next_id)+''.join(' '+str(v) for v in args), action, args)
@@ -213,6 +255,10 @@ class Connection(threading.Thread):
             if self.backend is not None:
                 try: self.backend.send(sx.encode(sx.CLOSE, self.session))
                 except Exception: pass
-                self.backend.close()
+                try:self.backend.close()
+                except Exception as error:
+                    self.release_error=str(error)
+                    self.notify(f'ERROR: MIDI port release failed: {error}')
             if self.stop_event.is_set():
-                self.notify('Disconnected; keyboard operation does not depend on the GUI')
+                if not self.release_error:
+                    self.notify('Disconnected; keyboard operation does not depend on the GUI')

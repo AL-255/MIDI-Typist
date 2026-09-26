@@ -21,10 +21,10 @@ static bool load(uint8_t profile,uint8_t count,uint16_t *lower,uint16_t *upper)
     if(!saved || profile!=SYN_PROFILE || count!=SYN_COUNT) return false;
     memcpy(lower,saved_lo,sizeof(saved_lo)); memcpy(upper,saved_hi,sizeof(saved_hi)); return true;
 }
-static bool save(const keyboard_calibration_t *s)
+static keyboard_save_result_t save(const keyboard_calibration_t *s)
 {
     memcpy(saved_lo,s->lower,sizeof(saved_lo)); memcpy(saved_hi,s->upper,sizeof(saved_hi));
-    saved=true; puts("CALIBRATION SAVED (simulated RAM storage)"); return true;
+    saved=true; puts("CALIBRATION SAVED (simulated RAM storage)"); return KEYBOARD_SAVE_COMPLETE;
 }
 static bool clear(void) { saved=false; return true; }
 static bool send_keyboard(const keyboard_report_t *s)

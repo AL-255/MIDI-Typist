@@ -3,13 +3,18 @@
 #include "keyboard_scan.h"
 #include "travel_lighting.h"
 #include <stddef.h>
+static const uint8_t keymap[256]={
+#define KEYMAP(key,usage) [key]=usage,
+#include "../config/keymap.def"
+#undef KEYMAP
+};
 
 const keyboard_layout_t *keyboard_layout(uint8_t profile)
 {
     static const keyboard_layout_t layouts[]={
-        {61,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true},
-        {62,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true},
-        {65,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,true}
+        {61,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,keymap,NULL},
+        {62,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,keymap,NULL},
+        {65,KEY_ID_FN,KEY_ID_TAB,KEY_ID_CAPS,KEY_ID_ESC,HUNTSMAN_ASSUMED_SCAN_HZ,g_actuation_levels,g_rapid_levels,keymap,NULL}
     };
     return profile>=1 && profile<=3 ? &layouts[profile-1] : NULL;
 }

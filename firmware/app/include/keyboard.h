@@ -24,5 +24,8 @@ typedef struct
 void keyboard_report_clear(keyboard_report_t *report);
 bool keyboard_report_set_usage(keyboard_report_t *report, uint8_t usage, bool pressed);
 bool keyboard_report_get_usage(const keyboard_report_t *report, uint8_t usage);
+static inline bool keyboard_keycode_valid(unsigned usage)
+{ return !usage || (usage>=KEYBOARD_NKRO_USAGE_MIN && usage<=KEYBOARD_NKRO_USAGE_MAX) ||
+         (usage>=0xe0u && usage<=0xe7u); }
 
 #endif

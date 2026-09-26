@@ -240,11 +240,15 @@ usb_status_t __wrap_USB_DeviceNotificationTrigger(void *handle, void *message)
 
 void usb_composite_init(void)
 {
+    static const midi_control_port_t control_port = {
+        board_millis, usb_composite_ready, usb_midi_write_events,
+        DisableGlobalIRQ, EnableGlobalIRQ
+    };
     usb_errata_init();
     board_usb_clock_init();
     memset(&s_keyboard_report, 0, sizeof(s_keyboard_report));
     memset(s_updater_response, 0, sizeof(s_updater_response));
-    midi_control_init();
+    (void)midi_control_init(&control_port);
     if (USB_DeviceClassInit(USB_CONTROLLER_ID, &s_config_list, &s_device) != kStatus_USB_Success)
     {
         s_device = NULL;

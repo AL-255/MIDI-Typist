@@ -13,9 +13,11 @@ static void clear_voices(keyboard_midi_t *s)
 {
     memset(s->active, 255, sizeof(s->active));
     memset(s->pending, 255, sizeof(s->pending));
+    memset(s->pending_mask, 0, sizeof(s->pending_mask));
     memset(s->current, 255, sizeof(s->current));
     memset(s->released, 0, sizeof(s->released));
     memset(s->previous, 0, sizeof(s->previous));
+    memset(s->note_work,0,sizeof(s->note_work));
     memset(s->refs, 0, sizeof(s->refs));
     memset(s->pressure, 0, sizeof(s->pressure));
     memset(s->sent_pressure, 255, sizeof(s->sent_pressure));
@@ -40,11 +42,16 @@ void keyboard_midi_init(keyboard_midi_t *s)
 
 void keyboard_midi_abort(keyboard_midi_t *s)
 {
+    bool cleanup=s->mode || s->host_dirty || s->panic;
     clear_voices(s);
     /* Sustain off first, individual Note Offs, All Sound Off/All Notes Off.
      * Also covers an IN packet already accepted before reset/mode change.
      * Never restart an in-progress sweep on repeated invalid frames. */
-    if (!s->panic) s->panic = MIDI_CLEANUP_EVENTS;
+    /* Keyboard-only menus/calibration have no MIDI host state to release.
+     * Sending a needless burst can wedge flash handoff when no MIDI reader
+     * has opened the USB endpoint. Never drop an existing cleanup or actual
+     * performance state, including a packet already accepted by the port. */
+    if (cleanup && !s->panic) s->panic = MIDI_CLEANUP_EVENTS;
 }
 
 void keyboard_midi_guard(keyboard_midi_t *s, keyboard_raw_t *raw)
@@ -169,6 +176,7 @@ static void layout(keyboard_midi_t *s, const keyboard_raw_t *raw)
     memset(s->mapping, 255, sizeof(s->mapping));
     memset(s->role, 0, sizeof(s->role));
     memset(s->lower_rows,0,sizeof(s->lower_rows));
+    s->control_count=0;
     for (unsigned i = 0; i < raw->count; ++i) {
         const uint8_t key = keyboard_key_for_sensor(raw->profile, i);
         if (keyboard_lower_group(raw->profile,key)) s->lower_rows[i/8u]|=1u<<(i%8u);
@@ -185,6 +193,8 @@ static void layout(keyboard_midi_t *s, const keyboard_raw_t *raw)
             if (a->arg0 == 2) s->mapping[i] = DEFAULT_MIDI_LEFT_SHIFT_NOTE; /* left Shift: C4 in MIDI only */
             else if (!a->arg0) s->mapping[i] = default_note(a->arg1);
         }
+        if(s->role[i]==ROLE_FN || s->role[i]>=ROLE_DOWN)
+            s->controls[s->control_count++]=(uint8_t)i;
     }
 }
 
@@ -233,20 +243,22 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
     keyboard_midi_guard(s, raw);
     if (!raw->armed) return;
     s->was_armed=true;
+    if (!s->mode || s->panic) {
+        /* Keep edge history while normal keyboard mode/cleanup is active,
+         * without searching every key for MIDI-only controls. Cleanup itself
+         * remains owned by service(), and mode changes still invalidate input. */
+        memcpy(s->previous, raw->down, sizeof(s->previous));
+        return;
+    }
     bool fn = false;
     int shift = 0;
-    for (unsigned i = 0; i < raw->count; ++i) {
+    for (unsigned c = 0; c < s->control_count; ++c) {
+        const unsigned i=s->controls[c];
         if (s->role[i] == ROLE_FN && raw->down[i]) fn = true;
         if (raw->down[i] && !s->previous[i]) {
             if (s->role[i] == ROLE_UP) ++shift;
             if (s->role[i] == ROLE_DOWN) --shift;
         }
-    }
-    if (s->panic) {
-        /* A host that does not consume MIDI must not trap the mode chord or
-         * block normal HID. Presses during cleanup require a fresh edge. */
-        memcpy(s->previous, raw->down, sizeof(s->previous));
-        return;
     }
     if (s->mode && !fn && shift) {
         int octave = s->octave + shift;
@@ -254,9 +266,11 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
     }
     if (s->mode) {
         bool sustain=false;
-        for(unsigned i=0;i<raw->count;++i)
+        for(unsigned c=0;c<s->control_count;++c) {
+            const unsigned i=s->controls[c];
             if(s->role[i]==ROLE_SUSTAIN && raw->down[i] && !fn &&
                (s->sustain || !s->previous[i])) sustain=true;
+        }
         if(sustain!=s->sustain) {
             /* Ordered with note edges, never coalesced like analog wheels.
              * Same-scan pedal changes precede Note Off/On processing. */
@@ -265,7 +279,10 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
         }
         int bend=0;
         s->modulation=0;
-        if (!fn) for (unsigned i=0; i<raw->count; ++i) {
+        if (!fn) for (unsigned c=0; c<s->control_count; ++c) {
+            const unsigned i=s->controls[c];
+            if(s->role[i]!=ROLE_MODULATION && s->role[i]!=ROLE_BEND_DOWN &&
+               s->role[i]!=ROLE_BEND_UP)continue;
             unsigned depth=wheel_depth(raw->raw[i]);
             if (s->role[i]==ROLE_MODULATION) s->modulation=(depth*127u+(MIDI_WHEEL_SPAN_RAW/2u))/MIDI_WHEEL_SPAN_RAW;
             if (s->role[i]==ROLE_BEND_DOWN) bend-=(int)depth;
@@ -276,9 +293,18 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
         s->bend=bend<0 ? 8192-((-bend*8192+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW) :
                          8192+((bend*8191+(MIDI_WHEEL_SPAN_RAW/2))/MIDI_WHEEL_SPAN_RAW);
         memset(s->pressure, 0, sizeof(s->pressure));
-        for (unsigned i = 0; i < raw->count; ++i) {
+        for(unsigned edge=0;edge<raw->changed_count;++edge) {
+            unsigned i=raw->changed_keys[edge];
+            s->note_work[i/32u]|=1u<<(i%32u);
+        }
+        for(unsigned word=0;word<MT_KEY_BITMAP_WORDS;++word) {
+          uint32_t work=s->note_work[word];
+          while(work) {
+            unsigned bit=(unsigned)__builtin_ctz(work);
+            work&=work-1u;
+            unsigned i=word*32u+bit;
             if (s->previous[i] && !raw->down[i]) {
-                if (s->current[i] < 5) s->released[i] |= 1u << s->current[i];
+                if (s->current[i] < MIDI_PENDING_STRIKES) s->released[i] |= 1u << s->current[i];
                 if (s->active[i] != MIDI_UNMAPPED) {
                     if (!note_off(s, s->active[i])) goto overflow;
                     s->active[i] = MIDI_UNMAPPED;
@@ -293,10 +319,7 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
              * that closes without a fit (the triggering sample was already
              * below bottom-out) still releases its notes with the last value,
              * so no press can strand a Note On. */
-            bool any_pending = false;
-            for (unsigned slot = 0; slot < 5u; ++slot)
-                if (s->pending[i][slot] != MIDI_UNMAPPED) { any_pending = true; break; }
-            if (any_pending && !raw->velocity[i].pending) {
+            if (s->pending_mask[i] && !raw->velocity[i].pending) {
                 /* The fit window just closed (a completed fit, or a
                  * triggering sample already below bottom-out): the buffered
                  * notes fire with the current velocity value. */
@@ -304,7 +327,7 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                 unsigned velocity = floor +
                     (unsigned)((127u - floor) * raw->velocity[i].value + 0.5f);
                 if (!velocity) velocity = 1; /* Note On zero means Note Off */
-                for (unsigned slot = 0; slot < 5u; ++slot) {
+                for (unsigned slot = 0; slot < MIDI_PENDING_STRIKES; ++slot) {
                     const uint8_t note = s->pending[i][slot];
                     if (note == MIDI_UNMAPPED) continue;
                     if (!s->refs[note]++ && !enqueue(s, 0x90, note, velocity)) goto overflow;
@@ -315,15 +338,16 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                     if (s->current[i] == slot) s->current[i] = 255;
                     s->pending[i][slot] = MIDI_UNMAPPED;
                 }
+                s->pending_mask[i]=0;
             }
             if (!fn && raw->down[i] && !s->previous[i] && note_enabled(s,i)) {
                 const int shifted = (int)note_mapping(s,i) + (int)s->octave * 12;
                 /* Out-of-range notes are muted, never wrapped or clamped. */
                 if (shifted >= 0 && shifted <= 127) {
-                    unsigned slot = 5u;
-                    for (unsigned candidate = 0; candidate < 5u; ++candidate)
+                    unsigned slot = MIDI_PENDING_STRIKES;
+                    for (unsigned candidate = 0; candidate < MIDI_PENDING_STRIKES; ++candidate)
                         if (s->pending[i][candidate] == MIDI_UNMAPPED) { slot = candidate; break; }
-                    if (slot == 5u) {
+                    if (slot == MIDI_PENDING_STRIKES) {
                         /* Retriggers can indefinitely postpone the fit. Do
                          * not silently drop a strike when its slots fill. */
                         ++s->errors;
@@ -331,6 +355,7 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                         goto overflow;
                     }
                     s->pending[i][slot] = (uint8_t)shifted;
+                    s->pending_mask[i] |= 1u << slot;
                     s->released[i] &= ~(1u << slot);
                     s->current[i] = slot;
                 }
@@ -340,10 +365,12 @@ void keyboard_midi_frame(keyboard_midi_t *s, keyboard_raw_t *raw,
                 const uint8_t note = s->active[i];
                 if (pressure > s->pressure[note]) s->pressure[note] = pressure;
             }
+            if(!s->pending_mask[i] && s->active[i]==MIDI_UNMAPPED)
+                s->note_work[word]&=~(1u<<bit);
+          }
         }
     }
     memcpy(s->previous, raw->down, sizeof(s->previous));
-    s->phase = (s->phase + 1u) % 5u;
     return;
 overflow:
     keyboard_raw_invalidate(raw);
@@ -361,12 +388,14 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
             if (index==131) s->sent_modulation=0;
             if (index==132) s->sent_bend=8192;
             --s->panic;
+            if(!s->panic)s->host_dirty=false;
         }
         return;
     }
     if (s->count) {
         const uint8_t *p = s->queue[s->head];
         if (send(p[0] >> 4u, p[0], p[1], p[2])) {
+            s->host_dirty=true;
             s->head = (s->head + 1u) % MIDI_QUEUE;
             --s->count;
         }
@@ -380,6 +409,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     if (s->wheel_sweep & 1u) {
         if (s->modulation!=s->sent_modulation) {
             if (!send(11,0xb0,1,s->modulation)) return;
+            s->host_dirty=true;
             s->sent_modulation=s->modulation;
         }
         s->wheel_sweep &= ~1u;
@@ -387,6 +417,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
     if (s->wheel_sweep & 2u) {
         if (s->bend!=s->sent_bend) {
             if (!send(14,0xe0,s->bend & 127u,s->bend>>7u)) return;
+            s->host_dirty=true;
             s->sent_bend=s->bend;
         }
         s->wheel_sweep &= ~2u;
@@ -398,6 +429,7 @@ void keyboard_midi_service(keyboard_midi_t *s, uint32_t now, midi_send_fn send)
         const unsigned note = s->pressure_cursor;
         if (s->refs[note] && s->pressure[note] != s->sent_pressure[note]) {
             if (!send(10, 0xa0, note, s->pressure[note])) return;
+            s->host_dirty=true;
             s->sent_pressure[note] = s->pressure[note];
         }
         if (++s->pressure_cursor == 128) s->pressure_sweep = false;

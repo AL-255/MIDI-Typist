@@ -22,6 +22,8 @@ typedef struct {
     bool press_page;
     bool brightness_session;
     bool reset_confirmation, confirmation_ready;
+    bool midi_blocked; /* board transport policy; USB-only ports leave false */
+    uint16_t disabled_options; /* bit (MENU_* - 1): unsupported board actions */
     keyboard_text_t text;
 } keyboard_menu_t;
 
@@ -39,6 +41,8 @@ uint8_t keyboard_menu_brightness(const keyboard_menu_t *s);
  * echoed back so the page opens on the nearest selection. */
 uint8_t keyboard_menu_control(uint8_t profile, uint8_t key);
 void keyboard_menu_cancel(keyboard_menu_t *s);
+/* Menu-owned input must be observed without rearming performance each scan. */
+bool keyboard_menu_observing(const keyboard_menu_t *s);
 bool keyboard_menu_thresholds(keyboard_raw_t *raw, const uint16_t *lower,
                               const uint16_t *upper);
 #endif

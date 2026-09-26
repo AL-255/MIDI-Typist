@@ -18,8 +18,9 @@ def main():
     # leaking into the artifact. Only this temporary directory is removed.
     with tempfile.TemporaryDirectory(prefix="sphinx-source-", dir=output.parent) as directory:
         stage = Path(directory)
-        sources = [ROOT / name for name in ("README.md", "USER_MANUAL.md", "AGENTS.md")]
+        sources = [ROOT / name for name in ("README.md", "USER_MANUAL.md", "AGENTS.md", "WIP_Sep22.md")]
         sources += sorted((ROOT / "docs").glob("*.md"))
+        sources += sorted((ROOT / "docs/sprites").glob("*.png"))
         for source in sources:
             if source.is_symlink():
                 raise ValueError(f"Documentation source must not be a symlink: {source}")

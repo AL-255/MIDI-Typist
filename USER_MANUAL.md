@@ -2,6 +2,10 @@
 
 For the Huntsman V3 Pro Mini with the complete `huntsman` firmware.
 The keyboard works without the GUI. It sends keyboard/MIDI data, not audio.
+For the experimental MonsGeek M1 V5 TMR, use the
+[M1 board guide](docs/MONSGEEK_M1.md) for its 75% layout, transport controls,
+volume/mute knob and current limitations. Huntsman-specific shortcuts and
+power-cycle persistence below must not be assumed for that backend.
 
 ## Contents
 
@@ -194,9 +198,19 @@ Release all → 0.5 s settle → blue keys → hold 1 s → green
 ```
 
 Moving or releasing an unfinished key restarts only its hold. Five seconds
-without progress, GUI cancellation or scan/USB failure discards the staged
+without progress while collecting, GUI cancellation or scan/USB failure discards the staged
 run; previous calibration remains. No partial calibration is saved.
+Once every key is registered, readings remain staged while waiting for safe
+flash access; no more key presses are required. Wait for the GUI's saved
+confirmation before unplugging. Green keys alone mean registered, not saved.
 Wait for completion and saved generation, not just the start acknowledgment.
+
+To inspect the result, select a key in the GUI. Compare **Sensor input** with
+its **Released bound** while untouched and its **Bottom-out bound** while fully
+held down. The separate **Control reading** may be normalized; 4096/1 there does
+not tell you the sensor's actual range. **Export all sensor readings and bounds…**
+captures the complete keyboard in a diagnostic JSON report. This feature is
+shared across platforms; the report is not an importable calibration backup.
 
 New bounds affect lighting and aftertouch. They do not prove calibrated force,
 millimeters or velocity. See [calibration design](docs/CALIBRATION.md).
@@ -351,7 +365,9 @@ build-gui-venv/bin/python tools/keyboard_gui.py --demo
 Your user needs access to ALSA MIDI. Select the dedicated control port in the
 GUI; use the first, performance port in your DAW. Only one GUI should connect.
 Linux may truncate the control name to `Huntsman V3 Pro Mini MIDI MIDI-`;
-the GUI recognizes cable 1 automatically. No serial port is exposed. The GUI supports ANSI editing only.
+the GUI recognizes cable 1 automatically. No serial port is exposed. Live editing
+supports Huntsman ANSI; the [M1 layout preview](docs/MONSGEEK_M1.md#board-and-gui-layout)
+does not yet support configuration of connected M1 factory firmware.
 
 ### Read the screen
 
@@ -359,8 +375,9 @@ Connect, then select a drawn key. Tiles show live raw values, press state and
 latest velocity. The panel shows thresholds, note/control role, waveform,
 calibration progress and settings-save status. Stale telemetry disables edits.
 A displayed HID submission is not proof of host receipt. If the window is
-short, scroll the settings panel on the left: its fields, buttons and the
-shortcut reference stay reachable instead of being cut off.
+short, use the page scrollbar to reach the settings and footer. The settings
+panel on the left scrolls independently through its fields, buttons and shortcut
+reference. The mouse wheel scrolls the innermost region under the pointer.
 
 ### Change one key or all keys
 
@@ -368,6 +385,21 @@ Disable keyboard output while tuning if needed. Enter press/release values,
 then **Apply to selected key**, or confirm **Apply thresholds to all keys**.
 The GUI checks command acknowledgment and actual readback. Invalid pairs change
 nothing. Release all keys after an edit; remember to re-enable output.
+
+### Remap a keyboard key
+
+Select a key in the drawing, choose its output from the **Keyboard** dropdown,
+and click **Apply keycode**. Choose **Disabled** to send nothing, or select a
+letter, function/navigation/keypad key or modifier. Uncommon keyboard usages
+are listed by hexadecimal code; the operating system determines their meaning.
+
+Physical labels stay fixed. **Fn and every Fn combination are not remappable**:
+for example, remapping Y still leaves physical Fn+Y as Insert. Keyboard remaps
+do not change MIDI notes, thresholds or calibration. Two keys can share an
+output; it remains held until both are released.
+
+Release all keys after editing and wait for **settings saved**. The keyboard
+then keeps the mapping in its own flash and works without the GUI after unplugging.
 
 ### Assign a MIDI note
 
@@ -377,7 +409,7 @@ Changing a mapping releases held output and waits for neutral.
 
 ### Save and load a host profile
 
-JSON export/import stores thresholds and MIDI assignments, not calibration or
+JSON export/import stores thresholds and keyboard/MIDI assignments, not calibration or
 all menu settings. It is optional: device saves are automatic.
 Import temporarily disables output, checks each edit, then restores output
 on success. It is not atomic; a failed batch may leave confirmed edits applied.

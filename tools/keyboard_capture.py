@@ -8,13 +8,13 @@ BOTTOM_OUT = D['RAW_BOTTOM_OUT']      # velocity window closes below this raw va
 VELOCITY_WINDOW = D['RAW_VELOCITY_WINDOW']   # maximum readbacks per fit, triggering sample included
 
 
-def press_velocity(samples):
+def press_velocity(samples, sample_hz=ASSUMED_SCAN_HZ):
     """Velocity of a closed window, matching the MCU fit.
 
     ``samples`` is the window including the triggering readback: up to ten
     consecutive values, cut before the first sample below BOTTOM_OUT. The
     speed is the total drop divided by the interval count at the assumed
-    8 kHz. Windows longer than five samples additionally discard the single
+    board-declared scan rate. Windows longer than five samples additionally discard the single
     interval furthest from the median (earliest wins ties); host output
     retains fractional counts/s, before the MCU's 0..1 clamp.
     """
@@ -26,7 +26,9 @@ def press_velocity(samples):
         twice_median = ordered[(len(delta)-1)//2] + ordered[len(delta)//2]
         outlier = max(range(len(delta)),key=lambda i:abs(2*delta[i]-twice_median))
         del delta[outlier]
-    return sum(delta) * ASSUMED_SCAN_HZ / len(delta)
+    if not isinstance(sample_hz, int) or sample_hz <= 0:
+        raise ValueError('velocity requires a positive scan rate')
+    return sum(delta) * sample_hz / len(delta)
 
 
 def velocity_window(points):
@@ -53,7 +55,10 @@ class StreamError(Exception):
 
 
 class KeyDecoder:
-    def __init__(self, threshold, session):
+    def __init__(self, threshold, session, count):
+        if not 1 <= count <= 128:
+            raise ValueError('invalid capture sensor count')
+        self.count = count
         self.threshold = threshold
         self.session = session
         self.buffer = bytearray()
@@ -75,7 +80,7 @@ class KeyDecoder:
             if flags & ~7 or threshold != self.threshold:
                 raise StreamError('unexpected HKL1 flags or threshold')
             if flags & 2:
-                raise StreamError('device stream buffer overflow or USB data loss')
+                raise StreamError('device stream buffer overflow, scan loss or USB data loss')
             if flags & 4:
                 raise StreamError('invalid hardware readback or layout change')
             if self.sequence is None:
@@ -83,7 +88,7 @@ class KeyDecoder:
                     raise StreamError('missing session-start report; data already lost')
             elif flags & 1 or seq != (self.sequence + 1) & 0xffffffff:
                 raise StreamError('HKL1 sequence gap, duplicate, or unexpected session restart')
-            if key > 64 or not 1 <= raw <= 4096:
+            if key >= self.count or not 1 <= raw <= 4096:
                 raise StreamError('invalid key index or readback')
             self.sequence = seq
             self.session = session

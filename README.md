@@ -1,17 +1,37 @@
-# MIDI-Typist
+# MIDI-Typist Keyboard Firmware
 
-Portable C11 firmware that turns an analog keyboard into an NKRO keyboard and
-expressive USB-MIDI controller.
+Open-Source Portable C11 firmware that turns analog keyboards into NKRO keyboards + velocity-sensitive USB-MIDI controllers.
+
+[![Release](https://img.shields.io/github/v/release/AL-255/MIDI-Typist?include_prereleases&label=release)](https://github.com/AL-255/MIDI-Typist/releases)
+[![Docs CI](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml)
+[![Documentation](https://img.shields.io/website?url=https%3A%2F%2Fal-255.github.io%2FMIDI-Typist%2F&label=docs)](https://al-255.github.io/MIDI-Typist/)
+
+| Model | Status | Analog? | Features |
+| ---  | --- | --- | --- |
+| [![Huntsman V3 Pro Mini](docs/sprites/RZ03-0499.png)](USER_MANUAL.md) | Stable | ✅ Optical | NKRO; Per-Key RGB |
+| [![MonsGeek M1 V5 TMR ](docs/sprites/MG-M1V5TMR.png)](docs/MONSGEEK_M1.md) | Experimental | ✅ TMR | NKRO; Per-Key RGB; Tri-Mode (USB, Bluetooth, 2.4 GHz) |
+
+Each model has its own firmware image. The SDK-free 104-key simulator is a
+development port, not a supported physical keyboard.
 
 [Documentation website](https://al-255.github.io/MIDI-Typist/) ·
 [User manual](USER_MANUAL.md) · [Build guide](docs/BUILDING.md) ·
 [Porting guide](docs/PORTING.md)
 
-The supported physical port is the **Razer Huntsman V3 Pro Mini (LPC5528)**.
-It uses official NXP MCUXpresso USB/peripheral drivers and retains the existing
-bootloader and computer-initiated updater. A synthetic 104-key desktop port
-demonstrates the shared application without NXP dependencies. Other hardware
-requires a board port, not this binary.
+The Huntsman port uses official NXP MCUXpresso USB/peripheral drivers and
+retains its bootloader and computer-initiated updater. Other hardware needs a
+board port, not the Huntsman binary.
+
+The [MonsGeek M1 V5 TMR backend](docs/MONSGEEK_M1.md) provides official-SDK
+scan/lighting/radio/battery/power HAL components, an 82-key application library, offline-tested
+transport/power policies, an experimental application image and a matching GUI preview.
+Application flashing, recovery and live 82-key USB telemetry are hardware-checked.
+Startup uses provisional travel bounds when factory records cannot be imported.
+Released-key acquisition is hardware-checked at 8 kHz with GUI telemetry active.
+Pressed-key performance and complete wireless/power behavior remain unverified;
+this is not a daily-use port.
+See the [M1 update and recovery limits](docs/DEVICE_FLASHING.md#monsgeek-m1-experimental-conversion).
+Each hardware backend builds separately—not one universal binary.
 
 ## Use the keyboard
 
@@ -43,10 +63,14 @@ build-gui-venv/bin/python tools/keyboard_gui.py          # auto-detect the MIDI 
 build-gui-venv/bin/python tools/keyboard_gui.py --demo   # preview without hardware
 ```
 
-The ANSI GUI edits thresholds/mappings, displays velocities, starts calibration,
+The board-aware GUI edits thresholds/mappings, displays velocities, starts calibration,
 exports host JSON profiles and flashes application images after confirmation.
+It provides per-key keyboard keycode dropdowns with on-device persistence.
+Fn combinations remain fixed; platform defaults live in each board's
+`config/keymap.def`.
 Use the performance MIDI port in your DAW and the separate control port in the GUI.
 Only one GUI session may own control. See [GUI operation](docs/KEYBOARD_GUI.md).
+Preview the M1's 75% layout without hardware with `--demo --board MG-M1V5TMR`.
 
 ## Build from scratch
 

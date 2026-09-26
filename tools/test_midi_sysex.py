@@ -28,10 +28,10 @@ class Tests(unittest.TestCase):
             for length in range(sx.MAX_PAYLOAD+1):
                 payload = rng.randbytes(length)
                 wire = sx.encode(sx.SNAPSHOT,0xfedcba98,0x87654321,payload)
-                output = c.create_string_buffer(1340)
+                output = c.create_string_buffer(sx.MAX_WIRE)
                 size = codec.midi_sysex_encode(sx.SNAPSHOT,0xfedcba98,0x87654321,payload,length,output,len(output))
                 self.assertEqual(output.raw[:size],wire)
-                info = Info(); decoded = c.create_string_buffer(1152)
+                info = Info(); decoded = c.create_string_buffer(sx.MAX_PAYLOAD)
                 self.assertTrue(codec.midi_sysex_decode(wire,len(wire),c.byref(info),decoded,len(decoded)))
                 self.assertEqual((info.kind,info.session,info.sequence,decoded.raw[:info.length]),sx.decode(wire))
                 damaged = bytearray(wire); damaged[-2] ^= 1

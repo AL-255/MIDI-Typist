@@ -7,20 +7,25 @@
 typedef bool (*midi_send_fn)(uint8_t, uint8_t, uint8_t, uint8_t);
 typedef struct {
     uint8_t mapping[RAW_KEY_COUNT], role[RAW_KEY_COUNT], active[RAW_KEY_COUNT], current[RAW_KEY_COUNT], released[RAW_KEY_COUNT];
-    uint8_t pending[RAW_KEY_COUNT][5];
+    uint8_t pending[RAW_KEY_COUNT][MIDI_PENDING_STRIKES];
+    uint8_t pending_mask[RAW_KEY_COUNT]; /* occupied strike slots; zero is the common case */
+    /* Physical controller list built once per layout, including duplicate
+     * roles. Avoid full-keyboard searches for each controller every scan. */
+    uint8_t controls[RAW_KEY_COUNT], control_count;
+    uint32_t note_work[MT_KEY_BITMAP_WORDS]; /* edges, delayed strikes and active voices */
     bool previous[RAW_KEY_COUNT];
     uint8_t refs[128], pressure[128], sent_pressure[128];
     uint8_t queue[MIDI_QUEUE][3];
     uint16_t head, count, panic;
     uint16_t bend, sent_bend;
     uint8_t modulation, sent_modulation, wheel_sweep;
-    uint8_t profile, mode, phase, pressure_cursor;
+    uint8_t profile, mode, pressure_cursor;
     uint8_t lower_rows[MT_KEY_BITMAP_BYTES]; /* board-described group, independent of mapping */
     bool lower_muted, sustain, janko;
     uint8_t velocity_start; /* 1..10: transmitted-velocity start, 1 = 0%, 10 = 100% */
     midi_music_config_t music;
     int8_t octave;
-    bool was_armed, pressure_sweep;
+    bool was_armed, pressure_sweep, host_dirty;
     uint32_t changes, changed_at, errors, pressure_at;
     uint32_t wheel_at;
 } keyboard_midi_t;

@@ -27,4 +27,5 @@ void calibration_tick(keyboard_calibration_t *s, bool healthy, uint32_t now);
 void calibration_finish(keyboard_calibration_t *s, bool success, uint32_t now);
 void calibration_lights(const keyboard_calibration_t *s, uint8_t *rgb, uint32_t now);
 bool calibration_bounds_valid(uint8_t profile, uint8_t count, const uint16_t *lo, const uint16_t *hi);
+unsigned calibration_min_span(uint8_t profile);
 #endif

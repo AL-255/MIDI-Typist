@@ -22,10 +22,30 @@ requires keyboard output enabled and armed; GUI entry also works when disabled.
    are released. Green remains briefly as confirmation. The GUI reports the
    saved generation. Red indicates cancellation, timeout or failure.
 
-Five seconds without progress aborts and discards the staged result. **Cancel
+While collecting keys, five seconds without progress aborts and discards the staged result. **Cancel
 calibration** in the GUI also discards it. Scan/USB failure aborts. Existing
 active calibration remains unchanged on failure; no partial result is saved.
 Configuration edits are rejected while the routine is active.
+The shared save callback can defer while its board's storage gate is busy.
+This retains the complete candidate in the save state without an input timeout;
+all user input is already complete. Active bounds do not change until saved. Cancellation and scan
+validation still apply before each retry. Board storage capabilities and safety
+gates are specified in the [porting guide](PORTING.md).
+
+## Inspect a completed run
+
+The GUI's selected-key panel shows **Sensor input**, **Released bound**,
+**Bottom-out bound**, **Active span** and **Control reading** on every platform.
+These are shared-application readbacks, not factory-page dumps. After calibration
+reports completion and a saved generation, release all keys to check resting
+inputs; hold individual keys fully down to compare them with their saved lower
+bounds. Normalized control readings alone cannot reveal the electrical range.
+
+**Export all sensor readings and bounds…** writes a read-only diagnostic JSON
+report for every key. It is separate from threshold/mapping profiles and cannot
+restore calibration. The default `.device-dump.json` extension is Git-ignored;
+keep real device reports private. Polling pauses during full-rate waveform capture.
+See the [shared readback protocol](TELEMETRY.md#sensor-and-calibration-bounds-calibration-read).
 
 ## Measurement choices
 
@@ -66,23 +86,13 @@ request ID and ACK result (1 accepted, 2 rejected). Start ACK means the routine
 started, **not** that flash was saved. Observe terminal state and generation.
 Cancellation is idempotent. One outstanding request is supported.
 
-Telemetry packets are 1152 bytes, with the following calibration status fields:
+The shared [MTG4 layout](TELEMETRY.md#gui-snapshot-stream-gui) is authoritative
+for wire offsets. Header fields report state, completed count, selected sensor,
+active/saved/supported flags, reason, selected hold time and candidate bounds.
+Generation and storage errors are full 32-bit fields.
 
-| Offset | Little-endian field |
-| --- | --- |
-| 1112–1115 | uint8 state, completed count, selected sensor (255 none), flags |
-| 1116, 1118 | uint16 hold elapsed ms (0–1000), inactivity remaining ms (0–5000) |
-| 1120 | 9-byte completed bitmap, sensor order |
-| 1129 | reason: 0 none, 1 timeout, 2 invalid scan/USB, 3 cancelled, 4 storage |
-| 1130, 1132 | selected candidate upper/lower uint16 endpoints; zero if absent |
-| 1134 | reserved uint16 zero |
-| 1136, 1140 | uint32 saved generation, storage error |
-| 1144, 1145 | uint8 storage flags (valid=1, pending=2, fault=4), slot (0/1/255) |
-| 1146 | uint16 low bits of complete-profile generation |
-| 1148 | unchanged uint32 checksum of preceding uint16 words |
-
-Telemetry additionally uses bit 3 (value 8) of each per-key state byte at 967+i
-to indicate an active calibration hold. Velocity bits 0–2 retain their meaning.
+Each sensor record's state byte carries calibration hold (bit 3) and completion
+(bit 5), allowing all keys on any supported board to be represented.
 This bit is clear for completed keys and outside collection. The GUI colors
 every active hold amber and displays their count. The selected-sensor/elapsed
 fields show one representative hold (lowest sensor index), not a shared timer.

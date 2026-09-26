@@ -14,6 +14,9 @@ from flash_models import ConnectedDevice, adapters
 
 class FlashTab(ttk.Frame):
     MODES = {'custom':'MIDI-TYPIST', 'razer':'RAZER FIRMWARE',
+             'custom_candidate':'CUSTOM FIRMWARE · BUILD NOT VERIFIED',
+             'candidate':'MODEL NOT VERIFIED', 'factory':'FACTORY FIRMWARE · ID VERIFIED',
+             'unverified_bootloader':'SHARED BOOTLOADER · MODEL UNKNOWN',
              'bootloader':'BOOTLOADER · READY TO RECOVER', 'unknown':'UNRECOGNIZED APPLICATION'}
 
     def _font(self, size=None, weight='normal', mono=False):
@@ -120,7 +123,7 @@ class FlashTab(ttk.Frame):
         for widget in (self.refresh_button,self.browse_button,self.entry,self.confirm_check,*self.action_widgets):
             widget.configure(state='disabled' if self.busy else 'normal')
         self.model_picker.configure(state='disabled' if self.busy else 'readonly')
-        self.inspect_button.configure(state='normal' if self.device and self.device.mode in ('custom','razer') and not self.busy and not self.app.demo else 'disabled')
+        self.inspect_button.configure(state='normal' if self.device and self.device.mode in self.adapter.inspection_modes and not self.busy and not self.app.demo else 'disabled')
         self.validate_button.configure(state='normal' if self.option and self.path.get().strip() and not self.busy else 'disabled')
         ready=bool(self.device and self.option and self.image and self.confirm_model.get() and not self.busy and not self.app.demo)
         self.flash_button.configure(state='normal' if ready else 'disabled')
@@ -170,7 +173,7 @@ class FlashTab(ttk.Frame):
     def choose_action(self):
         option=self.option
         self.option_note.set(option.description if option else 'No safe flashing action is available.')
-        self.path.set(self.paths.get(option.destination,self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
+        self.path.set(self.paths.get((self.adapter.id, option.destination),self.adapter.default_image if option and option.destination=='custom' else '') if option else '')
         self.safety.set(self.adapter.safety)
         self.sync()
 
@@ -190,7 +193,20 @@ class FlashTab(ttk.Frame):
 
     def inspect(self):
         if self.busy or self.device is None or self.app.demo:return
+        if self.device.mode in getattr(self.adapter,'control_inspection_modes',()):
+            if not self.close_configuration():return
         self.launch_worker('inspect')
+
+    def close_configuration(self):
+        if self.app.connection and self.app.connection.is_alive():
+            self.app.connection.stop();self.app.connection.join(1.5)
+            if self.app.connection.is_alive():
+                self.status.set('Configuration connection did not close; no device operation started.')
+                return False
+        if getattr(self.app.connection,'release_error',None):
+            self.status.set('MIDI port release failed; no device operation started.')
+            return False
+        return True
 
     def flash(self):
         if self.busy or self.device is None or self.image is None or not self.option or not self.confirm_model.get() or self.app.demo:return
@@ -200,10 +216,7 @@ class FlashTab(ttk.Frame):
             f'USB {device.usb_id} at {device.location}\nReported serial: {device.serial}\n\n'
             f'{image.path}\n{len(image.data):,} bytes\nSHA-256: {image.digest}\n\n'
             f'{self.adapter.safety}\n\nKeep the device connected until completion. Flash now?'):return
-        if self.app.connection and self.app.connection.is_alive():
-            self.app.connection.stop();self.app.connection.join(1.5)
-            if self.app.connection.is_alive():
-                self.status.set('Configuration connection did not close; nothing was flashed.');return
+        if not self.close_configuration():return
         self.launch_worker('flash',image,option)
 
     def launch_worker(self,operation,image=None,option=None):
@@ -240,7 +253,10 @@ class FlashTab(ttk.Frame):
             if kind=='discovery':
                 self.busy=False
                 if len(payload)==1:
-                    self.show_device(payload[0]);self.status.set('Device identified. Select a destination and validate an image.')
+                    self.show_device(payload[0])
+                    self.status.set('Device identified. Select a destination and validate an image.'
+                                    if self.adapter.actions(payload[0]) else
+                                    'No flashing action available. Read firmware details when supported.')
                 else:
                     self.device=None;self.badge.set('NO DEVICE' if not payload else 'MULTIPLE DEVICES')
                     for value in self.identity.values():value.set('—')
@@ -250,15 +266,17 @@ class FlashTab(ttk.Frame):
             elif kind=='image':
                 self.busy=False;epoch,image=payload
                 if epoch==self.epoch:
-                    self.image=image;self.paths[image.destination]=image.path
+                    self.image=image;self.paths[(self.adapter.id,image.destination)]=image.path
                     self.image_info.set(f'{len(image.data):,} bytes · {image.destination.upper()}\nSHA-256\n{image.digest}\n\n{image.description}')
                     self.status.set('Image validated. Confirm the model, then review the flash plan.')
             elif kind=='device':
                 device=ConnectedDevice(**payload)
-                if device.mode=='custom' and self.identity['Firmware'].get().startswith('v'):
+                if (device.mode=='custom' and not device.version.startswith('v') and
+                        self.identity['Firmware'].get().startswith('v')):
                     from dataclasses import replace
                     device=replace(device,version=self.identity['Firmware'].get())
-                self.show_device(device);self.status.set('Device information read. No firmware was written.')
+                self.show_device(device);self.set_options()
+                self.status.set('Device information read. No firmware was written.')
             elif kind=='progress':
                 done,total=payload;self.progress.configure(maximum=total or 1,value=done)
                 self.status.set(f'Programming application · {done:,} / {total:,} bytes · {done*100//(total or 1)}%')
@@ -267,7 +285,7 @@ class FlashTab(ttk.Frame):
                 self.refresh_after_exit=True
                 self.progress.configure(value=self.progress['maximum']);self.invalidate_image()
                 self.device=None;self.set_options();self.badge.set('FLASH COMPLETE')
-                self.status.set('Verified application return. Refresh to read the connected device, then reconnect configuration.')
+                self.status.set('Application transfer complete. See the log for runtime verification; refresh device information before reconnecting configuration.')
                 self.append_log('SUCCESS · application SHA-256 '+str(payload))
             elif kind=='error':
                 self.busy=self.process is not None;self.status.set(str(payload));self.append_log('ERROR · '+str(payload))

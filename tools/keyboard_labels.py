@@ -2,7 +2,7 @@
 from pathlib import Path
 import re
 
-def sensor_labels():
+def sensor_labels(physical_ids=False):
     # Reuse the firmware's production-derived tables, not a guessed scan order.
     source = (Path(__file__).resolve().parent.parent / 'firmware/boards/huntsman_v3_pro_mini/src/keyboard_reference_tables.c').read_text()
 
@@ -47,7 +47,7 @@ def sensor_labels():
                 label = None
             if labels[sensor] is not None:
                 raise ValueError('duplicate recovered sensor mapping')
-            labels[sensor] = label or f'?{key:02X}'
+            labels[sensor] = key if physical_ids else label or f'?{key:02X}'
         if any(label is None for label in labels):
             raise ValueError('incomplete recovered sensor mapping')
         layouts[count] = labels

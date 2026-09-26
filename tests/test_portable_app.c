@@ -5,6 +5,7 @@
 #include "keyboard_calibration.h"
 #include "keyboard_sample.h"
 #include "keyboard_layout.h"
+#include "keyboard_telemetry.h"
 #include "synthetic_board.h"
 #include <assert.h>
 #include <math.h>
@@ -21,6 +22,7 @@ static uint8_t rgb[LIGHTING_FRAME_SIZE],packets[1024][4];
 static unsigned logged;
 static uint32_t now;
 static unsigned saved,loaded,resets;
+static keyboard_save_result_t save_result;
 static bool refuse_output;
 static keyboard_report_t hid;
 static bool load_bounds(uint8_t profile,uint8_t count,uint16_t *lower,uint16_t *upper)
@@ -28,10 +30,10 @@ static bool load_bounds(uint8_t profile,uint8_t count,uint16_t *lower,uint16_t *
     assert(((profile==SYN_PROFILE && count==SYN_COUNT) || (profile==43 && count==7)) && lower && upper);
     ++loaded; return false;
 }
-static bool save_bounds(const keyboard_calibration_t *cal)
+static keyboard_save_result_t save_bounds(const keyboard_calibration_t *cal)
 {
     assert(cal->completed==SYN_COUNT && cal->lower[103]==1000);
-    ++saved; return true;
+    ++saved; return save_result;
 }
 static bool clear_settings(void) { ++resets; return true; }
 static const keyboard_app_ops_t ops={load_bounds,save_bounds,clear_settings,NULL,NULL};
@@ -55,7 +57,7 @@ static void init(void)
     synthetic_board_init();
     keyboard_app_init(&app,&raw,&midi,&menu,&app_cal,&ops);
     for(unsigned i=0;i<SYN_COUNT;++i) { samples[i]=3900; lo[i]=1000; hi[i]=4000; }
-    saved=loaded=resets=0; refuse_output=false;
+    saved=loaded=resets=0; refuse_output=false; save_result=KEYBOARD_SAVE_COMPLETE;
     logged=now=0; frame(); drain(); logged=0; assert(raw.armed && loaded==1);
 }
 static void chord(unsigned sensor)
@@ -80,6 +82,30 @@ static void normalizer(void)
     assert(value==1);
     assert(keyboard_sample_normalize(0,1000,3000,&value) && value==4096);
     assert(keyboard_sample_normalize(65535,1000,3000,&value) && value==1);
+    uint16_t samples[4],lower[4]={1,1000,2000,3968},upper[4]={4096,1700,3000,4096},out[4];
+    for(unsigned n=1;n<=4096;++n) {
+        for(unsigned i=0;i<4;++i)samples[i]=n;
+        assert(keyboard_samples_travel(samples,lower,upper,4,128,out));
+        for(unsigned i=0;i<4;++i) {
+            assert(keyboard_sample_normalize(n,upper[i],lower[i],&value));
+            assert(out[i]==value);
+        }
+    }
+    assert(!keyboard_samples_travel(NULL,lower,upper,4,128,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,0,128,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,0,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,4096,out));
+    assert(!keyboard_samples_travel(samples,lower,upper,4,129,out));
+    for(unsigned i=0;i<4;++i) {
+        samples[i]=0;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        samples[i]=4097;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        samples[i]=4096;
+        uint16_t saved=lower[i];lower[i]=0;
+        assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));lower[i]=saved;
+        saved=upper[i];upper[i]=lower[i];
+        assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));
+        upper[i]=4097;assert(!keyboard_samples_travel(samples,lower,upper,4,128,out));upper[i]=saved;
+    }
 }
 static void performance(void)
 {
@@ -162,6 +188,77 @@ static void lifecycle(void)
     keyboard_app_frame(&app,NULL,SYN_COUNT,SYN_PROFILE,lo,hi,true,now);
     assert(!raw.valid);
 }
+static void deferred_candidate(void)
+{
+    init(); save_result=KEYBOARD_SAVE_DEFER;
+    assert(keyboard_app_calibrate(&app,now,true));
+    frame(); now+=CALIBRATION_SETTLE_MS; frame();
+    assert(app_cal.state==CAL_COLLECT);
+    for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=1000;
+    frame(); now+=CALIBRATION_HOLD_MS; frame();
+    assert(app_cal.state==CAL_SAVE && saved==1);
+    for(unsigned i=0;i<SYN_COUNT;++i) {
+        assert(lo[i]==1000 && hi[i]==4000);
+        assert(app_cal.lower[i]==1000 && app_cal.upper[i]==3900);
+    }
+}
+static void deferred_calibration(void)
+{
+    deferred_candidate();
+    uint32_t activity=app_cal.activity;
+    for(unsigned i=0;i<5;++i) {
+        frame(); keyboard_app_service(&app,now,true,send_hid,send);
+        assert(app_cal.state==CAL_SAVE && app_cal.activity==activity);
+        assert(hi[103]==4000 && saved==i+2);
+        const keyboard_report_t empty={0}; assert(!memcmp(&hid,&empty,sizeof(hid)));
+    }
+    save_result=KEYBOARD_SAVE_COMPLETE; frame();
+    assert(app_cal.state==CAL_DONE && saved==7 && !raw.armed);
+    for(unsigned i=0;i<SYN_COUNT;++i) assert(lo[i]==1000 && hi[i]==3900);
+    frame(); assert(saved==7); /* no retry after success */
+    for(unsigned i=0;i<SYN_COUNT;++i) samples[i]=3900;
+    frame(); assert(raw.armed);
+
+    /* Failure, bad input, timeout and cancellation must never publish a
+     * pending candidate or call the backend after the candidate is gone. */
+    for(unsigned scenario=0;scenario<9;++scenario) {
+        deferred_candidate();
+        uint32_t ack=0; uint8_t result=0;
+        if(scenario==0 || scenario==1) {
+            save_result=scenario==0?KEYBOARD_SAVE_FAILED:(keyboard_save_result_t)99;
+            frame();
+            assert(app_cal.state==CAL_ERROR && app_cal.reason==CAL_STORAGE && saved==2);
+        } else {
+            if(scenario==2) {
+                now=app_cal.activity+CALIBRATION_IDLE_MS*2; frame();
+                assert(app_cal.state==CAL_SAVE && app_cal.completed==SYN_COUNT && saved==2);
+                assert(keyboard_app_command(&app,"cfg calcancel 1",now,true,&ack,&result));
+            }
+            if(scenario==3) { samples[103]=0; frame(); }
+            if(scenario==4) { samples[103]=4097; frame(); }
+            if(scenario==5) {
+                assert(keyboard_app_command(&app,"cfg calcancel 1",now,true,&ack,&result));
+                assert(ack==1 && result==1);
+            }
+            if(scenario==6) keyboard_app_service(&app,app.last_frame+SCAN_STALE_MS,true,send_hid,send);
+            if(scenario==7) keyboard_app_frame(&app,samples,SYN_COUNT,SYN_PROFILE,lo,hi,false,now++);
+            if(scenario==8) keyboard_app_invalidate(&app,now);
+            assert(app_cal.state==CAL_ABORTED && saved==(scenario==2?2u:1u));
+            assert(app_cal.reason==(scenario==2 || scenario==5?CAL_CANCELLED:CAL_INVALID));
+        }
+        assert(!app_cal.completed && !calibration_active(&app_cal));
+        for(unsigned i=0;i<SYN_COUNT;++i) {
+            assert(lo[i]==1000 && hi[i]==4000);
+            assert(!app_cal.lower[i] && !app_cal.upper[i]);
+        }
+        unsigned attempts=saved; frame(); assert(saved==attempts);
+    }
+    deferred_candidate();
+    uint16_t small[7]={3900,3900,3900,3900,3900,3900,3900};
+    keyboard_app_frame(&app,small,7,43,lo,hi,true,now++);
+    assert(!calibration_active(&app_cal) && !app_cal.completed && saved==1);
+    assert(lo[103]==1000 && hi[103]==4000);
+}
 static void commands(void)
 {
     init(); uint32_t ack=10; uint8_t result=9;
@@ -175,6 +272,15 @@ static void commands(void)
     assert(result==1 && midi.mapping[103]==70);
     assert(keyboard_app_command(&app,"cfg midi 13 3 70",now,true,&ack,&result));
     assert(result==2 && midi.mapping[SYN_SPACE]==255);
+    assert(keyboard_app_command(&app,"cfg key 14 103 135",now,true,&ack,&result));
+    assert(result==1 && raw.keycode[103]==135 && !raw.armed);
+    const char *badmap[]={"cfg key 14","cfg key 14 103","cfg key 14 104 4",
+                         "cfg key 14 103 3","cfg key 14 103 232","cfg key 14 103 256",
+                         "cfg key 14 103 4294967296","cfg key 14 103 4 junk"};
+    for(unsigned i=0;i<sizeof(badmap)/sizeof(badmap[0]);++i) {
+        assert(keyboard_app_command(&app,badmap[i],now,true,&ack,&result));
+        assert(result==2 && raw.keycode[103]==135);
+    }
     const char *bad[]={"cfg set 14","cfg set 14 3","cfg set 14 3 3000",
                       "cfg set 14 104 3000 3200","cfg set 14 103 3200 3000",
                       "cfg all 14 3000 4096","cfg all 14 3000 3200 x"};
@@ -248,8 +354,133 @@ static void atomic_press_edit(void)
     for(unsigned i=0;i<SYN_COUNT;++i) assert(raw.press[i]==3599);
     assert(raw.revision==1 && !raw.armed);
 }
+static void unavailable_storage(void)
+{
+    init();keyboard_app_init(&app,&raw,&midi,&menu,&app_cal,NULL);frame();
+    assert(!keyboard_app_calibrate(&app,now,true));
+    assert(menu.disabled_options&(1u<<(MENU_CALIBRATION-1u)));
+    assert(menu.disabled_options&(1u<<(MENU_RESET-1u)));
+    assert(!keyboard_app_reset_profile(&app));
+    /* Restore callbacks: capability filtering must not leak across init. */
+    init();assert(!menu.disabled_options && keyboard_app_calibrate(&app,now,true));
+}
+static void sensor_readback(void)
+{
+    init();frame();
+    uint8_t out[MT_BOUNDS_SIZE(SYN_COUNT)];
+    assert(keyboard_bounds_encode(&app,now,out,sizeof(out))==sizeof(out));
+    assert(!memcmp(out,"MTB1",4) && out[5]==SYN_PROFILE && out[6]==SYN_COUNT && out[7]==1);
+    assert(app.readback[103].sample==3900 && app.readback[103].control==3900);
+    samples[103]=1234;lo[103]=999;hi[103]=3999;
+    assert(app.readback[103].sample==3900 && app.readback[103].lower==1000 && app.readback[103].upper==4000);
+    assert(!keyboard_bounds_encode(&app,now,out,sizeof(out)-1));
+    assert(keyboard_bounds_encode(&app,now+SCAN_STALE_MS,out,sizeof(out)) && !(out[7]&1));
+    keyboard_app_invalidate(&app,now);
+    assert(keyboard_bounds_encode(&app,now,out,sizeof(out)) && !(out[7]&1));
+    frame();assert(app.readback[103].sample==1234 && app.readback[103].lower==999);
+}
+static void calibration_observation(void)
+{
+    init();assert(keyboard_app_calibrate(&app,now,true));
+    frame();now+=CALIBRATION_SETTLE_MS;frame();
+    assert(app_cal.state==CAL_COLLECT && raw.valid && !raw.armed && raw.neutral_idle);
+    samples[100]=samples[103]=1000;
+    for(unsigned i=0;i<=CALIBRATION_HOLD_MS;++i) {
+        frame();keyboard_app_service(&app,now,true,send_hid,send);
+        assert(raw.valid && !raw.armed && !raw.neutral_idle);
+        assert(app.readback[100].sample==1000 && app.readback[103].control==1000);
+        for(unsigned k=0;k<SYN_COUNT;++k)
+            assert(!raw.down[k] && !raw.velocity[k].captures && !raw.velocity[k].pending);
+        assert(!keyboard_report_get_usage(&hid,4));
+        assert(!midi.panic && !midi.host_dirty && !logged);
+    }
+    assert(app_cal.completed==2 && app_cal.lower[100]==1000 && app_cal.lower[103]==1000);
+    samples[100]=samples[103]=3900;frame();assert(raw.neutral_idle && !raw.armed);
+    samples[10]=0;frame();
+    assert(app_cal.state==CAL_ABORTED && !raw.valid && !raw.armed && !saved);
+    samples[10]=3900;frame();assert(raw.armed);
+    samples[100]=3000;frame();assert(keyboard_report_get_usage(&raw.engine.report,4));
+}
+static void held_preview_observation(void)
+{
+    init();samples[SYN_FN]=samples[SYN_ENTER]=3000;frame();
+    assert(menu.pending==MENU_MODE && !raw.armed);
+    for(unsigned i=0;i<1000;++i) {
+        frame();assert(menu.pending==MENU_MODE && !raw.armed && app.frame_valid);
+        for(unsigned k=0;k<SYN_COUNT;++k)assert(!raw.velocity[k].pending && !raw.velocity[k].captures);
+    }
+    samples[SYN_FN]=samples[SYN_ENTER]=3900;frame();frame();
+    assert(midi.mode==1 && raw.armed && !menu.pending);
+}
+static void editor_entry_observation(void)
+{
+    /* Fn+Tab selects a configuration editor. The menu commits it while the
+     * frame is still observation-only, so observation ending in that same
+     * frame must not discard the mode it just committed. */
+    init();
+    samples[SYN_FN]=samples[SYN_TAB]=3000;frame();
+    assert(menu.pending==MENU_TRIGGER && !raw.armed);
+    assert(raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_FN]=samples[SYN_TAB]=3900;frame();
+    assert(!menu.pending && !raw.armed && !midi.mode);
+    assert(raw.engine.config.mode==KEY_CONFIG_ACTUATION);
+    /* The committed configuration survives ordinary rearming and stays in the
+     * editor until Escape commits it. */
+    frame();assert(raw.armed && raw.engine.config.mode==KEY_CONFIG_ACTUATION);
+    samples[SYN_ESC]=3000;frame();
+    assert(raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_ESC]=3900;frame();
+    /* Fn+Caps selects the rapid-trigger editor the same way. */
+    samples[SYN_FN]=samples[SYN_CAPS]=3000;frame();
+    assert(menu.pending==MENU_RAPID && raw.engine.config.mode==KEY_CONFIG_NORMAL);
+    samples[SYN_FN]=samples[SYN_CAPS]=3900;frame();
+    assert(!menu.pending && raw.engine.config.mode==KEY_CONFIG_RAPID);
+}
+static void modal_observation(void)
+{
+    for(unsigned page=0;page<5;++page) {
+        init();chord(SYN_ENTER);
+        keyboard_raw_invalidate(&raw);keyboard_midi_guard(&midi,&raw);drain();logged=0;
+        menu.pending_revision=raw.revision;
+        if(page==0)menu.velocity_page=true;
+        if(page==1)menu.press_page=true;
+        if(page==2)menu.music_page=MENU_KEY;
+        if(page==3)menu.music_page=MENU_SCALE;
+        if(page==4)menu.reset_confirmation=true;
+        for(unsigned frame_index=0;frame_index<1000;++frame_index) {
+            frame();keyboard_app_service(&app,now,true,send_hid,send);
+            assert(keyboard_menu_observing(&menu) && !raw.armed && app.frame_valid);
+            assert(raw.neutral_idle && !raw.changed_count && app.readback_valid);
+            for(unsigned key=0;key<SYN_COUNT;++key)
+                assert(!raw.velocity[key].ready && !raw.velocity[key].pending &&
+                       !raw.velocity[key].captures && !raw.down[key]);
+            assert(!midi.panic && !logged);
+        }
+        if(page==4) {
+            assert(menu.confirmation_ready);
+            samples[100]=0;frame();
+            assert(!menu.reset_confirmation && !raw.armed && !resets);
+            samples[100]=3900;frame();assert(raw.armed);
+        }
+        else {
+            assert(menu.choice_ready);
+            samples[SYN_ESC]=3000;frame();
+            assert(!keyboard_menu_observing(&menu) && !raw.armed);
+            frame();assert(!raw.armed); /* held Escape cannot rearm output */
+            samples[SYN_ESC]=3900;frame();assert(raw.armed);
+            samples[SYN_TAB]=3000;frame();
+            for(unsigned i=0;i<RAW_VELOCITY_WINDOW;++i)frame();
+            drain();assert(midi.refs[72] && raw.velocity[SYN_TAB].captures==1);
+        }
+    }
+}
 int main(void)
 {
-    normalizer(); performance(); calibration(); lifecycle(); commands(); layout_change(); reset_while_held(); atomic_press_edit();
+    modal_observation();
+    held_preview_observation();
+    editor_entry_observation();
+    calibration_observation();
+    sensor_readback();
+    normalizer(); performance(); calibration(); lifecycle(); deferred_calibration(); commands(); layout_change(); reset_while_held(); atomic_press_edit(); unavailable_storage();
     puts("PASS SDK-free application: 104 keys, opaque IDs/layout, 2kHz velocity, 16-bit ascending ADC, linear LEDs, HID/MIDI/sustain/menus/scales, parallel calibration");
 }

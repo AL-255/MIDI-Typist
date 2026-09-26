@@ -12,12 +12,13 @@ the [project README](../README.md) for a project overview, and the
 | Use the supported Huntsman keyboard | [User manual](../USER_MANUAL.md) |
 | Build firmware or run the desktop simulator | [Building](BUILDING.md) |
 | Add a different keyboard or MCU | [Porting guide](PORTING.md), then [architecture](ARCHITECTURE.md) |
+| Identify a wired MonsGeek M1 V5 TMR | [M1 support and safety boundaries](MONSGEEK_M1.md) |
 | Choose an owner loop or RTOS task | [Scheduling](SCHEDULING.md) |
 | Integrate host tools | [Protocol](MIDI_PROTOCOL.md) and [GUI limits](KEYBOARD_GUI.md) |
 
-Physical layout, flash addresses, USB identities and HKG/HKL/HBD formats
-in feature guides describe Huntsman unless explicitly stated otherwise.
-Shared application contracts are documented separately from those wire formats.
+Physical layout, flash addresses and USB identities in feature guides describe
+Huntsman unless explicitly stated otherwise. MTG4 snapshots and HKL1 captures
+are shared, count-aware protocols; HBD1 flash access remains board-specific.
 
 ## Current behavior and protocols
 
