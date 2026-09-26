@@ -363,8 +363,8 @@ Any invalid sample or endpoint invalidates the whole frame.
 ## Power and transport components
 
 The experimental image binds the Fn transport owner to the radio HAL/scheduler.
-Switching and routing have offline integration tests; **physical delivery is
-verified for Bluetooth slots 1–3 and the 2.4 GHz receiver**. The [runtime battery controller](#runtime-battery-sleepwake)
+Switching and routing have offline integration tests; physical delivery of the
+latest build remains unverified. The [runtime battery controller](#runtime-battery-sleepwake)
 coordinates automatic sleep/wake and cable changes, including restoration when
 USB power arrives during battery sleep.
 `m1_controls_bind` attaches board-specific input/lighting hooks to the shared
@@ -593,9 +593,8 @@ the scheduler and official SPI/DMA drivers with scripted replies/completion,
 covering all three Bluetooth selections and 2.4 GHz, baseline ordering,
 backpressure, stale/invalid status, faults and timer wrap. `m1_live` binds this
 component to the shared keyboard application and runtime transport/power owners.
-Bluetooth slots 1–3 pairing and A key delivery, and three A key-down/up
-pairs through the 2.4 GHz receiver, have physical confirmation. 2.4 GHz
-pairing/reconnection and the electrical sleep handoff remain unverified.
+Physical Bluetooth and 2.4 GHz delivery, pairing/reconnection and the
+electrical sleep handoff remain unverified for the latest build.
 
 ### Radio battery and sleep-control handoff
 

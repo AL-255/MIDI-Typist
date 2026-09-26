@@ -387,18 +387,11 @@ Both configurations are checked offline:
   retention scenarios run unchanged, which is the evidence that the switch and
   the radio-bus indirection did not alter that configuration.
 
-The wireless build has booted on a physical M1. Bluetooth slot 1 paired and
-delivered three A key-down/up pairs on the host's Bluetooth HID input device;
-Fn+F5 returned to USB and delivered a fresh A key-down/up pair there. Bluetooth
-slot 2 paired across a status-reply gap and delivered a fresh A key-down/up pair
-on its own bonded host HID device. Slot 3 also bonded, connected and delivered
-a fresh A key-down/up pair on its Bluetooth HID device. Fn+F5 returned to USB with fresh key
-delivery. The 2.4 GHz receiver delivered three A key-down/up pairs, and Fn+F5
-returned the device to USB from that mode. The connected image gates output
-after 500 ms without status; the current source also keeps polling through
-longer status gaps instead of faulting. That revised silence policy has linked
-ARM evidence but has not yet been flashed. 2.4 GHz
-pairing/reconnection and wireless sleep/wake remain unverified.
+The latest wireless build has not been installed on a physical M1. Its
+500 ms output freshness gate, offline polling, battery search/idle policy and
+fault recovery have linked-ARM evidence only. Physical Bluetooth and 2.4 GHz
+delivery, pairing/reconnection, sleep/wake and cable recovery for this build
+remain unverified.
 
 ## Not established
 
