@@ -286,6 +286,13 @@ class Source(Runtime):
 
 
 def source_transitions(image):
+    # A USB-selected parked session has no SPI3 owner. Cable arrival must be
+    # restorable without mistaking that absent radio for a peer fault.
+    d=Source(image,mode=6,external=False,radio=False)
+    d.periodic=False;d.led_healthy=False;d.parked=True
+    assert d.call('m1_source_begin_parked',d.ms,True,0)
+    assert d.finish_source(True)==1 and d.mode==6 and d.usb_running
+    assert not d.calls.get('m1_radio_init') and not d.call('m1_source_error')
     for mode in (0,1,2,5):
         d=Source(image,mode,external=False)
         assert d.transition(True)==1 and d.mode==mode and d.usb_running
