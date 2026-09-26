@@ -920,7 +920,7 @@ do not open hardware. See the [update/recovery contract](DEVICE_FLASHING.md#mons
 | Region | Contract |
 | --- | --- |
 | `0x08005000` | Fourteen-byte boot identity `AT32F405 8KMKB`, without a NUL |
-| `0x08005200` | 512-byte vector table; reset plus RTC wake, scan DMA/TMR6 and USB IRQ routes |
+| `0x08005200` | 512-byte vector table; reset plus fault-only SysTick, RTC wake, scan DMA/TMR6 and USB IRQ routes |
 | Remaining application loads | Code, SRAM-writer initializer and data initializer end at/before `0x08027000` |
 | `0x20000000..0x20017fff` | Main SRAM: relocated flash code, data/BSS and the reserved main stack |
 | Profile/factory/boot regions | No load payload; custom slots and stock data are not image sections |
@@ -1043,9 +1043,14 @@ All timings and limits are `M1_RUNTIME_*` defaults. They are custom policy value
 not claims of recovered stock scheduler durations. Reference sequencing comes
 from the power-transition, periodic wake-scan and transport-state routines.
 Each handoff stage has a 3-second deadline; capture uses its HAL deadline.
-Failures latch without retrying rails, peripherals or flash. Clock/time failures
-trap immediately; ordinary failures use the retained diagnostic path where USB
-is still usable.
+Failures latch without retrying scan, radio, USB or flash. A valid-clock fault
+with USB still running retains its diagnostic path. Without USB, the fault
+handler stops producers, drives PB6/PB13 and PC6/PC14 low, disables external
+IRQs, and uses a 50 ms SysTick to wake from shallow WFI. Two consecutive PC13
+samples indicating external power request a normal application reset, never an
+IAP marker write. This is a fault-containment path, not measured battery sleep;
+oscillator/clock failures still trap rather than attempting a reset from an
+unknown clock state. Physical current and cable recovery are unverified.
 
 USB power arrival wakes the custom runtime without changing its wireless mode:
 

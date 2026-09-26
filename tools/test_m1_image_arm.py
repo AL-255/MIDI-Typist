@@ -20,6 +20,7 @@ from firmware_defaults import DEFAULTS as D
 
 FLASH,RAM,APP,VECTOR,LIMIT,RAM_END = 0x08000000,0x20000000,0x08005000,0x08005200,0x08027000,0x20018000
 VTOR,GPIOC,SIZE = 0xe000ed08,0x40020800,0x1ffff7e0
+GPIOB,SYSTICK_CTRL = 0x40020400,0xe000e010
 
 
 class Image:
@@ -38,7 +39,7 @@ class Image:
         assert self.sections['.m1_vectors']['sh_addr']==VECTOR and VECTOR%512==0
         assert e['e_entry']==self.vectors[1]==s['M1_Reset_Handler']
         assert self.vectors[0]==s['__m1_stack_top__'] and self.vectors[0]%8==0
-        required={1:'M1_Reset_Handler',19:'m1_sleep_irq',32:'m1_hal_dma_irq',
+        required={1:'M1_Reset_Handler',15:'m1_fault_systick_irq',19:'m1_sleep_irq',32:'m1_hal_dma_irq',
                   70:'m1_hal_timer_irq',93:'m1_usb_hw_irq'}
         for index,target in enumerate(self.vectors[1:],1):
             assert target==s[required.get(index,'M1_Unhandled_Handler')]
@@ -235,6 +236,9 @@ def main_loop(image):
         d.cpu.mem_write(SIZE,struct.pack('<H',128 if failure=='geometry' else 256))
         d.put(GPIOC+0x10,0 if external else 1<<13)
         d.put(GPIOC,0) # input source pin, real SDK GPIO setup is allowed
+        if not external and failure in ('radio','power','power_time'):
+            d.put(GPIOB+0x14,(1<<6)|(1<<13))
+            d.put(GPIOC+0x14,(1<<6)|(1<<14))
         results={'m1_storage_check_recovery':0x3100c if failure=='recovery' else 0,
             'm1_storage_arm_recovery':0,
             'm1_runtime_power_state':{'power':16,'power_clock':17,'power_time':18,'sleeping':5}.get(failure,0),
@@ -299,9 +303,33 @@ def main_loop(image):
             assert next(x for x in trace if x[0]=='m1_boot_service')[2]==0
         else:
             diagnostic=failure=='boot_diagnostics' or (external and expected in (8,9))
-            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==int(not diagnostic),(failure,trace)
+            battery_fault=not external and failure in ('radio','power','power_time')
+            assert d.cpu.reg_read(UC_ARM_REG_PRIMASK)==int(not diagnostic and not battery_fault),(failure,trace)
+            if battery_fault:
+                # The register model records write-one-to-clear commands; it
+                # does not synthesize their side effect in ODT.
+                assert d.u32(GPIOB+0x28)==(1<<6)|(1<<13)
+                assert d.u32(GPIOC+0x28)==(1<<6)|(1<<14)
+                assert d.u32(SYSTICK_CTRL)&7==7
+                if failure=='radio':
+                    resets=[]
+                    def reset_request(cpu,access,address,size,value,user):
+                        if address==0xe000ed0c and value&4:
+                            resets.append(value);cpu.emu_stop()
+                    d.cpu.hook_add(UC_HOOK_MEM_WRITE,reset_request)
+                    # One transient low sample is not enough. Two consecutive
+                    # SysTick-qualified cable samples request a normal reset;
+                    # no IAP marker or profile page is written on this path.
+                    for pin in (0,1<<13,0,0):
+                        d.put(GPIOC+0x10,pin)
+                        d.put(s['fault_ticks'],d.u32(s['fault_ticks'])+1)
+                        pc=d.cpu.reg_read(UC_ARM_REG_PC)
+                        assert bytes(d.cpu.mem_read(pc,2))==b'\x30\xbf'
+                        d.cpu.emu_start((pc+2)|1,FLASH+0x40000,count=20000)
+                        if resets:break
+                    assert len(resets)==1
             if failure=='boot_diagnostics':assert diagnostic_calls==2 and not live
-            if expected in (8,9):
+            if expected in (8,9) or battery_fault:
                 at=labels.index('m1_live_stop')
                 assert labels[at:at+5]==['m1_live_stop','m1_hal_stop',
                                       'm1_lighting_stop','m1_wireless_stop','m1_radio_stop']
@@ -310,6 +338,16 @@ def main_loop(image):
                 if external:assert diagnostic_calls==2
             else:assert 'm1_live_stop' not in labels
     print('PASS M1 development main: ordered startup, source-selected transport, independent timestamps and terminal failures (component calls stubbed)')
+
+
+def fault_systick(image):
+    d=Reset(image);d.reset();s=d.s
+    return_address=FLASH+0x3fff0
+    d.cpu.reg_write(UC_ARM_REG_SP,s['__m1_stack_top__'])
+    d.cpu.reg_write(UC_ARM_REG_LR,return_address|1)
+    d.cpu.emu_start(s['m1_fault_systick_irq']|1,return_address,count=100)
+    assert d.u32(s['fault_ticks'])==1
+    print('PASS M1 battery fault wait: owned SysTick vector/tick and debounced cable reset after rail-off')
 
 
 def update_entry(image):
@@ -364,6 +402,7 @@ def main():
     for psp in (False,True):Reset(image).reset(psp)
     print('PASS M1 reset: real entry, MSP/PSP normalization, masked vectors, data/RAM-code copy, BSS and memory guards')
     main_loop(image)
+    fault_systick(image)
     if wireless_supported(image):
         print('SKIP USB-only artifact check: this build has the wireless stack')
     else:

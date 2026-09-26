@@ -103,6 +103,11 @@ fresh release before rearming. Rejected endpoint handoffs retain the pending
 switch, and an attempted platform selection cannot be cancelled this way.
 Physical cable transitions remain unverified; edges during PHY mutation or
 after an Fn switch begins physical selection still fail closed.
+The linked development-image test executes battery fault teardown, rail-clear
+register writes, the fault-only SysTick vector, and a bounce-then-stable PC13
+sequence that requests a normal reset without writing IAP metadata. The GPIO
+register model and scripted ticks do not measure fault-state current or prove
+that plugging a real cable wakes the board.
 Wireless tests execute the actual foreground report scheduler and SPI/DMA HAL
 with scripted peer status and completion. They cover mode gates, paired report
 ownership, neutral startup, stale/invalid replies and failures; native tests
