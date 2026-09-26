@@ -479,7 +479,7 @@ acknowledgments or sample data.
 | `menu status` | Fn/menu state: `fn`, keyboard trigger editor `mode`, `level`/`saved` actuation, `brightness`/`pwm`, `reset_confirm`, `ready`, `lower_muted`, `root`, `scale`, `music_page`, `janko`, `velocity_start`, `build`, `key`, `scale_name` |
 | `status`, `scan status` | `SCAN phase`, `profile`, `count`, `transfers`, `frames`, `markers`, `errors`, `settled`, `valid`, `calibrated`, `stream_dropped`, optional `fault` |
 | `light status` | `LIGHT phase`, `on`, `profile`, `transfers`, `frames`, `errors`, `calibrated`, `count`, `diagnostic`, optional `fault` |
-| `light test bottom` / `light test off` (Huntsman only) | Start/stop the temporary bottom-row RGBW LED-channel diagnostic; also available through the GUI. The matching ACK confirms command acceptance; LOG text describes the pattern. |
+| `light test bottom` / `light test off` (Huntsman and M1) | Start/stop the temporary RGBW LED-channel diagnostic; also available through the GUI. The matching ACK confirms command acceptance. Huntsman emits a best-effort LOG describing its pattern; M1 includes Up above Down in addition to the bottom row. |
 | keyboard/config changes | `KEYS host`, `fn`, `mode`, `act`, `rapid`, `enabled`, `saved`, `revision`, then `RAW enabled`, `armed`, `valid`, `revision`; raw status notes automatic save after neutral |
 | `help` | Command summary, including `stream ...`, `cfg ...`, `dump read`, `menu status`; RAlt/RCtrl are octave −/+ |
 

@@ -51,6 +51,25 @@ static void mapping(void)
     }
     assert(frame[0]==0 && frame[81*3]==72 && frame[72*3]==81);
 }
+static void bottom_light_diagnostic(void)
+{
+    uint8_t frame[M1_LED_BYTES],r,g,b;
+    static const struct { unsigned sensor; uint8_t r,g,b; } expected[]={
+        {72,255,255,255},{73,255,0,0},{74,0,255,0},{75,0,0,255},
+        {76,255,255,255},{77,255,0,0},{78,0,255,0},
+        {79,0,0,255},{80,255,255,255},{81,255,0,0},{70,0,255,0},
+    };
+    memset(frame,0xa5,sizeof(frame));m1_light_test_bottom(frame);
+    for(unsigned sensor=0;sensor<M1_KEY_COUNT;++sensor) {
+        r=g=b=0xff;
+        keyboard_light_get(M1_PROFILE,sensor,frame,&r,&g,&b);
+        unsigned n=0;
+        while(n<sizeof(expected)/sizeof(expected[0]) && expected[n].sensor!=sensor)++n;
+        if(n==sizeof(expected)/sizeof(expected[0]))assert(!r && !g && !b);
+        else assert(r==expected[n].r && g==expected[n].g && b==expected[n].b);
+    }
+    assert(m1_led_index(70)!=m1_led_index(80));
+}
 static void factory_word(m1_factory_record_t *r,unsigned cell,unsigned value)
 { r->values[cell*2u]=value;r->values[cell*2u+1u]=value>>8; }
 static void factory_calibration(void)
@@ -816,7 +835,7 @@ static void wake_policy(void)
 }
 int main(void)
 {
-    mapping(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
+    mapping(); bottom_light_diagnostic(); factory_calibration(); acquisition(); application(); travel_domain(); lighting_encoding(); battery(); controls(); pairing_controls(); power_policy(); radio_packets(); radio_keyboard(); wake_policy();
     puts("M1: mapping, scan, lighting, application, battery, transport controls, radio codec and wake policy passed");
     return 0;
 }

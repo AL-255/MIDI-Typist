@@ -3,6 +3,7 @@
 #include "keyboard_layout.h"
 #include "keyboard_lighting.h"
 #include <stddef.h>
+#include <string.h>
 
 const m1_key_t m1_keys[M1_KEY_COUNT] = {
 #define M1_KEY(id,bank,rank,usage,x,y,w,label) [id]={bank,rank,usage},
@@ -104,6 +105,21 @@ void keyboard_light_get(uint8_t profile,unsigned sensor,const uint8_t *frame,uin
     if(profile!=M1_PROFILE || sensor>=M1_KEY_COUNT) { *r=*g=*b=0; return; }
     unsigned i=m1_led_index(sensor)*3u;
     *r=frame[i]; *g=frame[i+1]; *b=frame[i+2];
+}
+void m1_light_test_bottom(uint8_t frame[M1_LED_BYTES])
+{
+    /* Physical order: LCtrl LWin LAlt Space RAlt Fn RCtrl Left Down Right.
+     * Up sits directly above Down; adjacent lit keys have distinct colors. */
+    static const struct { uint8_t sensor,r,g,b; } pattern[]={
+        {72,255,255,255}, {73,255,0,0}, {74,0,255,0}, {75,0,0,255},
+        {76,255,255,255}, {77,255,0,0}, {78,0,255,0},
+        {79,0,0,255}, {80,255,255,255}, {81,255,0,0},
+        {70,0,255,0},
+    };
+    memset(frame,0,M1_LED_BYTES);
+    for(unsigned i=0;i<sizeof(pattern)/sizeof(pattern[0]);++i)
+        keyboard_light_set(M1_PROFILE,pattern[i].sensor,frame,
+                           pattern[i].r,pattern[i].g,pattern[i].b);
 }
 uint8_t keyboard_light_x(uint8_t profile,unsigned sensor)
 { return profile==M1_PROFILE && sensor<M1_KEY_COUNT?light_x[sensor]:0u; }

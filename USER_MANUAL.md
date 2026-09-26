@@ -77,8 +77,9 @@ layouts rather than mislabelling them.
 | Purple → blue → amber → green | Calibration: release/settle → pending → holding → registered |
 | Red calibration feedback | Cancelled, timed out or failed; read GUI status |
 
-On Huntsman, the GUI's **Bottom-row RGBW test** temporarily replaces normal
-lighting with pure colors to check physical LED placement. It is not saved;
+The GUI's **RGBW layout test** temporarily replaces normal lighting with pure
+colors to check physical LED placement. On M1 it covers LCtrl through Right,
+plus Up above Down. It is not saved;
 use **Stop RGBW test** or wait ten minutes to restore normal lighting.
 
 Enter and control indicators remain visible even when their note is filtered.
