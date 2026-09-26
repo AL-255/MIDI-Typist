@@ -79,8 +79,8 @@ layouts rather than mislabelling them.
 
 The GUI's **RGBW layout test** temporarily replaces normal lighting with pure
 colors to check physical LED placement. On M1 it covers LCtrl through Right,
-plus Up above Down. It is not saved;
-use **Stop RGBW test** or wait ten minutes to restore normal lighting.
+plus Up above Down. It is not saved. Use **Stop RGBW test** or wait ten
+minutes to restore normal lighting.
 
 Enter and control indicators remain visible even when their note is filtered.
 Normal markers use global brightness. Fn previews, reset confirmation and

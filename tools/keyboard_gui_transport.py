@@ -247,7 +247,7 @@ class Connection(threading.Thread):
                     else:
                         if action == 'light_test':
                             self.command('light test '+('bottom' if args[0] else 'off'))
-                            self.notify('Bottom-row RGBW test '+('active (10-minute timeout)' if args[0] else 'off'))
+                            self.notify('RGBW layout test '+('active (10-minute timeout)' if args[0] else 'off'))
                         else:
                             self.next_id = self.next_id % 0xffffffff+1
                             self.command('cfg '+action+' '+str(self.next_id)+''.join(' '+str(v) for v in args), action, args)
