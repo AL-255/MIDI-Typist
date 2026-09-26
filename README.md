@@ -1,16 +1,15 @@
-# MIDI-Typist
+# MIDI-Typist Keyboard Firmware
 
-Portable C11 firmware that turns analog keyboards into NKRO keyboards and
-expressive USB-MIDI controllers.
+Open-Source Portable C11 firmware that turns analog keyboards into NKRO keyboards + velocity-sensitive USB-MIDI controllers.
 
 [![Release](https://img.shields.io/github/v/release/AL-255/MIDI-Typist?include_prereleases&label=release)](https://github.com/AL-255/MIDI-Typist/releases)
 [![Docs CI](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/website?url=https%3A%2F%2Fal-255.github.io%2FMIDI-Typist%2F&label=docs)](https://al-255.github.io/MIDI-Typist/)
 
-| Model | Sprite | Status | Features |
-| --- | --- | --- | --- |
-| [Razer Huntsman V3 Pro Mini](USER_MANUAL.md) | ![Huntsman V3 Pro Mini keyboard sprite](docs/sprites/RZ03-0499.png) | Primary USB port | NKRO typing; expressive USB MIDI with per-key velocity and aftertouch; per-key lighting, trigger settings and calibration; on-device profiles; GUI configuration and application flashing. |
-| [MonsGeek M1 V5 TMR](docs/MONSGEEK_M1.md) | ![MonsGeek M1 V5 TMR keyboard sprite](docs/sprites/MG-M1V5TMR.png) | Experimental; wireless/power qualification ongoing | USB NKRO and expressive MIDI; 82-key lighting, calibration and on-device profiles; optional Bluetooth slots 1–3 and 2.4 GHz keyboard transports, battery display and sleep/wake policy; GUI configuration and application flashing. Wireless MIDI is disabled. |
+| Model | Status | Analog? | Features |
+| ---  | --- | --- | --- |
+| [![Huntsman V3 Pro Mini](docs/sprites/RZ03-0499.png)](USER_MANUAL.md) | Stable | ✅ Optical | NKRO; Per-Key RGB |
+| [![MonsGeek M1 V5 TMR ](docs/sprites/MG-M1V5TMR.png)](docs/MONSGEEK_M1.md) | Experimental | ✅ TMR | NKRO; Per-Key RGB; Tri-Mode (USB, Bluetooth, 2.4 GHz) |
 
 Each model has its own firmware image. The SDK-free 104-key simulator is a
 development port, not a supported physical keyboard.
