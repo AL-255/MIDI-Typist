@@ -7,10 +7,10 @@ expressive USB-MIDI controllers.
 [![Docs CI](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/AL-255/MIDI-Typist/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/website?url=https%3A%2F%2Fal-255.github.io%2FMIDI-Typist%2F&label=docs)](https://al-255.github.io/MIDI-Typist/)
 
-| Supported model | Status | Features |
-| --- | --- | --- |
-| [Razer Huntsman V3 Pro Mini](USER_MANUAL.md) | Primary USB port | NKRO typing; expressive USB MIDI with per-key velocity and aftertouch; per-key lighting, trigger settings and calibration; on-device profiles; GUI configuration and application flashing. |
-| [MonsGeek M1 V5 TMR](docs/MONSGEEK_M1.md) | Experimental; wireless/power qualification ongoing | USB NKRO and expressive MIDI; 82-key lighting, calibration and on-device profiles; optional Bluetooth slots 1–3 and 2.4 GHz keyboard transports, battery display and sleep/wake policy; GUI configuration and application flashing. Wireless MIDI is disabled. |
+| Model | Sprite | Status | Features |
+| --- | --- | --- | --- |
+| [Razer Huntsman V3 Pro Mini](USER_MANUAL.md) | ![Huntsman V3 Pro Mini keyboard sprite](docs/sprites/RZ03-0499.png) | Primary USB port | NKRO typing; expressive USB MIDI with per-key velocity and aftertouch; per-key lighting, trigger settings and calibration; on-device profiles; GUI configuration and application flashing. |
+| [MonsGeek M1 V5 TMR](docs/MONSGEEK_M1.md) | ![MonsGeek M1 V5 TMR keyboard sprite](docs/sprites/MG-M1V5TMR.png) | Experimental; wireless/power qualification ongoing | USB NKRO and expressive MIDI; 82-key lighting, calibration and on-device profiles; optional Bluetooth slots 1–3 and 2.4 GHz keyboard transports, battery display and sleep/wake policy; GUI configuration and application flashing. Wireless MIDI is disabled. |
 
 Each model has its own firmware image. The SDK-free 104-key simulator is a
 development port, not a supported physical keyboard.

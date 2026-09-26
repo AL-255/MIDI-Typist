@@ -53,6 +53,11 @@ class DocumentationTests(unittest.TestCase):
         self.assertTrue((output / ".nojekyll").is_file())
         self.assertTrue((output / "searchindex.js").is_file())
         pages = {path.resolve(): Page(path) for path in output.rglob("*.html")}
+        overview = pages[(output / "README.html").resolve()]
+        for name in ("RZ03-0499.png", "MG-M1V5TMR.png"):
+            self.assertTrue(any(link.endswith(name) and not urlsplit(link).scheme
+                                for link in overview.links),
+                            f"README sprite must be served by the documentation site: {name}")
         for path in output.rglob("*"):
             self.assertFalse(path.is_symlink(), str(path))
             self.assertNotIn(path.suffix, (".bin", ".exe", ".pickle", ".doctree"))
