@@ -128,7 +128,8 @@ void m1_runtime_power_service(uint32_t ms,uint32_t us,bool external)
         bool eligible=m1_live_power_activity(&activity);
 #if MT_M1_WIRELESS
         m1_radio_status_t peer;
-        uint8_t selection=m1_wireless_status(&peer)?selector(transport,peer.state):0;
+        uint8_t selection=m1_wireless_status(&peer)?selector(transport,peer.state):
+            m1_wireless_pairing()?2u:3u;
 #else
         /* No wireless scheduler exists, so no peer can be linked or searching:
          * an idle USB-only device uses the unselected limit and sleeps instead

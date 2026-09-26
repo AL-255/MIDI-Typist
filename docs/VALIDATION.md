@@ -58,9 +58,10 @@ exclusion, timeout without retry and unsolicited mode-change faults.
 Reconnect tests cover states 0/1/2/4 in all wireless modes, queued/committed and
 partially transmitted keyboard input, consumer cleanup, held-key/modifier/knob
 suppression, fresh neutral baselines, GUI waiting/searching/ready status and
-escape to USB. Peer liveness remains required while the host is absent;
-unsupported states, unexpected modes, stale status and HAL faults still stop
-output. These tests do not establish physical Bluetooth/2.4 GHz reconnection.
+escape to USB. Fresh status remains required for host output; status silence
+alone leaves the session offline and keeps polling, while unsupported states,
+unexpected modes and HAL faults still stop output. These tests do not establish
+physical Bluetooth/2.4 GHz reconnection.
 Peer responses and transfer completion are scripted; local drain is not proof
 that a remote host received the release. Ambiguous selection fails closed.
 It does not measure real acquisition or foreground execution time.
@@ -388,9 +389,10 @@ slot 2 paired across a status-reply gap and delivered a fresh A key-down/up pair
 on its own bonded host HID device. Slot 3 also bonded, connected and delivered
 a fresh A key-down/up pair on its Bluetooth HID device. Fn+F5 returned to USB with fresh key
 delivery. The 2.4 GHz receiver delivered three A key-down/up pairs, and Fn+F5
-returned the device to USB from that mode. The current build gates output after
-500 ms without status and uses a distinct bounded pairing watchdog; the slot-2
-hardware test confirms it no longer fails on the observed pairing gap. 2.4 GHz
+returned the device to USB from that mode. The connected image gates output
+after 500 ms without status; the current source also keeps polling through
+longer status gaps instead of faulting. That revised silence policy has linked
+ARM evidence but has not yet been flashed. 2.4 GHz
 pairing/reconnection and wireless sleep/wake remain unverified.
 
 ## Not established

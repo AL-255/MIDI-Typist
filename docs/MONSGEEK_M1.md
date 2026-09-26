@@ -555,14 +555,15 @@ edges, releases consumer controls and requires physical release before rearming.
 It cannot acknowledge a release to an already disconnected host.
 
 Status older than 500 ms immediately gates output and discards committed keys;
-a fresh report-eligible reply restarts with a neutral baseline. The paired-host
-watchdog faults after five seconds without status, while state 4
-(pairing/searching) permits a 60-second pause before faulting. This distinction
-comes from a physical pairing attempt: the peer advertised and the host bonded,
-but paused status replies during pairing. An unsolicited mode change,
-unsupported state outside 0–4, watchdog expiry or HAL fault still stops output
-and requires an explicit stop and restart. Poll/query/report intervals and
-deadlines are custom tunables in `defaults.h`, not inferred stock timer units.
+a fresh report-eligible reply restarts with a neutral baseline. Status silence
+alone does not fault the application: the peer can pause replies while pairing,
+and the battery owner must still reach its offline/search sleep limit. A stale
+pairing state retains the search limit; another stale state uses the unselected
+limit. Status queries continue while output is gated. An unsolicited mode
+change, unsupported state outside 0–4, mode/sleep command deadline or HAL
+fault still stops output and requires an explicit stop and restart.
+Poll/query/report intervals and deadlines are custom tunables in `defaults.h`,
+not inferred stock timer units.
 
 `m1_radio_keyboard` translates the common **already remapped** NKRO report into
 the peer's two `81` subtypes, reviewed against usage helpers `0x08007820`/

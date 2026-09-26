@@ -26,6 +26,7 @@ class Runtime(Reset):
         super().__init__(image);self.reset()
         self.ms=self.us=0;self.mode=mode;self.critical=critical;self.peer=peer
         self.activity=False;self.eligible=True;self.park_allowed=True
+        self.peer_status_fresh=True
         self.periodic=True;self.scan_healthy=True;self.led_healthy=True;self.led_ticks=0
         self.radio_healthy=True;self.radio_ready=True;self.prepared=False;self.usb_reduced=False
         self.external=False
@@ -39,7 +40,7 @@ class Runtime(Reset):
         self.trace=[];self.failure=None;self.calls={}
         self.put(PB+0x14,(1<<6)|(1<<13));self.put(PC+0x14,(1<<6)|(1<<14))
         names='''m1_live_service m1_live_power_activity m1_live_transport m1_usb_ready
-            m1_wireless_status m1_battery_hal_status m1_battery_critical
+            m1_wireless_status m1_wireless_pairing m1_battery_hal_status m1_battery_critical
             m1_sleep_time_ready m1_live_power_suspend m1_live_power_park
             m1_hal_healthy m1_lighting_healthy m1_wireless_healthy m1_hal_pause
             m1_lighting_offer m1_lighting_service m1_wireless_service
@@ -111,7 +112,10 @@ class Runtime(Reset):
         elif name=='m1_live_power_activity':cpu.mem_write(a[0],bytes((self.activity,)));result=self.eligible
         elif name=='m1_live_transport':result=self.mode
         elif name=='m1_usb_ready':result=self.usb_ready
-        elif name=='m1_wireless_status':cpu.mem_write(a[0],bytes((0,self.peer,self.mode)))
+        elif name=='m1_wireless_status':
+            if self.peer_status_fresh:cpu.mem_write(a[0],bytes((0,self.peer,self.mode)))
+            else:result=0
+        elif name=='m1_wireless_pairing':result=self.peer==4
         elif name=='m1_battery_hal_status':result=RAM_END-256
         elif name=='m1_battery_critical':result=self.critical
         elif name=='m1_live_power_park':self.parked=self.park_allowed;result=self.parked
@@ -432,6 +436,14 @@ def main():
         return
     source_transitions(image)
     sleep_source_transitions(image)
+    # Stale pairing replies retain the longer search policy; another stale
+    # state becomes unselected rather than disabling battery idle sleep.
+    for peer in (4,3):
+        d=Runtime(image,peer=peer);d.peer_status_fresh=False
+        d.tick(D['M1_RUNTIME_POWER_PERIOD_MS']*1000)
+        d.tick(D['M1_RUNTIME_POWER_PERIOD_MS']*1000)
+        assert d.calls.get('m1_wireless_pairing')==1
+        assert d.state()==0 and not d.call('m1_runtime_power_error')
     for mode,critical,peer in ((0,False,3),(1,False,3),(2,False,3),(5,False,3),(0,True,1),(5,True,1)):
         d=Runtime(image,mode,critical,peer);d.shorten_idle();d.until(lambda:d.resumed)
         assert d.state()==0 and not d.call('m1_runtime_power_error')

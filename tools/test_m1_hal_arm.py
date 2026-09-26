@@ -1340,9 +1340,9 @@ def wireless(elf):
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
     assert not d.call('m1_wireless_ready') and d.call('m1_wireless_healthy')
     if d.u32(DMA+0x1c)&1:d.finish() # query completed, but no peer status reply
-    d.step(D['M1_RADIO_STATUS_WATCHDOG_US']-D['M1_RADIO_STATUS_TIMEOUT_US'])
-    assert not d.call('m1_wireless_healthy')
-    assert d.call('m1_wireless_fault_detail')&0xff==4
+    d.step(D['M1_RADIO_MODE_TIMEOUT_US']*2)
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
+    assert not d.offer((4,)) and not d.call('m1_wireless_fault_detail')
     d=WirelessArm(elf);d.baseline();assert d.offer((4,))
     d.step(D['M1_RADIO_BT_REPORT_US']);d.put(DMA,8<<8);d.step()
     assert not d.call('m1_wireless_healthy') and d.call('m1_wireless_reports_sent')==1
@@ -1437,17 +1437,17 @@ def wireless_reconnect(elf):
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
     assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
     if d.u32(DMA+0x1c)&1:d.finish()
-    d.step(D['M1_RADIO_STATUS_WATCHDOG_US']-D['M1_RADIO_STATUS_TIMEOUT_US'])
-    assert not d.call('m1_wireless_healthy')
+    d.step(D['M1_RADIO_MODE_TIMEOUT_US']*2)
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
     d=WirelessArm(elf);d.baseline();d.poll(state=4)
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
     assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
     if d.u32(DMA+0x1c)&1:d.finish()
-    d.step(D['M1_RADIO_STATUS_WATCHDOG_US'])
+    d.step(D['M1_RADIO_MODE_TIMEOUT_US']*2)
     assert d.call('m1_wireless_healthy') # pairing may mute peer status briefly
     if d.u32(DMA+0x1c)&1:d.finish()
-    d.step(D['M1_RADIO_PAIR_WATCHDOG_US'])
-    assert not d.call('m1_wireless_healthy') and d.call('m1_wireless_fault_detail')&0xff==4
+    d.step(D['M1_RADIO_MODE_TIMEOUT_US']*2)
+    assert d.call('m1_wireless_healthy') and not d.call('m1_wireless_ready')
     d=WirelessArm(elf);d.baseline();assert d.offer((4,))
     d.step(D['M1_RADIO_BT_REPORT_US']);d.finish();d.finish()
     assert d.call('m1_wireless_reports_sent')==2

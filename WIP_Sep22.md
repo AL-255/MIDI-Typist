@@ -4,9 +4,11 @@ The M1 application is experimental and not qualified for daily use. Work is on
 `feature/m1-v5-tmr`; `main` remains Huntsman-only. The default M1 build is
 USB-only; `-DMT_M1_WIRELESS=ON` includes Bluetooth and 2.4 GHz support.
 
-The connected M1 runs the clean wireless-enabled build `b3410b1`. A Bluetooth
-pairing status gap no longer stops the application: output is gated after
-500 ms without status, while a longer bounded pairing watchdog remains active.
+The connected M1 runs the clean wireless-enabled build `b3410b1`. The current
+source further changes status-only silence to an offline condition instead of
+a fatal watchdog: output is still gated after 500 ms without status, while
+queries continue and the battery search/idle policy can proceed. This change
+has not yet been flashed or physically tested.
 Bluetooth slots 2 and 3 paired and delivered A key-down/up pairs on their own
 host HID devices; slot 2 survived the status gap. Linked-ARM wireless and
 runtime-power tests pass.

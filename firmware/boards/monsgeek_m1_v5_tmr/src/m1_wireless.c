@@ -292,9 +292,10 @@ void m1_wireless_service(uint32_t tick)
             linked=false;pair_complete=false;battery_sent=false;
             neutral_baseline();
         }
-        uint32_t watchdog=status.state==M1_RADIO_STATE_PAIRING?
-            M1_RADIO_PAIR_WATCHDOG_US:M1_RADIO_STATUS_WATCHDOG_US;
-        if(age>=watchdog) { fail(4);return; }
+        /* A silent peer is offline, not proof of an SPI or protocol fault.
+         * Continue querying it while output remains gated; a later eligible
+         * reply must pass through the neutral baseline above. This also lets
+         * the battery owner reach its search/unselected sleep limit. */
     }
     if(flight || !m1_radio_ready())return;
     m1_radio_packet_t packet;
