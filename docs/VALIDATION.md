@@ -387,11 +387,13 @@ Both configurations are checked offline:
   retention scenarios run unchanged, which is the evidence that the switch and
   the radio-bus indirection did not alter that configuration.
 
-The latest wireless build has not been installed on a physical M1. Its
-500 ms output freshness gate, offline polling, battery search/idle policy and
-fault recovery have linked-ARM evidence only. Physical Bluetooth and 2.4 GHz
-delivery, pairing/reconnection, sleep/wake and cable recovery for this build
-remain unverified.
+The latest wireless build was accepted by the factory IAP and re-enumerated
+on a physical M1. Its USB-bound SysEx reply reported the expected board target
+and build identity. The 500 ms output freshness gate, offline polling, battery
+search/idle policy and fault recovery have linked-ARM evidence only. Physical
+Bluetooth and 2.4 GHz delivery, pairing/reconnection, sleep/wake and cable
+recovery for this build remain unverified; wireless operation requires the
+hardware power switch in its wireless position.
 
 ## Not established
 
