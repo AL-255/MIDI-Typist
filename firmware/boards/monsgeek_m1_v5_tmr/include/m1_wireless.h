@@ -59,6 +59,11 @@ bool m1_wireless_pair_complete(void);
 bool m1_wireless_pairing(void);
 uint32_t m1_wireless_reports_sent(void);
 uint32_t m1_wireless_errors(void);
+/* Retained after a terminal fault/stop. Low byte: 1 pairing deadline,
+ * 2 sleep deadline, 3 mode deadline, 4 status-stale deadline, 5 SPI HAL,
+ * 6 unsolicited mode, 7 unsupported state, 8 invalid pair request.
+ * Remaining bytes: in-flight operation, last peer state, last peer mode. */
+uint32_t m1_wireless_fault_detail(void);
 bool m1_wireless_status(m1_radio_status_t *out);
 /* Copy the current filtered percentage. NULL/invalid input cancels unsent
  * battery metadata, never an already-started DMA. Call when the battery HAL

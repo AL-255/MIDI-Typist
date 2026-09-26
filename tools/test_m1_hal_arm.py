@@ -1320,6 +1320,7 @@ def wireless(elf):
         d.poll(mode=(mode+1)%3)
         assert not d.call('m1_wireless_healthy') and not d.offer((4,))
         assert d.call('m1_wireless_errors')==1
+        assert d.call('m1_wireless_fault_detail')&0xff==6
         writes=len(d.writes);d.step(1000);assert len(d.writes)==writes
         assert not d.call('m1_wireless_init',mode,1,d.now)
         d.call('m1_wireless_stop');d.radio_init(d.now)
@@ -1330,6 +1331,7 @@ def wireless(elf):
     assert d.call('m1_wireless_errors')==1 and not d.call('m1_wireless_ready')
     d.step(D['M1_RADIO_MODE_TIMEOUT_US'])
     assert not d.call('m1_wireless_healthy')
+    assert d.call('m1_wireless_fault_detail')&0xff==3
     d=WirelessArm(elf);d.baseline();assert d.offer((4,))
     d.step(D['M1_RADIO_BT_REPORT_US'])
     assert d.packet()[0]==0x81
@@ -1337,9 +1339,11 @@ def wireless(elf):
     d.finish()
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US'])
     assert not d.call('m1_wireless_ready') and not d.call('m1_wireless_healthy')
+    assert d.call('m1_wireless_fault_detail')&0xff==4
     d=WirelessArm(elf);d.baseline();assert d.offer((4,))
     d.step(D['M1_RADIO_BT_REPORT_US']);d.put(DMA,8<<8);d.step()
     assert not d.call('m1_wireless_healthy') and d.call('m1_wireless_reports_sent')==1
+    assert d.call('m1_wireless_fault_detail')&0xff==5
     assert not d.call('m1_wireless_local_idle')
     print('PASS M1 wireless: mode/status gating, neutral baseline, paired remapped reports, backpressure, stale/invalid status, DMA faults, wrap and explicit restart; no host-delivery claim')
 
@@ -1381,6 +1385,7 @@ def wireless_pairing(elf):
         if after_dma:d.step();d.finish();d.finish()
         d.step(D['M1_RADIO_MODE_TIMEOUT_US'])
         assert not d.call('m1_wireless_healthy') and not d.call('m1_wireless_pair_complete')
+        assert d.call('m1_wireless_fault_detail')&0xff==1
         writes=len(d.writes);d.step();assert len(d.writes)==writes # no autonomous retry
     print('PASS M1 pairing: explicit neutral request, all slots, DMA/status gates, neutral reconnect and fail-closed timeout')
 
@@ -1424,6 +1429,7 @@ def wireless_reconnect(elf):
     for state in (5,255):
         d=WirelessArm(elf);d.baseline();d.poll(state=state)
         assert not d.call('m1_wireless_healthy')
+        assert d.call('m1_wireless_fault_detail')&0xff==7
     d=WirelessArm(elf);d.baseline();d.poll(state=0)
     d.step(D['M1_RADIO_STATUS_TIMEOUT_US']);assert not d.call('m1_wireless_healthy')
     print('PASS M1 reconnect: normal offline states, dropped queued/committed/partial input, neutral baselines, peer liveness and fault gates')

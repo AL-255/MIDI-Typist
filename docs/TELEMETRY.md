@@ -68,8 +68,14 @@ that normal application configuration is unavailable. The GUI surfaces the text,
 ends its configuration session and does not accept it as a scan snapshot. This
 contract is board-independent; the text after the prefix is board-specific.
 
-M1 runtime failures include `detail=0x… store=0x… scan=0x…`: the main fault
-bitmask, retained storage error, and first scanner fault respectively. Scanner
+M1 runtime failures include `detail=0x… store=0x… scan=0x… radio=0x…`: the
+main fault bitmask, retained storage error, first scanner fault, and retained
+radio fault detail respectively. In the radio word, bytes from least to most
+significant are the reason (0 none, 1 pairing deadline, 2 sleep deadline,
+3 mode deadline, 4 stale status, 5 SPI HAL, 6 unsolicited mode, 7 unsupported
+state, 8 invalid pair request), in-flight operation, last peer state, and last
+peer mode. A zero radio word does not imply a healthy radio if the main fault
+was unrelated. Scanner
 codes are 0 none, 1 ADC calibration, 2 pause-time overrun, 3 DMA error, 4 one-shot
 timeout, 5 periodic overrun, 6 invalid bank/data, and 7 acquisition queue full.
 Stopping acquisition preserves the first reason; reinitialization clears it.

@@ -58,6 +58,7 @@ bool m1_wireless_pair_complete(void) { return false; }
 bool m1_wireless_pairing(void) { return false; }
 uint32_t m1_wireless_reports_sent(void) { return 0; }
 uint32_t m1_wireless_errors(void) { return 0; }
+uint32_t m1_wireless_fault_detail(void) { return 0; }
 bool m1_wireless_status(m1_radio_status_t *out) { (void)out;return false; }
 bool m1_wireless_battery(const m1_battery_t *battery) { (void)battery;return false; }
 bool m1_wireless_battery_sent(uint8_t *percent) { (void)percent;return false; }

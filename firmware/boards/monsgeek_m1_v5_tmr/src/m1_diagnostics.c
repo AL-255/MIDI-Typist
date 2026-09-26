@@ -4,6 +4,7 @@
 #include "m1_storage.h"
 #include "m1_factory.h"
 #include "m1_hal.h"
+#include "m1_wireless.h"
 #include "m1_usb.h"
 #include "m1_usb_hal.h"
 #include "midi_control.h"
@@ -63,6 +64,9 @@ static size_t failure_text(char *text)
         for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(value>>(28u-4u*i))&15u];
         text[length]=0;strcat(text," scan=0x");length=strlen(text);value=m1_hal_fault_reason();
         for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(value>>(28u-4u*i))&15u];
+        text[length]=0;strcat(text," radio=0x");length=strlen(text);
+        value=m1_wireless_fault_detail();
+        for(unsigned i=0;i<8;++i)text[length++]="0123456789abcdef"[(value>>(28u-4u*i))&15u];
         text[length]=0;return length;
     }
     static const char *const errors[]={"none","timebase","startup","power-source",
@@ -117,7 +121,7 @@ bool m1_diagnostics_service(uint32_t now_ms)
     midi_control_service();
     if(!midi_control_ready())reported=false;
     if((m1_boot_state()==M1_BOOT_FAILED || runtime_fault) && !reported) {
-        char text[80];size_t length=failure_text(text);
+        char text[112];size_t length=failure_text(text);
         reported=midi_control_publish(MT_LOG,(const uint8_t *)text,length);
     }
     return update_requested;

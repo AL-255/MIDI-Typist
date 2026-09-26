@@ -19,6 +19,7 @@ static uint32_t sleep_at;
 static uint16_t consumer_committed,consumer_staged;
 static bool consumer_pending,consumer_seen;
 static uint32_t consumer_at;
+static uint32_t fault_detail;
 
 static bool battery_pending(void)
 { return battery_known && (!battery_sent || battery_value!=battery_last); }
@@ -30,8 +31,12 @@ static bool neutral(const m1_radio_keyboard_t *keys)
     return true;
 }
 
-static void fail(void)
+static void fail(unsigned reason)
 {
+    /* Capture the state before stop() discards the in-flight operation. A
+     * USB diagnostic session can read this even after the main loop halts. */
+    fault_detail=reason | ((uint32_t)flight<<8) |
+        ((uint32_t)status.state<<16) | ((uint32_t)status.mode<<24);
     ++errors;faulted=true;confirmed=false;pending=false;flight=NONE;
     m1_radio_stop();
 }
@@ -44,6 +49,7 @@ static void neutral_baseline(void)
 }
 static void begin_session(m1_transport_t mode,uint32_t tick)
 {
+    fault_detail=0;
     target=mode;now=started=tick;errors=reports=0;
     last_mode=last_query=last_poll=last_report=status_at=tick;
     confirmed=have_status=mode_sent=query_sent=poll_sent=faulted=linked=false;
@@ -125,6 +131,7 @@ bool m1_wireless_local_idle(void)
     (!sleep_command || sleep_complete) && flight==NONE && m1_radio_ready(); }
 uint32_t m1_wireless_reports_sent(void) { return reports; }
 uint32_t m1_wireless_errors(void) { return errors; }
+uint32_t m1_wireless_fault_detail(void) { return fault_detail; }
 bool m1_wireless_status(m1_radio_status_t *out)
 {
     if(!out || !m1_wireless_healthy() || !have_status ||
@@ -195,12 +202,13 @@ static void receive(const uint8_t *bytes,size_t length)
     m1_radio_reply_t reply;m1_radio_status_t received;
     if(!m1_radio_decode(bytes,length,&reply)) { ++errors;return; }
     if(!m1_radio_status(&reply,&received))return;
-    if((confirmed && received.mode!=target) || (received.mode==target &&
-       target!=M1_TRANSPORT_USB && received.state>M1_RADIO_STATE_PAIRING)) {
+    if(confirmed && received.mode!=target) {
         /* Do not follow unsolicited slot changes or invent handling for
          * states outside the reference's 0..4 state tables. */
-        fail();return;
+        fail(6);return;
     }
+    if(received.mode==target && target!=M1_TRANSPORT_USB &&
+       received.state>M1_RADIO_STATE_PAIRING) { fail(7);return; }
     status=received;status_at=now;have_status=true;
     confirmed=mode_sent && received.mode==target;
     if(linked && received.state!=M1_RADIO_STATE_REPORTS) {
@@ -227,14 +235,14 @@ void m1_wireless_service(uint32_t tick)
 {
     if(!active || faulted)return;
     now=tick;
-    if(pair_state && (uint32_t)(now-pair_at)>=M1_RADIO_MODE_TIMEOUT_US) { fail();return; }
+    if(pair_state && (uint32_t)(now-pair_at)>=M1_RADIO_MODE_TIMEOUT_US) { fail(1);return; }
     /* The request deadline includes queueing AND observed completion. A late
      * DMA flag must not retroactively authorize an expired power handoff. */
     if(sleep_command && !sleep_complete && (uint32_t)(now-sleep_at)>=M1_RADIO_SLEEP_TIMEOUT_US) {
-        fail();return;
+        fail(2);return;
     }
     m1_radio_service(now);
-    if(!m1_radio_healthy()) { fail();return; }
+    if(!m1_radio_healthy()) { fail(5);return; }
     uint8_t rx[M1_RADIO_BUFFER_BYTES];size_t length;
     if(flight && m1_radio_take(rx,sizeof(rx),&length)) {
         unsigned done=flight;flight=NONE;
@@ -257,7 +265,7 @@ void m1_wireless_service(uint32_t tick)
     if(pair_state==PAIR_QUEUED) {
         if(!flight && m1_radio_ready()) {
             m1_radio_packet_t packet;
-            if(!m1_radio_make_pair(&packet,target)) { fail();return; }
+            if(!m1_radio_make_pair(&packet,target)) { fail(8);return; }
             (void)send(PAIR,&packet);
         }
         return;
@@ -274,10 +282,8 @@ void m1_wireless_service(uint32_t tick)
         }
         return;
     }
-    if((!confirmed && (uint32_t)(now-started)>=M1_RADIO_MODE_TIMEOUT_US) ||
-       (confirmed && (uint32_t)(now-status_at)>=M1_RADIO_STATUS_TIMEOUT_US)) {
-        fail();return;
-    }
+    if(!confirmed && (uint32_t)(now-started)>=M1_RADIO_MODE_TIMEOUT_US) { fail(3);return; }
+    if(confirmed && (uint32_t)(now-status_at)>=M1_RADIO_STATUS_TIMEOUT_US) { fail(4);return; }
     if(flight || !m1_radio_ready())return;
     m1_radio_packet_t packet;
     if(m1_radio_data_pending() && (!poll_sent || (uint32_t)(now-last_poll)>=M1_RADIO_POLL_US)) {

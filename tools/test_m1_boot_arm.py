@@ -292,7 +292,7 @@ def diagnostics(path):
     service();service();assert neutral==[bytes(30)] and consumer==[0] and len(cleanup)==48
     assert cleanup==[bytes((0x0b,0xb0+ch,cc,0)) for ch in range(16) for cc in (64,120,123)]
     send(sx.HELLO)
-    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Runtime failed: detail=0x00000005 store=0x00000000 scan=0x00000000'
+    assert messages[-1][0]==sx.LOG and messages[-1][3]==b'Runtime failed: detail=0x00000005 store=0x00000000 scan=0x00000000 radio=0x00000000'
     assert not send(sx.COMMAND,1,b'cfg set 7 1 2500 2800') and messages[-1][0]==sx.ERROR
     assert send(sx.COMMAND,2,b'bootloader') and messages[-1][0]==sx.ACK
     print('PASS M1 cold-start control: build handshake, failure text, mutation rejection, guarded reset request, USB epoch and live-owner handoff')
